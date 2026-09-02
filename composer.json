@@ -1,0 +1,67 @@
+{
+    "name": "phpinnacle/ferry",
+    "description": "A plugin for Laravel Filament that manages data source connections.",
+    "keywords": [
+        "phpinnacle",
+        "laravel",
+        "filament"
+    ],
+    "homepage": "https://github.com/phpinnacle/ferry",
+    "support": {
+        "issues": "https://github.com/phpinnacle/ferry/issues",
+        "source": "https://github.com/phpinnacle/ferry"
+    },
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "PHPinnacle Devs",
+            "email": "dev@phpinnacle.edu.pl",
+            "role": "Developer"
+        }
+    ],
+    "require": {
+        "php": "^8.4",
+        "ext-pdo": "*",
+        "filament/filament": "^4.0|^5.0",
+        "phpinnacle/common": "^1.0",
+        "phpinnacle/rosetta": "^1.0",
+        "spatie/laravel-package-tools": "^1.92"
+    },
+    "require-dev": {
+        "orchestra/testbench": "^11.0",
+        "pestphp/pest": "^4.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "PHPinnacle\\Ferry\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "PHPinnacle\\Ferry\\Tests\\": "tests/"
+        },
+        "files": [
+            "tests/ApplicationTestCase.php"
+        ]
+    },
+    "config": {
+        "allow-plugins": {
+            "pestphp/pest-plugin": true
+        },
+        "sort-packages": true
+    },
+    "scripts": {
+        "test": "pest --no-coverage"
+    },
+    "extra": {
+        "branch-alias": {
+            "dev-master": "1.x-dev"
+        },
+        "laravel": {
+            "providers": [
+                "PHPinnacle\\Ferry\\FerryServiceProvider"
+            ]
+        }
+    },
+    "prefer-stable": true
+}
