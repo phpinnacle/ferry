@@ -104,32 +104,6 @@ class Connection extends Model implements HasLabel
         'is_active',
     ];
 
-    protected static function booted(): void
-    {
-        static::creating(function (self $connection) {
-            $connection->beginStructureRun();
-        });
-
-        static::created(function (self $connection) {
-            $connection->dispatchStructurePreparation();
-        });
-
-        static::updating(function (self $connection) {
-            if (!$connection->isDirty(self::CREDENTIAL_ATTRIBUTES)) {
-                return;
-            }
-
-            $connection->beginStructureRun();
-        });
-
-        static::updated(function (self $connection) {
-            if ($connection->wasChanged(self::CREDENTIAL_ATTRIBUTES)) {
-                $connection->discardDraftMetadata();
-                $connection->dispatchStructurePreparation();
-            }
-        });
-    }
-
     public function canPrepareStructure(): bool
     {
         return $this->status !== StructureStatus::Preparing || $this->structureIsStale();
@@ -267,6 +241,32 @@ class Connection extends Model implements HasLabel
     {
         $this->is_active = !$this->is_active;
         $this->save();
+    }
+
+    protected static function booted(): void
+    {
+        static::creating(function (self $connection) {
+            $connection->beginStructureRun();
+        });
+
+        static::created(function (self $connection) {
+            $connection->dispatchStructurePreparation();
+        });
+
+        static::updating(function (self $connection) {
+            if (!$connection->isDirty(self::CREDENTIAL_ATTRIBUTES)) {
+                return;
+            }
+
+            $connection->beginStructureRun();
+        });
+
+        static::updated(function (self $connection) {
+            if ($connection->wasChanged(self::CREDENTIAL_ATTRIBUTES)) {
+                $connection->discardDraftMetadata();
+                $connection->dispatchStructurePreparation();
+            }
+        });
     }
 
     private function beginStructureRun(): void
