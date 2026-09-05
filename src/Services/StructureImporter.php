@@ -150,8 +150,7 @@ class StructureImporter
                     $roots[] = $this->row(
                         $object,
                         $ids[$object->id],
-                        $currentConnection->id,
-                        $revision,
+                        $currentConnection,
                         $offset + $position,
                     );
 
@@ -159,8 +158,7 @@ class StructureImporter
                         $sections[] = $this->row(
                             $section,
                             $ids[$section->id],
-                            $currentConnection->id,
-                            $revision,
+                            $currentConnection,
                             $sectionPosition,
                             $ids[$object->id],
                         );
@@ -181,14 +179,13 @@ class StructureImporter
     private function row(
         MetadataDefinition $object,
         string $id,
-        string $connectionId,
-        int $revision,
+        Connection $connection,
         int $position,
         ?string $parentId = null,
     ): array {
         return [
             'id' => $id,
-            'connection_id' => $connectionId,
+            'connection_id' => $connection->id,
             'parent_id' => $parentId,
             'external_id' => $object->id,
             'reference_id' => $object->referenceId,
@@ -201,7 +198,7 @@ class StructureImporter
             'properties' => json_encode($object->properties, JSON_THROW_ON_ERROR),
             'values' => json_encode($object->values, JSON_THROW_ON_ERROR),
             'position' => $position,
-            'revision' => $revision,
+            'revision' => $connection->draftRevision(),
         ];
     }
 
