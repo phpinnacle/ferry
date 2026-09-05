@@ -5,6 +5,7 @@ namespace PHPinnacle\Ferry\Resources\Connections;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Tables\Table;
+use Illuminate\Support\Facades\Config;
 use PHPinnacle\Ferry\Models\Connection;
 
 class ConnectionResource extends Resource
@@ -25,7 +26,9 @@ class ConnectionResource extends Resource
 
     public static function getNavigationIcon(): ?string
     {
-        return config('phpinnacle-ferry.navigation.connection.icon');
+        return config('phpinnacle-ferry.navigation.connection.icon') === null
+            ? null
+            : Config::string('phpinnacle-ferry.navigation.connection.icon');
     }
 
     public static function getNavigationLabel(): string
@@ -35,7 +38,9 @@ class ConnectionResource extends Resource
 
     public static function getNavigationSort(): ?int
     {
-        return config('phpinnacle-ferry.navigation.connection.sort');
+        return config('phpinnacle-ferry.navigation.connection.sort') === null
+            ? null
+            : Config::integer('phpinnacle-ferry.navigation.connection.sort');
     }
 
     public static function getPages(): array

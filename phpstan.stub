@@ -1,0 +1,10 @@
+<?php
+
+class PDOException
+{
+    /**
+     * @var array{0?: string|null, 1?: int|string|null, 2?: string|null, ...}|null
+     * @see https://www.php.net/manual/en/pdo.errorinfo.php
+     */
+    public ?array $errorInfo;
+}
