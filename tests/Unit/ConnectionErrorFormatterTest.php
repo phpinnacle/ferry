@@ -22,12 +22,12 @@ $message = fn (string $reason, string $state) => __(
 );
 
 it('maps a precise sql state', function () use ($exception, $message): void {
-    expect(ConnectionErrorFormatter::format($exception('3D000', 7, 'database not found')))
+    expect(ConnectionErrorFormatter::format($exception('3D000', code: 7, message: 'database not found')))
         ->toBe($message('unknown_database', '3D000'));
 });
 
 it('maps a driver code when the sql state is generic', function () use ($exception, $message): void {
-    expect(ConnectionErrorFormatter::format($exception('HY000', 2002, 'Connection refused')))
+    expect(ConnectionErrorFormatter::format($exception('HY000', code: 2002, message: 'Connection refused')))
         ->toBe($message('unreachable', 'HY000'));
 });
 
@@ -42,7 +42,7 @@ it('falls back to an unreachable server for an unrecognised connection failure',
     $exception,
     $message,
 ): void {
-    expect(ConnectionErrorFormatter::format($exception('08006', 7, 'unrecognised driver text')))
+    expect(ConnectionErrorFormatter::format($exception('08006', code: 7, message: 'unrecognised driver text')))
         ->toBe($message('unreachable', '08006'));
 });
 
