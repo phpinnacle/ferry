@@ -22,7 +22,7 @@ class SourceConnectionFactory
             [
                 'driver' => $credentials['driver'] ?? null,
                 'host' => $credentials['host'] ?? null,
-                'port' => isset($credentials['port']) ? (int) $credentials['port'] : null,
+                'port' => ($credentials['port'] ?? null) !== null ? (int) $credentials['port'] : null,
                 'database' => $credentials['database'] ?? null,
                 'username' => $credentials['username'] ?? null,
                 'password' => $credentials['password'] ?? null,

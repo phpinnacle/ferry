@@ -64,7 +64,7 @@ class ConnectionErrorFormatter
             return 0;
         }
 
-        return isset($exception->errorInfo[1]) ? (int) $exception->errorInfo[1] : 0;
+        return ($exception->errorInfo[1] ?? null) !== null ? (int) $exception->errorInfo[1] : 0;
     }
 
     private static function message(string $reason, string $state = ''): string
@@ -85,7 +85,7 @@ class ConnectionErrorFormatter
 
     private static function state(Throwable $exception): string
     {
-        if ($exception instanceof PDOException && isset($exception->errorInfo[0])) {
+        if ($exception instanceof PDOException && ($exception->errorInfo[0] ?? null) !== null) {
             return (string) $exception->errorInfo[0];
         }
 

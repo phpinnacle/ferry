@@ -87,7 +87,7 @@ return new class extends Migration {
     {
         $tenancy = config('phpinnacle-ferry.tenancy');
 
-        if (isset($tenancy['model']) && class_exists($tenancy['model'])) {
+        if (($tenancy['model'] ?? null) !== null && class_exists($tenancy['model'])) {
             $table
                 ->foreignIdFor($tenancy['model'], 'tenant_id')
                 ->after('id')
