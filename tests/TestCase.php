@@ -56,7 +56,7 @@ abstract class TestCase extends ApplicationTestCase
 
     private function createConnectionMetadataTable(): void
     {
-        Schema::create('connection_metadata', function (Blueprint $table): void {
+        Schema::create('connection_metadata', function (Blueprint $table) {
             $table->uuid('id')->primary();
             $table->uuid('connection_id');
             $table->uuid('parent_id')->nullable()->index();
@@ -81,7 +81,7 @@ abstract class TestCase extends ApplicationTestCase
 
     private function createConnectionsTable(): void
     {
-        Schema::create('connections', function (Blueprint $table): void {
+        Schema::create('connections', function (Blueprint $table) {
             $table->uuid('id')->primary();
             $table->string('name');
             $table->string('code')->unique();

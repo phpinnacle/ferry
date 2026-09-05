@@ -12,11 +12,11 @@ require_once __DIR__ . '/../TestCase.php';
 
 uses(TestCase::class);
 
-beforeEach(function (): void {
+beforeEach(function () {
     Queue::fake();
 });
 
-it('stores the password encrypted and never in plain text', function (): void {
+it('stores the password encrypted and never in plain text', function () {
     $connection = TestCase::makeConnection();
 
     $raw = DB::table('connections')->where('id', $connection->id)->value('password');
@@ -30,13 +30,13 @@ it('stores the password encrypted and never in plain text', function (): void {
         ->toBe('secret');
 });
 
-it('enforces a unique code', function (): void {
+it('enforces a unique code', function () {
     TestCase::makeConnection(['code' => 'duplicate']);
 
     expect(fn () => TestCase::makeConnection(['code' => 'duplicate']))->toThrow(QueryException::class);
 });
 
-it('toggles the active state', function (): void {
+it('toggles the active state', function () {
     $connection = TestCase::makeConnection(['is_active' => true]);
 
     $connection->toggleActive();
@@ -44,11 +44,11 @@ it('toggles the active state', function (): void {
     expect($connection->fresh()->is_active)->toBeFalse();
 });
 
-it('is never in use until synchronizations exist', function (): void {
+it('is never in use until synchronizations exist', function () {
     expect(new Connection()->isInUse())->toBeFalse();
 });
 
-it('records the test result on the connection', function (): void {
+it('records the test result on the connection', function () {
     $connection = TestCase::makeConnection();
 
     $connection->recordTestResult(ConnectionTestResult::success('ok'));

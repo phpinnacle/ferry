@@ -19,17 +19,17 @@ $message = fn (string $reason, string $state) => __(
     ['state' => $state],
 );
 
-it('maps a precise sql state', function () use ($exception, $message): void {
+it('maps a precise sql state', function () use ($exception, $message) {
     expect(ConnectionErrorFormatter::format($exception('3D000', code: 7, message: 'database not found')))
         ->toBe($message('unknown_database', '3D000'));
 });
 
-it('maps a driver code when the sql state is generic', function () use ($exception, $message): void {
+it('maps a driver code when the sql state is generic', function () use ($exception, $message) {
     expect(ConnectionErrorFormatter::format($exception('HY000', code: 2002, message: 'Connection refused')))
         ->toBe($message('unreachable', 'HY000'));
 });
 
-it('refines an ambiguous connection state by the driver text', function () use ($exception, $message): void {
+it('refines an ambiguous connection state by the driver text', function () use ($exception, $message) {
     $driverMessage = 'connection to server at "127.0.0.1", port 5432 failed: FATAL:  password authentication failed for user "secret-user"';
 
     expect(ConnectionErrorFormatter::format($exception('08006', 7, $driverMessage)))
@@ -39,17 +39,17 @@ it('refines an ambiguous connection state by the driver text', function () use (
 it('falls back to an unreachable server for an unrecognised connection failure', function () use (
     $exception,
     $message,
-): void {
+) {
     expect(ConnectionErrorFormatter::format($exception('08006', code: 7, message: 'unrecognised driver text')))
         ->toBe($message('unreachable', '08006'));
 });
 
-it('falls back to a generic message for unknown failures', function () use ($message): void {
+it('falls back to a generic message for unknown failures', function () use ($message) {
     expect(ConnectionErrorFormatter::format(new RuntimeException('boom')))
         ->toBe($message('unknown', 'HY000'));
 });
 
-it('never exposes the underlying driver text', function () use ($exception): void {
+it('never exposes the underlying driver text', function () use ($exception) {
     $driverMessage = 'FATAL:  password authentication failed for user "secret-user"';
 
     expect(ConnectionErrorFormatter::format($exception('08006', 7, $driverMessage)))

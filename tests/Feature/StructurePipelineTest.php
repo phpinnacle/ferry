@@ -22,7 +22,7 @@ require_once __DIR__ . '/../TestCase.php';
 
 uses(TestCase::class);
 
-beforeEach(function (): void {
+beforeEach(function () {
     config(['phpinnacle-ferry.structure.chunk_size' => 1]);
 
     Exceptions::fake();
@@ -92,7 +92,7 @@ $makeImporter = function (int $total) {
     return $importer;
 };
 
-it('walks the whole pipeline and publishes the snapshot', function () use ($makeImporter): void {
+it('walks the whole pipeline and publishes the snapshot', function () use ($makeImporter) {
     $importer = $makeImporter(2);
 
     $connection = TestCase::makeConnection()->fresh();
@@ -124,7 +124,7 @@ it('walks the whole pipeline and publishes the snapshot', function () use ($make
         ->toBe(['object-0', 'object-1']);
 });
 
-it('scopes the snapshot to its own connection when eager loaded', function () use ($makeImporter): void {
+it('scopes the snapshot to its own connection when eager loaded', function () use ($makeImporter) {
     $makeImporter(1);
 
     $first = TestCase::makeConnection(['code' => 'first']);
@@ -140,7 +140,7 @@ it('scopes the snapshot to its own connection when eager loaded', function () us
         ->toBe(1);
 });
 
-it('restores the stored maps as typed Rosetta values', function () use ($makeImporter): void {
+it('restores the stored maps as typed Rosetta values', function () use ($makeImporter) {
     Queue::fake();
 
     $makeImporter(2);
@@ -154,7 +154,7 @@ it('restores the stored maps as typed Rosetta values', function () use ($makeImp
         ->toBeInstanceOf(TypeMap::class);
 });
 
-it('publishes an empty snapshot when the source has no supported objects', function () use ($makeImporter): void {
+it('publishes an empty snapshot when the source has no supported objects', function () use ($makeImporter) {
     $importer = $makeImporter(0);
 
     $connection = TestCase::makeConnection()->fresh();
@@ -178,7 +178,7 @@ it('publishes an empty snapshot when the source has no supported objects', funct
 
 it('resumes instead of reading the source again when the preparation job is redelivered', function () use (
     $makeImporter,
-): void {
+) {
     Queue::fake();
 
     $importer = $makeImporter(2);
@@ -202,7 +202,7 @@ it('resumes instead of reading the source again when the preparation job is rede
     );
 });
 
-it('imports a repeated chunk without duplicating the snapshot', function () use ($makeImporter): void {
+it('imports a repeated chunk without duplicating the snapshot', function () use ($makeImporter) {
     Queue::fake();
 
     $importer = $makeImporter(2);
@@ -216,7 +216,7 @@ it('imports a repeated chunk without duplicating the snapshot', function () use 
     expect($connection->fresh()->processed)->toBe(1)->and($connection->metadata()->count())->toBe(1);
 });
 
-it('starts a new generation as soon as the source credentials change', function () use ($makeImporter): void {
+it('starts a new generation as soon as the source credentials change', function () use ($makeImporter) {
     Queue::fake();
 
     $makeImporter(2);
@@ -235,7 +235,7 @@ it('starts a new generation as soon as the source credentials change', function 
     Queue::assertPushed(PrepareStructureJob::class, 2);
 });
 
-it('leaves the structure untouched when an unrelated field changes', function () use ($makeImporter): void {
+it('leaves the structure untouched when an unrelated field changes', function () use ($makeImporter) {
     Queue::fake();
 
     $makeImporter(2);
@@ -249,7 +249,7 @@ it('leaves the structure untouched when an unrelated field changes', function ()
     Queue::assertPushed(PrepareStructureJob::class, 1);
 });
 
-it('ignores every job of a superseded generation', function () use ($makeImporter): void {
+it('ignores every job of a superseded generation', function () use ($makeImporter) {
     Queue::fake();
 
     $importer = $makeImporter(2);
@@ -310,7 +310,7 @@ it('persists chunks only for the current run', function () {
     expect($connection->metadata()->count())->toBe(0);
 });
 
-it('is a safe no-op when the connection was deleted before the jobs run', function () use ($makeImporter): void {
+it('is a safe no-op when the connection was deleted before the jobs run', function () use ($makeImporter) {
     Queue::fake();
 
     $importer = $makeImporter(2);
@@ -329,7 +329,7 @@ it('is a safe no-op when the connection was deleted before the jobs run', functi
     Queue::assertNotPushed(FinishStructureJob::class);
 });
 
-it('does not publish twice when the finishing job is redelivered', function () use ($makeImporter): void {
+it('does not publish twice when the finishing job is redelivered', function () use ($makeImporter) {
     Queue::fake();
 
     $importer = $makeImporter(1);
@@ -352,7 +352,7 @@ it('does not publish twice when the finishing job is redelivered', function () u
         ->toBe(1);
 });
 
-it('keeps the published snapshot when a later generation fails', function () use ($makeImporter): void {
+it('keeps the published snapshot when a later generation fails', function () use ($makeImporter) {
     Queue::fake();
 
     $importer = $makeImporter(1);
@@ -388,7 +388,7 @@ it('keeps the published snapshot when a later generation fails', function () use
         ->toBe(0);
 });
 
-it('reports the original exception and stores only a safe description', function () use ($makeImporter): void {
+it('reports the original exception and stores only a safe description', function () use ($makeImporter) {
     Queue::fake();
 
     $makeImporter(1);
@@ -411,7 +411,7 @@ it('reports the original exception and stores only a safe description', function
     Exceptions::assertReported(PDOException::class);
 });
 
-it('cannot fail a newer generation from a stale job', function () use ($makeImporter): void {
+it('cannot fail a newer generation from a stale job', function () use ($makeImporter) {
     Queue::fake();
 
     $makeImporter(1);
@@ -433,7 +433,7 @@ it('cannot fail a newer generation from a stale job', function () use ($makeImpo
         ->toBeNull();
 });
 
-it('retires a stale attempt with a safe reason before starting a new one', function () use ($makeImporter): void {
+it('retires a stale attempt with a safe reason before starting a new one', function () use ($makeImporter) {
     Queue::fake();
 
     $makeImporter(1);

@@ -5,7 +5,7 @@ use Tests\TestCase;
 
 uses(TestCase::class);
 
-it('succeeds when the database can be reached', function (): void {
+it('succeeds when the database can be reached', function () {
     $result = app(ConnectionTester::class)->test([
         'driver' => 'sqlite',
         'database' => ':memory:',
@@ -14,7 +14,7 @@ it('succeeds when the database can be reached', function (): void {
     expect($result->success)->toBeTrue();
 });
 
-it('fails when the connection cannot be opened', function (): void {
+it('fails when the connection cannot be opened', function () {
     $result = app(ConnectionTester::class)->test([
         'driver' => 'pgsql',
         'host' => '127.0.0.1',

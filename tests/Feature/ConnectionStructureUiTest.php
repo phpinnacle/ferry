@@ -22,11 +22,11 @@ require_once __DIR__ . '/../TestCase.php';
 
 uses(TestCase::class);
 
-beforeEach(function (): void {
+beforeEach(function () {
     Queue::fake();
 });
 
-it('labels the preparation action by the current structure status', function (StructureStatus $status): void {
+it('labels the preparation action by the current structure status', function (StructureStatus $status) {
     $connection = TestCase::makeConnection([], ['status' => $status]);
 
     expect(PrepareStructureAction::table()->record($connection)->getLabel())
@@ -40,13 +40,13 @@ it('labels the preparation action by the current structure status', function (St
     'last attempt failed' => StructureStatus::Failed,
 ]);
 
-it('hides the preparation action while a live preparation is running', function (): void {
+it('hides the preparation action while a live preparation is running', function () {
     $connection = TestCase::makeConnection();
 
     expect(PrepareStructureAction::table()->record($connection)->isVisible())->toBeFalse();
 });
 
-it('offers the preparation action again when the running attempt went stale', function (): void {
+it('offers the preparation action again when the running attempt went stale', function () {
     $connection = TestCase::makeConnection([], [
         'heartbeat_at' => CarbonImmutable::now()->subSeconds(
             config('phpinnacle-ferry.structure.stale_after') + 1,
@@ -59,7 +59,7 @@ it('offers the preparation action again when the running attempt went stale', fu
 it('asks for confirmation only before re-reading a published snapshot', function (
     StructureStatus $status,
     bool $confirms,
-): void {
+) {
     $connection = TestCase::makeConnection([], ['status' => $status]);
 
     expect(PrepareStructureAction::table()->record($connection)->isConfirmationRequired())->toBe($confirms);
@@ -69,7 +69,7 @@ it('asks for confirmation only before re-reading a published snapshot', function
     'last attempt failed' => [StructureStatus::Failed, false],
 ]);
 
-it('queues the preparation and notifies the operator', function (): void {
+it('queues the preparation and notifies the operator', function () {
     $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
 
     PrepareStructureAction::table()->record($connection)->call();
@@ -84,7 +84,7 @@ it('queues the preparation and notifies the operator', function (): void {
     Queue::assertPushed(PrepareStructureJob::class, 2);
 });
 
-it('warns instead of queueing a second preparation', function (): void {
+it('warns instead of queueing a second preparation', function () {
     $connection = TestCase::makeConnection();
 
     PrepareStructureAction::table()->record($connection)->call();
@@ -95,7 +95,7 @@ it('warns instead of queueing a second preparation', function (): void {
     Queue::assertPushed(PrepareStructureJob::class, 1);
 });
 
-it('leaves the acted-on record current for the surrounding structure block', function (): void {
+it('leaves the acted-on record current for the surrounding structure block', function () {
     $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
 
     PrepareStructureAction::form()->record($connection)->call();
@@ -106,7 +106,7 @@ it('leaves the acted-on record current for the surrounding structure block', fun
         ->not->toBeNull();
 });
 
-it('shows the structure status as a badge in the connections table', function (): void {
+it('shows the structure status as a badge in the connections table', function () {
     $table = ConnectionTable::configure(Table::make(new ListConnections));
 
     /** @var TextColumn $column */
@@ -120,7 +120,7 @@ it('shows the structure status as a badge in the connections table', function ()
         ->toBeTrue();
 });
 
-it('renders the read-only structure block only when editing a connection', function (): void {
+it('renders the read-only structure block only when editing a connection', function () {
     $connection = TestCase::makeConnection([], [
         'status' => StructureStatus::Failed,
         'generation' => 1,
