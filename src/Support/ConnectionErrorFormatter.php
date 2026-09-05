@@ -23,7 +23,7 @@ class ConnectionErrorFormatter
         2005 => 'unreachable',
         2006 => 'unreachable',
         4060 => 'unknown_database',
-        18456 => 'denied',
+        18_456 => 'denied',
     ];
 
     private const array PATTERNS = [

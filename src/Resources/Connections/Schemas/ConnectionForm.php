@@ -58,7 +58,7 @@ class ConnectionForm
                             ->label(__('phpinnacle-ferry::resources.connection.fields.port'))
                             ->numeric()
                             ->minValue(1)
-                            ->maxValue(65535)
+                            ->maxValue(65_535)
                             ->required(),
                         TextInput::make('database')
                             ->label(__('phpinnacle-ferry::resources.connection.fields.database'))
