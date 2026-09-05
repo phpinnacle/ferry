@@ -7,17 +7,6 @@ use PHPinnacle\Ferry\Models\Connection;
 use PHPinnacle\Ferry\Models\ConnectionMetadata;
 
 return new class extends Migration {
-    public function down(): void
-    {
-        Schema::dropIfExists('connection_metadata');
-        Schema::dropIfExists('connections');
-    }
-
-    public function getConnection(): ?string
-    {
-        return config('phpinnacle-ferry.connection');
-    }
-
     public function up(): void
     {
         /** @see Connection */
@@ -81,6 +70,17 @@ return new class extends Migration {
 
             $this->addTenancy($table);
         });
+    }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('connection_metadata');
+        Schema::dropIfExists('connections');
+    }
+
+    public function getConnection(): ?string
+    {
+        return config('phpinnacle-ferry.connection');
     }
 
     private function addTenancy(Blueprint $table): bool
