@@ -5,15 +5,13 @@ use Tests\TestCase;
 
 uses(TestCase::class);
 
-$exception = function (string $state, int $code, string $message): PDOException {
-    return new class($state, $code, $message) extends PDOException {
-        public function __construct(string $state, int $code, string $message)
-        {
-            parent::__construct($message);
+$exception = fn (string $state, int $code, string $message) => new class($state, $code, $message) extends PDOException {
+    public function __construct(string $state, int $code, string $message)
+    {
+        parent::__construct($message);
 
-            $this->errorInfo = [$state, $code, $message];
-        }
-    };
+        $this->errorInfo = [$state, $code, $message];
+    }
 };
 
 $message = fn (string $reason, string $state) => __(
