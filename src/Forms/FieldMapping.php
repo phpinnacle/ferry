@@ -49,7 +49,7 @@ class FieldMapping extends Field
     /** @var array<array-key, list<string|array{label: string, color?: string}>>|Closure(): array<array-key, list<string|array{label: string, color?: string}>> */
     protected array|Closure $targetBadges = [];
 
-    /** @param list<string>|Closure(): list<string> $targets */
+    /** @param list<string>|Closure $targets */
     public function requiredTargets(array|Closure $targets): static
     {
         $this->requiredTargets = $targets;
@@ -91,8 +91,8 @@ class FieldMapping extends Field
     }
 
     /**
-     * @param  array<array-key, string>|Closure(): array<array-key, string>  $source
-     * @param  array<array-key, string>|Closure(): array<array-key, string>  $dest
+     * @param  array<array-key, string>|Closure  $source
+     * @param  array<array-key, string>|Closure  $dest
      */
     public function types(array|Closure $source = [], array|Closure $dest = []): static
     {
@@ -115,8 +115,8 @@ class FieldMapping extends Field
     }
 
     /**
-     * @param  array<array-key, string|object>|Closure(): array<array-key, string|object>  $source
-     * @param  array<array-key, string|object>|Closure(): array<array-key, string|object>  $dest
+     * @param  array<array-key, string|object>|Closure  $source
+     * @param  array<array-key, string|object>|Closure  $dest
      */
     public function options(array|Closure $source = [], array|Closure $dest = []): static
     {

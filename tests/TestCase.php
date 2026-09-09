@@ -5,7 +5,11 @@ namespace PHPinnacle\Ferry\Tests;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use PHPinnacle\Ferry\Data\FieldMapping;
 use PHPinnacle\Ferry\Models\Connection;
+use PHPinnacle\Ferry\Models\Sync;
+use PHPinnacle\Rosetta\Enums\FieldType;
+use PHPinnacle\Rosetta\Fields\ScalarField;
 use Tests\TestCase as ApplicationTestCase;
 
 abstract class TestCase extends ApplicationTestCase
@@ -36,12 +40,43 @@ abstract class TestCase extends ApplicationTestCase
         return $connection;
     }
 
+    /**
+     * @param  array<string, mixed>  $attributes
+     * @param  array<string, mixed>  $state
+     */
+    public static function makeSync(array $attributes = [], array $state = []): Sync
+    {
+        if (!array_key_exists('connection_id', $attributes)) {
+            $attributes['connection_id'] = self::makeConnection()->id;
+        }
+
+        $sync = Sync::create([
+            'name' => 'Test synchronization',
+            'code' => 'test-sync',
+            'source' => 'object-0',
+            'schema' => [
+                new FieldMapping('_idrref', 'external_id', new ScalarField(FieldType::Id)),
+            ],
+            ...$attributes,
+        ]);
+
+        if ($state !== []) {
+            $sync->forceFill($state)->save();
+        }
+
+        return $sync;
+    }
+
     protected function setUp(): void
     {
         parent::setUp();
 
         config([
             'phpinnacle-ferry.connection' => null,
+            'phpinnacle-ferry.kafka_connect.base_uri' => 'http://kafka-connect.test',
+            'phpinnacle-ferry.kafka_connect.signal.topic' => 'ferry-signal',
+            'phpinnacle-ferry.kafka_connect.signal.bootstrap_servers' => 'kafka.test:9092',
+            'phpinnacle-ferry.kafka_connect.signal.group_id' => 'ferry-signal',
             'database.default' => 'sqlite',
             'database.connections.sqlite.database' => ':memory:',
         ]);
@@ -52,6 +87,7 @@ abstract class TestCase extends ApplicationTestCase
 
         $this->createConnectionsTable();
         $this->createConnectionMetadataTable();
+        $this->createSyncsTable();
     }
 
     private function createConnectionMetadataTable(): void
@@ -106,6 +142,29 @@ abstract class TestCase extends ApplicationTestCase
             $table->timestamp('published_at')->nullable();
             $table->text('last_error')->nullable();
             $table->timestamp('heartbeat_at')->nullable();
+            $table->string('source_connector_status')->nullable();
+            $table->text('source_connector_error')->nullable();
+            $table->timestamp('source_connector_checked_at')->nullable();
+            $table->timestamps();
+        });
+    }
+
+    private function createSyncsTable(): void
+    {
+        Schema::create('syncs', function (Blueprint $table) {
+            $table->uuid('id')->primary();
+            $table->uuid('connection_id');
+            $table->string('name');
+            $table->string('code')->unique();
+            $table->string('status')->index();
+            $table->boolean('is_paused')->default(false);
+            $table->string('static_destination')->nullable();
+            $table->string('source');
+            $table->string('destination');
+            $table->json('schema');
+            $table->string('sink_connector_status')->nullable();
+            $table->text('sink_connector_error')->nullable();
+            $table->timestamp('sink_connector_checked_at')->nullable();
             $table->timestamps();
         });
     }

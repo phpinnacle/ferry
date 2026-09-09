@@ -35,6 +35,9 @@ return new class extends Migration {
             $table->timestamp('published_at')->nullable();
             $table->text('last_error')->nullable();
             $table->timestamp('heartbeat_at')->nullable();
+            $table->string('source_connector_status')->nullable();
+            $table->text('source_connector_error')->nullable();
+            $table->timestamp('source_connector_checked_at')->nullable();
             $table->timestamps();
 
             $this->addTenancy($table);

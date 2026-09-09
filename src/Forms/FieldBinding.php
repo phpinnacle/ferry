@@ -34,7 +34,7 @@ class FieldBinding extends Field
     /** @var list<string>|null */
     protected ?array $cachedBoundSourceKeys = null;
 
-    /** @param array<array-key, string|object>|Closure(): array<array-key, string|object> $sources */
+    /** @param array<array-key, string|object>|Closure $sources */
     public function options(array|Closure $sources): static
     {
         $this->sources = $sources;
@@ -157,7 +157,7 @@ class FieldBinding extends Field
     public function getBindAction(): Action
     {
         return Action::make('bind')
-            ->label('Bind')
+            ->label(fn () => __('phpinnacle-ferry::resources.binding.bind'))
             ->icon('heroicon-m-plus')
             ->button()
             ->disabled(fn (self $component) => $component->isDisabled())
@@ -167,7 +167,7 @@ class FieldBinding extends Field
     public function getUnbindAction(): Action
     {
         return Action::make('unbind')
-            ->label('Unbind')
+            ->label(fn () => __('phpinnacle-ferry::resources.binding.unbind'))
             ->icon('heroicon-m-x-mark')
             ->color('gray')
             ->iconButton()

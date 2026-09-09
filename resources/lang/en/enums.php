@@ -1,6 +1,14 @@
 <?php
 
 return [
+    'column_type' => [
+        'string' => 'String',
+        'reference' => 'Reference',
+        'integer' => 'Integer',
+        'decimal' => 'Decimal',
+        'boolean' => 'Boolean',
+        'datetime' => 'Date and Time',
+    ],
     'driver' => [
         'pgsql' => 'PostgreSQL',
         'sqlsrv' => 'MS SQL Server',
@@ -10,5 +18,16 @@ return [
         'preparing' => 'Preparing',
         'ready' => 'Ready',
         'failed' => 'Error',
+    ],
+    'sync_status' => [
+        'pending' => 'Pending',
+        'active' => 'Active',
+        'pause' => 'Paused',
+    ],
+    'connector_status' => [
+        'unknown' => 'Unknown',
+        'running' => 'Running',
+        'paused' => 'Paused',
+        'failed' => 'Failed',
     ],
 ];

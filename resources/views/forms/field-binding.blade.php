@@ -10,16 +10,16 @@
 
 <x-dynamic-component :component="$getFieldWrapperView()" :field="$field">
     <div
-        {{ $getExtraAttributeBag()->class(['field-binding rounded-xl border border-gray-200 bg-white dark:border-white/10 dark:bg-gray-900']) }}
+        {{ $getExtraAttributeBag()->class(['field-binding isolate rounded-xl border border-gray-200 bg-white dark:border-white/10 dark:bg-gray-900']) }}
         x-data="{ search: '', unboundOnly: false }"
         x-load-css="[@js(FilamentAsset::getStyleHref('field-mapping', FerryServiceProvider::PACKAGE))]"
     >
         <div class="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 px-5 py-4 dark:border-white/10">
             <label class="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
                 <input type="checkbox" x-model="unboundOnly" class="rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-800" />
-                Show unbound
+                {{ __('phpinnacle-ferry::resources.binding.show_unbound') }}
             </label>
-            <span class="text-sm text-gray-500 dark:text-gray-400">{{ count($bindings) }} of {{ count($sources) }} sources bound</span>
+            <span class="text-sm text-gray-500 dark:text-gray-400">{{ __('phpinnacle-ferry::resources.binding.bound_count', ['bound' => count($bindings), 'total' => count($sources)]) }}</span>
         </div>
 
         <div class="space-y-5 px-5 py-5">
@@ -27,7 +27,7 @@
                 <div class="min-w-0">
                     <h3 class="mb-3 text-sm font-semibold text-gray-950 dark:text-white">{{ $sourceLabel }}</h3>
                     <x-filament::input.wrapper prefix-icon="heroicon-m-magnifying-glass">
-                        <x-filament::input type="search" x-model="search" placeholder="Search fields…" aria-label="{{ 'Search '.$sourceLabel }}" />
+                        <x-filament::input type="search" x-model="search" placeholder="{{ __('phpinnacle-ferry::resources.binding.search_placeholder') }}" aria-label="{{ __('phpinnacle-ferry::resources.binding.search_label', ['label' => $sourceLabel]) }}" />
                     </x-filament::input.wrapper>
                 </div>
                 <h3 class="text-sm font-semibold text-gray-950 dark:text-white">{{ $targetLabel }}</h3>
@@ -76,13 +76,13 @@
             @endforeach
 
             @if ($sources === [])
-                <p class="py-6 text-sm text-gray-500 dark:text-gray-400">No fields available.</p>
+                <p class="py-6 text-sm text-gray-500 dark:text-gray-400">{{ __('phpinnacle-ferry::resources.binding.empty') }}</p>
             @endif
         </div>
 
         <div class="flex flex-wrap items-center justify-between gap-3 border-t border-gray-200 px-5 py-4 text-xs text-gray-500 dark:border-white/10 dark:text-gray-400">
-            <span class="flex items-center gap-2"><span class="size-2 rounded-full bg-teal-600 dark:bg-teal-400"></span> Bound</span>
-            <p>Bind a source to configure it. Unbind to exclude it.</p>
+            <span class="flex items-center gap-2"><span class="size-2 rounded-full bg-teal-600 dark:bg-teal-400"></span> {{ __('phpinnacle-ferry::resources.binding.legend_bound') }}</span>
+            <p>{{ __('phpinnacle-ferry::resources.binding.hint') }}</p>
         </div>
     </div>
 </x-dynamic-component>

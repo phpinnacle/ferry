@@ -21,7 +21,7 @@
 
 <x-dynamic-component :component="$getFieldWrapperView()" :field="$field">
     <div
-        {{ $getExtraAttributeBag()->class(['field-mapping rounded-xl border border-gray-200 bg-white dark:border-white/10 dark:bg-gray-900']) }}
+        {{ $getExtraAttributeBag()->class(['field-mapping isolate rounded-xl border border-gray-200 bg-white dark:border-white/10 dark:bg-gray-900']) }}
         wire:key="{{ $getId() }}-{{ $configurationKey }}"
         wire:ignore
         x-load
@@ -40,13 +40,13 @@
         <div class="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 px-5 py-4 dark:border-white/10">
             <label class="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
                 <input type="checkbox" x-model="unmappedOnly" class="rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-800" />
-                Show unmapped
+                {{ __('phpinnacle-ferry::resources.mapping.show_unmapped') }}
             </label>
             <span class="text-sm text-gray-500 dark:text-gray-400">
-                <span x-text="mappedTargetCount()"></span> of {{ count($targets) }} destinations mapped
+                {!! __('phpinnacle-ferry::resources.mapping.mapped_count', ['mapped' => '<span x-text="mappedTargetCount()"></span>', 'total' => count($targets)]) !!}
                 @if ($requiredTargets !== [])
                     <span class="ml-3 text-amber-600 dark:text-amber-400" x-show="missingRequired().length" x-cloak>
-                        <span x-text="missingRequired().length"></span> required remaining
+                        {!! __('phpinnacle-ferry::resources.mapping.required_remaining', ['count' => '<span x-text="missingRequired().length"></span>']) !!}
                     </span>
                 @endif
             </span>
@@ -64,7 +64,7 @@
                             <x-filament::input
                                 type="search"
                                 x-model="{{ $side }}Search"
-                                placeholder="Search fields…"
+                                placeholder="{{ __('phpinnacle-ferry::resources.mapping.search_placeholder') }}"
                                 aria-label="{{ 'Search '.$panel['label'] }}"
                             />
                         </x-filament::input.wrapper>
@@ -100,10 +100,10 @@
                                                 @if ($item['required'] || $isMultiple || $item['type'] !== null || $item['badges'] !== [])
                                                     <span class="flex flex-wrap gap-1.5">
                                                         @if ($item['required'])
-                                                            <x-filament::badge color="warning" size="sm">Required</x-filament::badge>
+                                                            <x-filament::badge color="warning" size="sm">{{ __('phpinnacle-ferry::resources.mapping.required') }}</x-filament::badge>
                                                         @endif
                                                         @if ($isMultiple)
-                                                            <x-filament::badge color="info" size="sm">Multiple</x-filament::badge>
+                                                            <x-filament::badge color="info" size="sm">{{ __('phpinnacle-ferry::resources.mapping.multiple') }}</x-filament::badge>
                                                         @endif
                                                         @if ($item['type'] !== null)
                                                             <x-filament::badge color="gray" size="sm">{{ $item['type'] }}</x-filament::badge>
@@ -118,7 +118,7 @@
                                                 <span class="mt-1 block text-xs/5 wrap-anywhere text-gray-500 dark:text-gray-400">{{ $item['description'] }}</span>
                                             @endif
                                             @if ($side === 'target')
-                                                <span class="mt-1 block text-xs text-danger-600 dark:text-danger-400" x-show="hasTypeConflict(@js($item['id']))" x-cloak>Incompatible types</span>
+                                                <span class="mt-1 block text-xs text-danger-600 dark:text-danger-400" x-show="hasTypeConflict(@js($item['id']))" x-cloak>{{ __('phpinnacle-ferry::resources.mapping.incompatible') }}</span>
                                             @endif
                                         </span>
                                     </button>
@@ -154,7 +154,7 @@
                                 </div>
                             @endforeach
                             @if ($panel['items'] === [])
-                                <p class="py-6 text-sm text-gray-500 dark:text-gray-400">No fields available.</p>
+                                <p class="py-6 text-sm text-gray-500 dark:text-gray-400">{{ __('phpinnacle-ferry::resources.mapping.empty') }}</p>
                             @endif
                         </div>
                     </section>
@@ -181,8 +181,8 @@
         </div>
 
         <div class="flex flex-wrap items-center justify-between gap-3 border-t border-gray-200 px-5 py-4 text-xs text-gray-500 dark:border-white/10 dark:text-gray-400">
-            <span class="flex items-center gap-2"><span class="size-2 rounded-full bg-teal-600 dark:bg-teal-400"></span> Connected</span>
-            <p>Select two fields to connect. Click a line to disconnect. Escape cancels.</p>
+            <span class="flex items-center gap-2"><span class="size-2 rounded-full bg-teal-600 dark:bg-teal-400"></span> {{ __('phpinnacle-ferry::resources.mapping.connected') }}</span>
+            <p>{{ __('phpinnacle-ferry::resources.mapping.hint') }}</p>
         </div>
         <p class="px-5 pb-4 text-sm text-danger-600 dark:text-danger-400" role="alert" x-show="connectionError" x-text="connectionError" x-cloak></p>
         <span class="sr-only" role="status" aria-live="polite" x-text="announcement"></span>
