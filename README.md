@@ -2,7 +2,7 @@
 
 [![Latest Version on Packagist](https://img.shields.io/packagist/v/phpinnacle/ferry.svg?style=flat-square)](https://packagist.org/packages/phpinnacle/ferry)
 
-Ferry adds a data source connections section to the admin panel: administrators can create, edit, test, enable/disable and delete connections to 1C databases, and Ferry keeps a local snapshot of each source structure that later drives synchronization setup. Creating synchronizations and field mapping are out of scope for this package.
+Ferry adds a data source connections section to the admin panel: administrators can create, edit, test, enable/disable and delete connections to 1C databases, and Ferry keeps a local snapshot of each source structure that later drives synchronization setup. Synchronization orchestration remains outside this package. A reusable field mapping form component is included.
 
 ## Features
 
@@ -10,6 +10,7 @@ Ferry adds a data source connections section to the admin panel: administrators 
 - `ConnectionTester` service that opens a temporary connection with the current (possibly unsaved) form values, runs a lightweight query and reports a sanitized result.
 - Queued structure preparation built on `phpinnacle/rosetta`, storing the semantic 1C metadata as `ConnectionMetadata` records.
 - Filament `ConnectionResource` with create/edit/list pages, "Test connection" and "Fetch structure" actions, a structure status badge and driver-based default port suggestion.
+- Reusable `FieldMapping` form field with click-to-connect lines, search, type checks, multiple destinations, and inverse mapping.
 - Policy-backed connection management (`ConnectionPolicy`), custom database connection and optional tenancy.
 
 ## Installation
@@ -54,10 +55,61 @@ When a run fails for good, the connection switches to `StructureStatus::Failed`,
 
 `phpinnacle-ferry.structure` tunes the preparation pipeline: `chunk_size` root objects per job, the job `timeout`, the retry `backoff` delays, and `stale_after` seconds before a silent run is considered interrupted.
 
+## Field mapping
+
+```php
+use PHPinnacle\Ferry\Forms\FieldMapping;
+
+FieldMapping::make('mapping')
+    ->options(source: ['title', 'email'], dest: ['name', 'email']);
+```
+
+Plain string lists use each string as its identifier. Associative arrays use their keys, so labels can change without changing connections. Object lists use enum values or names when available, otherwise their array indexes; use explicit associative keys for stable identifiers when reordering ordinary objects. Objects may implement Filament's `HasLabel`, `HasIcon`, and `HasDescription` independently. Labels and descriptions also support `Htmlable` values. Configuration methods accept closures, and `labels(source: 'Source', dest: 'Destination')` sets the list headings.
+
+State normally maps destination identifiers to source identifiers, for example `['name' => 'title']`. Each source maps to one destination. Use `multiple(['payload'])` to allow a destination to receive several sources; this method also accepts a closure. A multiple destination always stores a non-empty list, even for one source: `['payload' => ['id', 'name']]`. These destinations display a Multiple badge. An occupied source has a disabled card and port until its connection is removed. Click a line to remove only that source, or the destination's disconnect button to remove all its sources. Partial mappings are allowed, and identifiers, types, value shapes, and cardinality are validated on submission.
+
+Use `inverse()` to display destinations on the left and sources on the right, and store state as source to destination:
+
+```php
+FieldMapping::make('mapping')
+    ->options(source: ['id', 'name', 'active'], dest: ['payload', 'enabled'])
+    ->multiple(['payload'])
+    ->inverse();
+```
+
+The same connections then produce `['id' => 'payload', 'name' => 'payload', 'active' => 'enabled']`. Inverse values remain strings, including for multiple destinations. Disconnect buttons stay on the right, beside each source, and remove only that source's connection. An occupied single destination on the left cannot start another connection; multiple destinations remain available. `multiple()`, `requiredTargets()`, types, badges, and headings always refer to the original configured source and destination identifiers. `inverse()` accepts a boolean or closure, defaults to true when called, and can be disabled with `inverse(false)`. Fill state in the configured format; changing the mode does not convert existing state.
+
+Use `requiredTargets()` to require particular destinations, `types(source: [], dest: [])` to declare types by identifier, and `badges(source: [], dest: [])` to display extra badges:
+
+```php
+FieldMapping::make('mapping')
+    ->options(source: ['title', 'active'], dest: ['name', 'is_active'])
+    ->requiredTargets(['name'])
+    ->types(source: ['title' => 'string', 'active' => 'boolean'], dest: ['name' => 'string', 'is_active' => 'boolean'])
+    ->badges(source: ['title' => ['Imported']], dest: ['name' => [['label' => 'Unique', 'color' => 'success']]]);
+```
+
+Type names are arbitrary non-empty strings and must match exactly. An undeclared type accepts any type. Restrictions apply to clicks, keyboard selection, and server validation. Required destinations are marked, and missing connections block submission, including an empty mapping. Extra badges accept plain strings (gray) or arrays with a `label` and an optional Filament `color`. Paired configuration methods accept named `source` and `dest` arguments, including closures. An omitted side uses its default value: an empty array for options, types, and badges, or Source / Destination for headings. Each call replaces both sides.
+
+Configuration is trusted developer code. Use unique, non-empty identifiers within each list, and refer to configured destination identifiers in `requiredTargets()` and `multiple()`. Submitted mapping state is validated separately.
+
+Connect fields by clicking a source and a destination in either order, using their cards or ports. Escape cancels the current selection. Both lists support search and an unmapped filter, with keyboard selection and dark mode.
+
+The service provider registers the Blade views and Alpine/CSS assets. The mapping field works without registering `FerryPlugin` or publishing the connection migrations. Run `php artisan filament:assets` after installation or after changing its assets. JavaScript and CSS are distributed as source files and require no package build or npm dependencies. Styles load only when the field is rendered.
+
+Add the package views to your Filament custom theme so Tailwind generates the template utilities, then rebuild the application theme:
+
+```css
+@source '../../../../vendor/phpinnacle/ferry/resources/views/**/*.blade.php';
+```
+
+The path above assumes the theme lives at `resources/css/filament/admin/theme.css`; adjust it for other locations.
+
 ## Testing
 
 ```bash
 composer test
+npm test
 ```
 
 ## Changelog and license

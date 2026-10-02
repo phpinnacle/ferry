@@ -1,0 +1,151 @@
+.field-mapping-canvas {
+    min-width: 560px;
+}
+
+.field-mapping-row {
+    z-index: 1;
+    transition: border-color 120ms, background-color 120ms;
+}
+
+.field-mapping-row.is-mapped {
+    border-color: oklch(91% 0.096 180.426);
+}
+
+.field-mapping-row.is-selected {
+    border-color: var(--primary-500);
+    background: var(--primary-50);
+    box-shadow: 0 0 0 2px color-mix(in oklab, var(--primary-500) 20%, transparent);
+}
+
+.field-mapping-row.is-required-missing {
+    border-color: oklch(82.8% 0.189 84.429);
+}
+
+.field-mapping-row.is-incompatible {
+    opacity: 0.45;
+}
+
+.field-mapping-row.is-incompatible .field-mapping-port {
+    cursor: not-allowed;
+}
+
+.field-mapping-row.has-type-conflict {
+    border-color: var(--danger-500);
+}
+
+.field-mapping-port {
+    position: absolute;
+    top: 50%;
+    z-index: 10;
+    display: flex;
+    width: 2rem;
+    height: 2rem;
+    transform: translateY(-50%);
+    align-items: center;
+    justify-content: center;
+    border-radius: 9999px;
+    cursor: pointer;
+}
+
+.field-mapping-port.is-left {
+    right: -1rem;
+}
+
+.field-mapping-port.is-right {
+    left: -1rem;
+}
+
+.field-mapping-port::after {
+    content: '';
+    width: 0.875rem;
+    height: 0.875rem;
+    border: 2px solid var(--gray-400);
+    border-radius: 9999px;
+    background: white;
+}
+
+.is-mapped .field-mapping-port::after {
+    border-color: oklch(60% 0.118 184.704);
+    background: oklch(60% 0.118 184.704);
+}
+
+.is-selected .field-mapping-port::after {
+    border-color: var(--primary-500);
+    background: var(--primary-500);
+}
+
+.field-mapping-port:focus-visible {
+    outline: 2px solid var(--primary-500);
+    outline-offset: 2px;
+}
+
+.field-mapping-port:disabled {
+    cursor: default;
+}
+
+.field-mapping-lines {
+    pointer-events: none;
+    overflow: visible;
+}
+
+.field-mapping-line {
+    stroke: oklch(60% 0.118 184.704);
+    fill: none;
+    stroke-width: 2;
+}
+
+.field-mapping-hit {
+    fill: none;
+    stroke: transparent;
+    stroke-width: 14;
+    pointer-events: stroke;
+    cursor: pointer;
+}
+
+.field-mapping-hit:hover,
+.field-mapping-hit:focus-visible {
+    stroke: color-mix(in oklab, oklch(70.4% 0.14 182.503) 20%, transparent);
+    outline: none;
+}
+
+.dark .field-mapping-row.is-mapped {
+    border-color: oklch(43.7% 0.078 188.216);
+}
+
+.dark .field-mapping-row.is-selected {
+    border-color: var(--primary-500);
+    background: color-mix(in oklab, var(--primary-500) 10%, transparent);
+}
+
+.dark .field-mapping-row.is-required-missing {
+    border-color: oklch(66.6% 0.179 58.318);
+}
+
+.dark .field-mapping-row.has-type-conflict {
+    border-color: var(--danger-400);
+}
+
+.dark .field-mapping-port::after {
+    border-color: var(--gray-500);
+    background: var(--gray-900);
+}
+
+.dark .is-mapped .field-mapping-port::after {
+    border-color: oklch(77.7% 0.152 181.912);
+    background: oklch(77.7% 0.152 181.912);
+}
+
+.dark .is-selected .field-mapping-port::after {
+    border-color: var(--primary-500);
+    background: var(--primary-500);
+}
+
+.dark .field-mapping-line {
+    stroke: oklch(77.7% 0.152 181.912);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .field-mapping-row {
+        transition: none;
+    }
+}
