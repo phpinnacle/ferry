@@ -11,6 +11,7 @@ Ferry adds a data source connections section to the admin panel: administrators 
 - Queued structure preparation built on `phpinnacle/rosetta`, storing the semantic 1C metadata as `ConnectionMetadata` records.
 - Filament `ConnectionResource` with create/edit/list pages, "Test connection" and "Fetch structure" actions, a structure status badge and driver-based default port suggestion.
 - Reusable `FieldMapping` form field with click-to-connect lines, search, type checks, multiple destinations, and inverse mapping.
+- `FieldBinding` form field that binds configured sources to strings or custom Filament schemas.
 - Policy-backed connection management (`ConnectionPolicy`), custom database connection and optional tenancy.
 
 ## Installation
@@ -104,6 +105,47 @@ Add the package views to your Filament custom theme so Tailwind generates the te
 ```
 
 The path above assumes the theme lives at `resources/css/filament/admin/theme.css`; adjust it for other locations.
+
+## Field binding
+
+`FieldBinding` displays configured sources beside their binding editors, with source metadata, search, an unbound filter, and dark mode. Click **Bind** to activate a source and initialize its editor defaults, or **Unbind** to remove it. Unbound sources are omitted from the submitted state. Disabled fields disable both actions and their child inputs.
+
+Use `simple()` with a single Filament field to store source identifiers mapped to non-empty strings:
+
+```php
+use Filament\Forms\Components\TextInput;
+use PHPinnacle\Ferry\Forms\FieldBinding;
+
+FieldBinding::make('bindings')
+    ->options(['name' => 'Customer name', 'email' => 'Email address'])
+    ->simple(TextInput::make('destination')->required());
+
+// ['name' => 'customer.name', 'email' => 'contact.email']
+```
+
+Use `schema()` to store each binding as an associative array whose keys and values are defined by its child components:
+
+```php
+use Filament\Forms\Components\Select;
+
+FieldBinding::make('bindings')
+    ->options(['name', 'email'])
+    ->schema([
+        TextInput::make('destination')->required(),
+        Select::make('transform')->options([
+            'trim' => 'Trim',
+            'lowercase' => 'Lowercase',
+        ]),
+    ]);
+
+// ['name' => ['destination' => 'customer.name', 'transform' => 'trim']]
+```
+
+Choose `simple()` or `schema()` for a field. Both accept closures and use native Filament child schemas, including defaults, validation, reactive callbacks, relative state reads, and nested `Repeater` or `Builder` components. `destination` is an example field name, not a reserved key. Destination syntax, duplicate destinations, and transformation behavior belong to the consuming application; the component stores the configured data without interpreting paths or executing transformations.
+
+`options()` supports the same string lists, associative identifiers, and object metadata contracts as `FieldMapping`, including enum cases. It also accepts a closure. Source identifiers retain their literal identity, including numeric identifiers and dots. `labels(source: 'Source', dest: 'Binding')` sets the headings and accepts closures. Configuration is trusted developer code; source identifiers and binding shapes are validated on submission, while the child fields define the value validation.
+
+The component uses the package views and the on-demand mapping stylesheet. Include the package views in your custom theme and publish Filament assets as described above. Form state is hydrated into internal child schema state and dehydrated back to the source-keyed map when the parent schema is submitted.
 
 ## Testing
 

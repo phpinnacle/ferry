@@ -2,32 +2,18 @@
 
 namespace PHPinnacle\Ferry\Forms;
 
-use BackedEnum;
 use Closure;
 use Filament\Forms\Components\Field;
-use Filament\Support\Contracts\HasDescription;
-use Filament\Support\Contracts\HasIcon;
-use Filament\Support\Contracts\HasLabel;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Translation\PotentiallyTranslatedString;
-use Stringable;
-use UnitEnum;
+use PHPinnacle\Ferry\Forms\Concerns\HasMappingItems;
 
-/**
- * @phpstan-type MappingBadge array{label: string, color: string}
- * @phpstan-type MappingItem array{
- *     id: string,
- *     label: string|Htmlable,
- *     icon: string|BackedEnum|Htmlable|null,
- *     description: string|Htmlable|null,
- *     type: string|null,
- *     required: bool,
- *     badges: list<MappingBadge>
- * }
- */
+/** @phpstan-import-type MappingItem from HasMappingItems */
 // @mago-expect lint:too-many-properties
 class FieldMapping extends Field
 {
+    use HasMappingItems;
+
     protected string $view = 'phpinnacle-ferry::forms.field-mapping';
 
     /** @var array<array-key, string|object>|Closure(): array<array-key, string|object> */
@@ -268,56 +254,5 @@ class FieldMapping extends Field
                 $fail('Connect the required destination: ' . strip_tags($label) . '.')->translate();
             }
         }
-    }
-
-    /**
-     * @param  array<array-key, string|object>  $items
-     * @param  array<array-key, string>  $types
-     * @param  array<array-key, list<string|array{label: string, color?: string}>>  $badges
-     * @param  list<string>  $required
-     * @return list<MappingItem>
-     */
-    private function normalizeItems(array $items, array $types, array $badges, array $required = []): array
-    {
-        $isList = array_is_list($items);
-        $normalized = [];
-        foreach ($items as $key => $item) {
-            $id = (string) match (true) {
-                !$isList => $key,
-                is_string($item) => $item,
-                $item instanceof BackedEnum => $item->value,
-                $item instanceof UnitEnum => $item->name,
-                default => $key,
-            };
-
-            $itemBadges = [];
-
-            foreach ($badges[$id] ?? [] as $badge) {
-                $itemBadges[] = is_string($badge)
-                    ? ['label' => $badge, 'color' => 'gray']
-                    : [
-                        'label' => $badge['label'],
-                        'color' => $badge['color'] ?? 'gray',
-                    ];
-            }
-            $fallbackLabel = match (true) {
-                is_string($item) => $item,
-                $item instanceof UnitEnum => $item->name,
-                $item instanceof Stringable => (string) $item,
-                default => $id,
-            };
-
-            $normalized[] = [
-                'id' => $id,
-                'label' => $item instanceof HasLabel ? $item->getLabel() ?? $fallbackLabel : $fallbackLabel,
-                'icon' => $item instanceof HasIcon ? $item->getIcon() : null,
-                'description' => $item instanceof HasDescription ? $item->getDescription() : null,
-                'type' => $types[$id] ?? null,
-                'required' => in_array($id, $required, true),
-                'badges' => $itemBadges,
-            ];
-        }
-
-        return $normalized;
     }
 }
