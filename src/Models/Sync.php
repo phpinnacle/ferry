@@ -6,7 +6,6 @@ use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\HasOne;
 use PHPinnacle\Ferry\Casts\SchemaCast;
 use PHPinnacle\Ferry\Data\FieldMapping;
 use PHPinnacle\Ferry\Enums\DestinationType;
@@ -17,6 +16,7 @@ use PHPinnacle\Ferry\Observers\SyncTableObserver;
 
 /**
  * @property string $id
+ * @property string|null $connector_id
  * @property string $connection_id
  * @property string $name
  * @property string $code
@@ -84,9 +84,18 @@ class Sync extends Model
         $this->save();
     }
 
-    /** @return HasOne<Connector, $this> */
-    public function connector(): HasOne
+    public function recordConnector(Connector $connector): void
     {
-        return $this->hasOne(Connector::class, 'sync_id');
+        $this->connector()->associate($connector);
+
+        if ($this->isDirty('connector_id')) {
+            $this->saveQuietly();
+        }
+    }
+
+    /** @return BelongsTo<Connector, $this> */
+    public function connector(): BelongsTo
+    {
+        return $this->belongsTo(Connector::class, 'connector_id');
     }
 }

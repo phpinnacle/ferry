@@ -106,14 +106,8 @@ class EditSync extends EditRecord
             ]);
         }
 
-        if ($destination === null) {
-            /** @var array<string, string> $bindings */
-            $bindings = $data['schema'];
-        } else {
-            /** @var array<string, string> $mapping */
-            $mapping = $data['static_mapping'];
-            $bindings = array_flip($mapping);
-        }
+        /** @var array<string, string> $bindings */
+        $bindings = $data[$destination === null ? 'schema' : 'static_mapping'];
 
         $schema = $this->schemas->fromBindings($object, $bindings, $destination);
 
@@ -139,17 +133,8 @@ class EditSync extends EditRecord
     {
         /** @var list<array{source: string, column: string}> $schema */
         $schema = $data['schema'];
-        $bindings = array_column($schema, 'column', 'source');
-
-        /** @var Sync $record */
-        $record = $this->getRecord();
-
-        if ($record->destinationType() === DestinationType::Static) {
-            $data['static_mapping'] = array_flip($bindings);
-            $data['schema'] = [];
-        } else {
-            $data['schema'] = $bindings;
-        }
+        $data['schema'] = array_column($schema, 'column', 'source');
+        $data['static_mapping'] = $data['schema'];
 
         return $data;
     }

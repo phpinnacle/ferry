@@ -38,13 +38,11 @@ it('does not call the connector manager when deleting a synchronization that was
     expect(Connector::query()->count())->toBe(0);
 });
 
-it('deletes the sink connector when a previously activated synchronization is removed', function () {
+it('asks the connector manager to delete the sink when its synchronization is removed', function () {
     $sync = TestCase::makeSync([], [
         'status' => SyncStatus::Active,
     ]);
-    $sync
-        ->connector()
-        ->create(['name' => 'ferry-sink-' . $sync->code])
+    TestCase::makeConnector($sync, ['name' => 'ferry-sink-' . $sync->code])
         ->recordStatus(ConnectorStatus::Running);
 
     /** @var ConnectorManager&MockInterface $manager */
@@ -57,7 +55,7 @@ it('deletes the sink connector when a previously activated synchronization is re
 
     $sync->delete();
 
-    expect(Connector::query()->count())->toBe(0);
+    expect(Sync::query()->find($sync->id))->toBeNull();
 });
 
 it('does not call the connector manager when deleting a connection whose source connector was never created', function () {
@@ -72,11 +70,9 @@ it('does not call the connector manager when deleting a connection whose source 
     expect(Connector::query()->count())->toBe(0);
 });
 
-it('deletes the source connector when a connection with an active source connector is removed', function () {
+it('asks the connector manager to delete the source when its connection is removed', function () {
     $connection = TestCase::makeConnection();
-    $connection
-        ->connector()
-        ->create(['name' => 'ferry-source-' . $connection->code])
+    TestCase::makeConnector($connection, ['name' => 'ferry-source-' . $connection->code])
         ->recordStatus(ConnectorStatus::Running);
 
     /** @var ConnectorManager&MockInterface $manager */
@@ -89,12 +85,12 @@ it('deletes the source connector when a connection with an active source connect
 
     $connection->delete();
 
-    expect(Connector::query()->count())->toBe(0);
+    expect(Connection::query()->find($connection->id))->toBeNull();
 });
 
 it('refreshes an existing source connector after changing connection credentials', function () {
     $connection = TestCase::makeConnection();
-    $connection->connector()->create(['name' => 'ferry-source-' . $connection->code]);
+    TestCase::makeConnector($connection, ['name' => 'ferry-source-' . $connection->code]);
     $manager = Mockery::mock(ConnectorManager::class);
     $manager
         ->shouldReceive('refreshSource')
@@ -131,9 +127,7 @@ it('pauses the sink connector through the connector manager once it has been act
             new FieldMapping('title', 'title', new StringField(length: 100, fixed: false)),
         ],
     ], ['status' => SyncStatus::Active]);
-    $sync
-        ->connector()
-        ->create(['name' => 'ferry-sink-' . $sync->code])
+    TestCase::makeConnector($sync, ['name' => 'ferry-sink-' . $sync->code])
         ->recordStatus(ConnectorStatus::Running);
 
     /** @var ConnectorManager&MockInterface $manager */
@@ -145,4 +139,18 @@ it('pauses the sink connector through the connector manager once it has been act
     $this->app->instance(ConnectorManager::class, $manager);
 
     app(SyncReviewer::class)->review($connection);
+});
+
+it('removes local sink connectors when their connection cascades synchronization deletion', function () {
+    $sync = TestCase::makeSync();
+    $connection = $sync->connection;
+    TestCase::makeConnector($sync, ['name' => 'ferry-sink-' . $sync->code]);
+    $manager = Mockery::mock(ConnectorManager::class);
+    $manager->shouldNotReceive('delete');
+    $manager->shouldNotReceive('deleteSource');
+    $this->app->instance(ConnectorManager::class, $manager);
+
+    $connection->delete();
+
+    expect(Sync::query()->find($sync->id))->toBeNull()->and(Connector::query()->count())->toBe(0);
 });

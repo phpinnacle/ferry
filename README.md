@@ -85,7 +85,7 @@ A pause requested by an administrator and a pause caused by a broken mapping are
 
 ## Static destinations
 
-A synchronization writes either into a generated `{prefix}{code}` table (dynamic) or into a table the application already owns (static). Ferry knows nothing about those tables: the application describes each one with a `StaticDestination` implementation and registers it on the plugin.
+A synchronization writes either into a generated `{prefix}{code}` table (dynamic) or into a table the application already owns (static). Ferry knows nothing about those tables: the application describes each one with a `StaticDestination` implementation and registers it on the plugin. `StaticDestination` inherits Filament's `HasLabel` contract for its display label.
 
 ```php
 use PHPinnacle\Ferry\Contracts\StaticDestination;
@@ -139,11 +139,11 @@ $connectors->pause($sync);           // pause the sink connector while the sourc
 $connectors->restart($sync);         // restart the failed tasks of both connectors
 $connectors->delete($sync);          // delete the sink connector and rescope the source connector
 $connectors->refreshSource($record); // push the source configuration after a credential change
-$connectors->sinkStatus($sync);      // update the sink Connector record
-$connectors->sourceStatus($record);  // update the source Connector record
+$connectors->checkStatus($sync);   // update the sink Connector record
+$connectors->checkStatus($record); // update the source Connector record
 ```
 
-The `connector` relation on `Connection` and `Sync` each return a `Connector` model, or `null` before any configuration has been applied or status checked. The model stores the Kafka Connect `name`, `status`, `error`, `checked_at` and the last successfully applied `config`. Configuration is a JSON object exposed as `array<string, string>`; because it includes database credentials, Laravel encrypts it in a `text` column using `encrypted:array` and excludes it from model serialization. A status check does not change the stored configuration.
+Both `Connection` and `Sync` store a nullable `connector_id`; their `connector` relation returns a `Connector` model, or `null` before any configuration has been applied or status checked. The model stores the Kafka Connect `name`, `status`, `error`, `checked_at` and the last successfully applied `config`. Configuration is a JSON object exposed as `array<string, string>`; because it includes database credentials, Laravel encrypts it in a `text` column using `encrypted:array` and excludes it from model serialization. A status check does not change the stored configuration.
 
 A source connector failure concerns all synchronizations of its connection, while a sink connector failure concerns its synchronization alone. A connector that reports itself as running while one of its tasks has failed is recorded as failed together with the trace of that task, so a stalled transfer stays visible. Both states are shown as badges in the Filament tables and can be refreshed from there. Deleting a synchronization removes only its sink connector; the source connector is owned by the connection and is removed with it.
 

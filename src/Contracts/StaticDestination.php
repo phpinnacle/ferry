@@ -9,8 +9,6 @@ interface StaticDestination extends HasLabel
 {
     public function key(): string;
 
-    public function getLabel(): string;
-
     public function table(): string;
 
     public function primaryKey(): string;

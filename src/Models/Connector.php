@@ -4,13 +4,11 @@ namespace PHPinnacle\Ferry\Models;
 
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use PHPinnacle\Ferry\Enums\ConnectorStatus;
 
 /**
  * @property string $id
- * @property string|null $connection_id
- * @property string|null $sync_id
  * @property string $name
  * @property array<string, string>|null $config
  * @property ConnectorStatus|null $status
@@ -42,10 +40,10 @@ class Connector extends Model
         'config',
     ];
 
-    /** @return BelongsTo<Connection, $this> */
-    public function connection(): BelongsTo
+    /** @return HasOne<Connection, $this> */
+    public function connection(): HasOne
     {
-        return $this->belongsTo(Connection::class, 'connection_id');
+        return $this->hasOne(Connection::class, 'connector_id');
     }
 
     /** @param array<string, string> $config */
@@ -63,9 +61,9 @@ class Connector extends Model
         $this->save();
     }
 
-    /** @return BelongsTo<Sync, $this> */
-    public function sync(): BelongsTo
+    /** @return HasOne<Sync, $this> */
+    public function sync(): HasOne
     {
-        return $this->belongsTo(Sync::class, 'sync_id');
+        return $this->hasOne(Sync::class, 'connector_id');
     }
 }

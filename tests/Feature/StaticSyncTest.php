@@ -1,9 +1,13 @@
 <?php
 
+use Filament\Schemas\Concerns\InteractsWithSchemas;
+use Filament\Schemas\Contracts\HasSchemas;
+use Filament\Schemas\Schema as FormSchema;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
+use Livewire\Component as LivewireComponent;
 use PHPinnacle\Ferry\Data\FieldMapping;
 use PHPinnacle\Ferry\Enums\DestinationType;
 use PHPinnacle\Ferry\Enums\StructureStatus;
@@ -11,6 +15,7 @@ use PHPinnacle\Ferry\Models\ConnectionMetadata;
 use PHPinnacle\Ferry\Models\Sync;
 use PHPinnacle\Ferry\Resources\Syncs\Pages\CreateSync;
 use PHPinnacle\Ferry\Resources\Syncs\Pages\EditSync;
+use PHPinnacle\Ferry\Resources\Syncs\Schemas\SyncForm;
 use PHPinnacle\Ferry\Services\StaticDestinationRegistry;
 use PHPinnacle\Ferry\Services\SyncDestinationResolver;
 use PHPinnacle\Ferry\Services\SyncReviewer;
@@ -59,11 +64,7 @@ it('creates and edits a synchronization through its page handlers', function (?s
         'code' => 'customers_sync',
         'source' => 'object-0',
         'static_destination' => $destination,
-        ...(
-            $destination === null
-                ? ['schema' => ['_description' => 'name', '_code' => 'tax_number']]
-                : ['static_mapping' => ['name' => '_description', 'tax_number' => '_code']]
-        ),
+        $destination === null ? 'schema' : 'static_mapping' => ['_description' => 'name', '_code' => 'tax_number'],
     ];
 
     $create = new CreateSync;
@@ -72,14 +73,37 @@ it('creates and edits a synchronization through its page handlers', function (?s
 
     $edit = new EditSync;
     $edit->boot(app(SyncSchemaBuilder::class), app(SyncReviewer::class), app(SyncDestinationResolver::class));
-    new ReflectionMethod($edit, 'handleRecordUpdate')->invoke($edit, $sync, [...$data, 'name' => 'Renamed']);
+    $livewire = new class extends LivewireComponent implements HasSchemas {
+        use InteractsWithSchemas;
+
+        /** @var array<string, mixed> */
+        public array $data = [];
+    };
+    $livewire->setId('sync-mapping-round-trip');
+    $livewire->setName('sync-mapping-round-trip');
+    $form = SyncForm::configure(FormSchema::make($livewire)->statePath('data')->record($sync)->operation('edit'));
+    $filled = new ReflectionMethod($edit, 'mutateFormDataBeforeFill')->invoke($edit, $sync->toArray());
+    $form->fill($filled);
+    $livewire->data['name'] = 'Renamed';
+
+    if ($destination !== null) {
+        expect($form->getComponent('static_mapping')->getState())
+            ->toBe(['name' => '_description', 'tax_number' => '_code']);
+    }
+
+    $dehydrated = $form->getState();
+    expect($dehydrated[$destination === null ? 'schema' : 'static_mapping'])->toEqual([
+        '_description' => 'name',
+        '_code' => 'tax_number',
+    ]);
+    new ReflectionMethod($edit, 'handleRecordUpdate')->invoke($edit, $sync, $dehydrated);
 
     expect($sync->fresh()->name)
         ->toBe('Renamed')
         ->and($sync->fresh()->static_destination)
         ->toBe($destination)
         ->and(array_column($sync->fresh()->schema, 'column', 'source'))
-        ->toBe(['_description' => 'name', '_code' => 'tax_number'])
+        ->toEqual(['_description' => 'name', '_code' => 'tax_number'])
         ->and(Schema::hasTable('ferry_sync_customers_sync'))
         ->toBe($destination === null);
 })->with(['dynamic' => [null], 'static' => ['customers']]);

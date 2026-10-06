@@ -1,27 +1,28 @@
 <?php
 
-namespace PHPinnacle\Ferry\Resources\Connections\Actions;
+namespace PHPinnacle\Ferry\Resources\Actions;
 
 use Filament\Actions\Action;
 use Filament\Notifications\Notification;
 use PHPinnacle\Ferry\Models\Connection;
+use PHPinnacle\Ferry\Models\Sync;
 use PHPinnacle\Ferry\Services\Connectors\ConnectorManager;
 use Throwable;
 
-class CheckSourceStatusAction
+class CheckConnectorStatusAction
 {
-    public static function table(): Action
+    public static function table(string $name, string $label): Action
     {
-        return Action::make('check_source_status')
-            ->label(__('phpinnacle-ferry::resources.connection.actions.check_source_status'))
+        return Action::make($name)
+            ->label($label)
             ->icon('phosphor-arrows-clockwise')
             ->iconButton()
-            ->action(function (ConnectorManager $manager, Connection $record) {
+            ->action(function (ConnectorManager $manager, Connection|Sync $record) {
                 try {
-                    $manager->sourceStatus($record);
+                    $manager->checkStatus($record);
 
                     Notification::make()
-                        ->title($record->fresh()?->connector?->status?->getLabel())
+                        ->title($record->connector?->status?->getLabel())
                         ->send();
                 } catch (Throwable $exception) {
                     Notification::make()

@@ -52,14 +52,8 @@ class CreateSync extends CreateRecord
             $staticDestination = null;
         }
 
-        if ($staticDestination === null) {
-            /** @var array<string, string> $bindings */
-            $bindings = $data['schema'];
-        } else {
-            /** @var array<string, string> $mapping */
-            $mapping = $data['static_mapping'];
-            $bindings = array_flip($mapping);
-        }
+        /** @var array<string, string> $bindings */
+        $bindings = $data[$staticDestination === null ? 'schema' : 'static_mapping'];
 
         $schema = $this->schemas->fromBindings(
             $object,

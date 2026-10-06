@@ -289,3 +289,36 @@ it('refuses to build a sink for an unregistered static destination', function ()
             'destination' => 'customers',
         ]));
 });
+
+it('keeps configured sink hosts and environment ports while applying the default port when absent', function (
+    ?string $host,
+    int|string|null $port,
+    string $expectedHost,
+    int $expectedPort,
+) use ($makeObject) {
+    $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
+    $makeObject($connection);
+    $sync = TestCase::makeSync(['connection_id' => $connection->id]);
+    config(['phpinnacle-ferry.target_host' => $host]);
+
+    if ($port === null) {
+        $target = config('database.connections.sqlite');
+        unset($target['port']);
+        config(['database.connections.sqlite' => $target]);
+    } else {
+        config(['database.connections.sqlite.port' => $port]);
+    }
+
+    $builder = new SinkConnectorConfigBuilder(
+        new SourceConnectorConfigBuilder,
+        new SyncDestinationResolver(new StaticDestinationRegistry),
+    );
+
+    expect($builder->build($sync)['connection.url'])
+        ->toBe(sprintf('jdbc:postgresql://%s:%d/:memory:', $expectedHost, $expectedPort));
+})->with([
+    'environment port' => [null, '5544', 'db.internal', 5544],
+    'host override' => ['db.kafka.internal', 5544, 'db.kafka.internal', 5544],
+    'empty host override' => ['', 5432, 'db.internal', 5432],
+    'default port' => [null, null, 'db.internal', 5432],
+]);

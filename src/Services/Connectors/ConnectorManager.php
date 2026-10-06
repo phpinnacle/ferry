@@ -39,7 +39,7 @@ class ConnectorManager
         $config = $this->pushSource($connection, $this->syncsWith($connection, $sync));
 
         $this->pushConfig($sink, $this->sink->build($sync));
-        $sync->setRelation('connector', $sink);
+        $sync->recordConnector($sink);
 
         if ($previousColumns !== null) {
             $this->signaler->requestSnapshot($connection, $this->newlyScopedTables($previousColumns, $config));
@@ -50,8 +50,8 @@ class ConnectorManager
 
         $sync->activate();
 
-        $this->sourceStatus($connection);
-        $this->sinkStatus($sync);
+        $this->checkStatus($connection);
+        $this->checkStatus($sync);
     }
 
     public function delete(Sync $sync): void
@@ -59,14 +59,14 @@ class ConnectorManager
         $connection = $sync->connection;
 
         $this->deleteConnector($this->connector($sync));
-        $sync->setRelation('connector', null);
+        $sync->connector()->dissociate();
         $this->pushSource($connection, $this->syncsWithout($connection, $sync));
     }
 
     public function deleteSource(Connection $connection): void
     {
         $this->deleteConnector($this->connector($connection));
-        $connection->setRelation('connector', null);
+        $connection->connector()->dissociate();
     }
 
     public function pause(Sync $sync, bool $manually = true): void
@@ -86,7 +86,7 @@ class ConnectorManager
         $sync->pause($manually);
 
         $this->pushSource($connection, $connection->trackedSyncs());
-        $this->sinkStatus($sync);
+        $this->checkStatus($sync);
     }
 
     public function refreshSource(Connection $connection): void
@@ -94,7 +94,7 @@ class ConnectorManager
         $this->assertPgsqlDriver($connection);
 
         $this->pushSource($connection, $connection->trackedSyncs());
-        $this->sourceStatus($connection);
+        $this->checkStatus($connection);
     }
 
     public function restart(Sync $sync): void
@@ -109,22 +109,15 @@ class ConnectorManager
         );
         $this->client->connector($this->connector($sync)->name)->restart(includeTasks: true, onlyFailed: true);
 
-        $this->sourceStatus($connection);
-        $this->sinkStatus($sync);
+        $this->checkStatus($connection);
+        $this->checkStatus($sync);
     }
 
-    public function sinkStatus(Sync $sync): void
+    public function checkStatus(Connection|Sync $owner): void
     {
-        $connector = $this->connector($sync);
+        $connector = $this->connector($owner);
         $this->refreshStatus($connector);
-        $sync->setRelation('connector', $connector);
-    }
-
-    public function sourceStatus(Connection $connection): void
-    {
-        $connector = $this->connector($connection);
-        $this->refreshStatus($connector);
-        $connection->setRelation('connector', $connector);
+        $owner->recordConnector($connector);
     }
 
     private function deleteConnector(Connector $connector): void
@@ -171,7 +164,7 @@ class ConnectorManager
         $config = $this->source->build($connection, $syncs);
 
         $this->pushConfig($record, $config);
-        $connection->setRelation('connector', $record);
+        $connection->recordConnector($record);
 
         if ($syncs->isEmpty()) {
             $this->client->connector($record->name)->pause();
@@ -265,11 +258,11 @@ class ConnectorManager
 
     private function connector(Connection|Sync $owner): Connector
     {
-        return $owner->connector ?? $owner
-            ->connector()
-            ->make([
+        return (
+            $owner->connector ?? new Connector([
                 'name' => $owner instanceof Connection ? $this->source->name($owner) : $this->sink->name($owner),
-            ]);
+            ])
+        );
     }
 
     /** @return Collection<int, Sync> */

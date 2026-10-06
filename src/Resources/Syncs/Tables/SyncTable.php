@@ -12,8 +12,8 @@ use PHPinnacle\Common\Tables\CreatedColumn;
 use PHPinnacle\Common\Tables\UpdatedColumn;
 use PHPinnacle\Ferry\Enums\DestinationType;
 use PHPinnacle\Ferry\Models\Sync;
+use PHPinnacle\Ferry\Resources\Actions\CheckConnectorStatusAction;
 use PHPinnacle\Ferry\Resources\Syncs\Actions\ActivateSyncAction;
-use PHPinnacle\Ferry\Resources\Syncs\Actions\CheckSinkStatusAction;
 use PHPinnacle\Ferry\Resources\Syncs\Actions\PauseSyncAction;
 use PHPinnacle\Ferry\Resources\Syncs\Actions\RestartSyncAction;
 use PHPinnacle\Ferry\Resources\Syncs\SyncResource;
@@ -68,7 +68,10 @@ class SyncTable
                 ActivateSyncAction::table(),
                 PauseSyncAction::table(),
                 RestartSyncAction::table(),
-                CheckSinkStatusAction::table(),
+                CheckConnectorStatusAction::table(
+                    'check_sink_status',
+                    __('phpinnacle-ferry::resources.sync.actions.check_status'),
+                ),
                 EditAction::make()
                     ->label(__('phpinnacle-ferry::resources.sync.actions.update'))
                     ->iconButton(),

@@ -487,13 +487,11 @@ it('keeps the last applied configuration when Kafka Connect rejects an update', 
     $connection = $sync->connection;
     $previousSource = ['column.include.list' => 'public._reference0._idrref'];
     $previousSink = ['connection.password' => 'old-password'];
-    $source = $connection
-        ->connector()
-        ->create([
-            'name' => 'ferry-source-' . $connection->code,
-            'config' => $previousSource,
-        ]);
-    $sink = $sync->connector()->create([
+    $source = TestCase::makeConnector($connection, [
+        'name' => 'ferry-source-' . $connection->code,
+        'config' => $previousSource,
+    ]);
+    $sink = TestCase::makeConnector($sync, [
         'name' => 'ferry-sink-' . $sync->code,
         'config' => $previousSink,
     ]);
@@ -528,8 +526,8 @@ it('does not create a connector record when its first configuration is rejected'
 
 it('deletes the sink connector and refreshes the shared source connector config', function () {
     $sync = ferry_sync();
-    $source = $sync->connection->connector()->create(['name' => 'ferry-source-test-connection']);
-    $sink = $sync->connector()->create(['name' => 'ferry-sink-test-sync']);
+    $source = TestCase::makeConnector($sync->connection, ['name' => 'ferry-source-test-connection']);
+    $sink = TestCase::makeConnector($sync, ['name' => 'ferry-sink-test-sync']);
     $http = new RecordingConnectClient(new Response(204), connector_response(), new Response(202));
 
     ferry_connector_manager($http)->delete($sync);
@@ -548,7 +546,7 @@ it('deletes the sink connector and refreshes the shared source connector config'
 
 it('removes the local source connector after deleting it from Kafka Connect', function () {
     $connection = TestCase::makeConnection();
-    $connection->connector()->create(['name' => 'ferry-source-test-connection']);
+    TestCase::makeConnector($connection, ['name' => 'ferry-source-test-connection']);
     $http = new RecordingConnectClient(new Response(204));
 
     ferry_connector_manager($http)->deleteSource($connection);
@@ -558,6 +556,31 @@ it('removes the local source connector after deleting it from Kafka Connect', fu
         ->and($http->routes())
         ->toBe([['DELETE', '/connectors/ferry-source-test-connection']]);
 });
+
+it('removes connector records when their owners are deleted', function (string $role) {
+    $sync = ferry_sync();
+    $connection = $sync->connection;
+    $source = TestCase::makeConnector($connection, ['name' => 'ferry-source-test-connection']);
+    $sink = TestCase::makeConnector($sync, ['name' => 'ferry-sink-test-sync']);
+    $http = new RecordingConnectClient(
+        ...$role === 'source'
+            ? [new Response(204)]
+            : [new Response(204), connector_response(), new Response(202)],
+    );
+    $this->app->instance(ConnectorManager::class, ferry_connector_manager($http));
+
+    $owner = $role === 'source' ? $connection : $sync;
+    $owner->delete();
+
+    expect($owner->fresh())
+        ->toBeNull()
+        ->and(Connector::query()->find($sink->id))
+        ->toBeNull()
+        ->and(Connector::query()->count())
+        ->toBe($role === 'source' ? 0 : 1)
+        ->and($http->routes()[0])
+        ->toBe(['DELETE', '/connectors/' . ($role === 'source' ? $source->name : $sink->name)]);
+})->with(['source', 'sink']);
 
 it('ignores an already missing connector when pausing', function () {
     $sync = ferry_sync();
@@ -602,7 +625,7 @@ it('records the running source connector status', function () {
         'tasks' => [],
     ], JSON_THROW_ON_ERROR)));
 
-    ferry_connector_manager($http)->sourceStatus($connection);
+    ferry_connector_manager($http)->checkStatus($connection);
 
     expect($connection->fresh()->connector?->status)
         ->toBe(ConnectorStatus::Running)
@@ -618,7 +641,7 @@ it('records the failed sink connector status with its trace', function () {
         'tasks' => [],
     ], JSON_THROW_ON_ERROR)));
 
-    ferry_connector_manager($http)->sinkStatus($sync);
+    ferry_connector_manager($http)->checkStatus($sync);
 
     expect($sync->fresh()->connector?->status)
         ->toBe(ConnectorStatus::Failed)
@@ -636,7 +659,7 @@ it('reports a failed task even when the connector itself reports running', funct
         ],
     ], JSON_THROW_ON_ERROR)));
 
-    ferry_connector_manager($http)->sinkStatus($sync);
+    ferry_connector_manager($http)->checkStatus($sync);
 
     expect($sync->fresh()->connector?->status)
         ->toBe(ConnectorStatus::Failed)

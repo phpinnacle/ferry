@@ -14,13 +14,17 @@ class ConnectionObserver
 
     public function deleting(Connection $connection): void
     {
-        $connection->load('connector');
+        $connection->load('syncs.connector');
     }
 
     public function deleted(Connection $connection): void
     {
         if ($connection->connector !== null) {
             app(ConnectorManager::class)->deleteSource($connection);
+        }
+
+        foreach ($connection->syncs as $sync) {
+            $sync->connector?->delete();
         }
     }
 

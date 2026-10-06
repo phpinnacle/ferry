@@ -54,9 +54,7 @@ it('does not resume a synchronization paused manually even when its mapping is v
         'status' => SyncStatus::Pause,
         'is_paused' => true,
     ]);
-    $sync
-        ->connector()
-        ->create(['name' => 'ferry-sink-' . $sync->code])
+    TestCase::makeConnector($sync, ['name' => 'ferry-sink-' . $sync->code])
         ->recordStatus(ConnectorStatus::Paused);
 
     expect(app(SyncReviewer::class)->shouldResume($sync, $object))->toBeFalse();
@@ -74,7 +72,7 @@ it('resumes a synchronization automatically paused for a broken mapping once it 
         'status' => SyncStatus::Pause,
         'is_paused' => false,
     ]);
-    $connector = $sync->connector()->create([
+    $connector = TestCase::makeConnector($sync, [
         'name' => 'ferry-sink-' . $sync->code,
         'config' => ['connector.class' => 'io.confluent.connect.jdbc.JdbcSinkConnector'],
     ]);
@@ -157,9 +155,7 @@ it('does not resume a synchronization while its static destination is still gone
         'status' => SyncStatus::Pause,
         'is_paused' => false,
     ])->saveQuietly();
-    $sync
-        ->connector()
-        ->create(['name' => 'ferry-sink-' . $sync->code])
+    TestCase::makeConnector($sync, ['name' => 'ferry-sink-' . $sync->code])
         ->recordStatus(ConnectorStatus::Paused);
 
     expect(app(SyncReviewer::class)->shouldResume($sync->fresh(), $object))->toBeFalse();

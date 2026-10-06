@@ -209,6 +209,8 @@ class SyncForm
                     )
                     ->columnSpanFull(),
                 FieldMapping::make('static_mapping')
+                    ->formatStateUsing(self::flipMapping(...))
+                    ->dehydrateStateUsing(self::flipMapping(...))
                     ->label(__('phpinnacle-ferry::resources.sync.fields.schema'))
                     ->visible(fn (Get $get) => self::staticKey($get) !== null)
                     ->required()
@@ -244,6 +246,15 @@ class SyncForm
                     )
                     ->columnSpanFull(),
             ]);
+    }
+
+    /**
+     * @param array<string, string>|null $state
+     * @return array<string, string>
+     */
+    private static function flipMapping(?array $state): array
+    {
+        return array_flip($state ?? []);
     }
 
     /** @return list<string> */
@@ -393,7 +404,7 @@ class SyncForm
         };
     }
 
-    /** @return array<string, string> */
+    /** @return array<string, string|\Illuminate\Contracts\Support\Htmlable|null> */
     private static function destinationOptions(StaticDestinationRegistry $destinations): array
     {
         return array_map(

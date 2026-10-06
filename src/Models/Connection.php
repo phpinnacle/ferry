@@ -8,8 +8,8 @@ use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Facades\Config;
 use PHPinnacle\Ferry\Casts\StorageMapCast;
 use PHPinnacle\Ferry\Casts\TypeMapCast;
@@ -25,6 +25,7 @@ use PHPinnacle\Rosetta\TypeMap;
 
 /**
  * @property string $id
+ * @property string|null $connector_id
  * @property string $name
  * @property string $code
  * @property Driver $driver
@@ -277,10 +278,19 @@ class Connection extends Model implements HasLabel
         return $this->hasMany(Sync::class, 'connection_id');
     }
 
-    /** @return HasOne<Connector, $this> */
-    public function connector(): HasOne
+    public function recordConnector(Connector $connector): void
     {
-        return $this->hasOne(Connector::class, 'connection_id');
+        $this->connector()->associate($connector);
+
+        if ($this->isDirty('connector_id')) {
+            $this->saveQuietly();
+        }
+    }
+
+    /** @return BelongsTo<Connector, $this> */
+    public function connector(): BelongsTo
+    {
+        return $this->belongsTo(Connector::class, 'connector_id');
     }
 
     public function toggleActive(): void

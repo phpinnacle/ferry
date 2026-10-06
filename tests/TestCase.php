@@ -5,6 +5,7 @@ namespace PHPinnacle\Ferry\Tests;
 use Illuminate\Support\Facades\DB;
 use PHPinnacle\Ferry\Data\FieldMapping;
 use PHPinnacle\Ferry\Models\Connection;
+use PHPinnacle\Ferry\Models\Connector;
 use PHPinnacle\Ferry\Models\Sync;
 use PHPinnacle\Rosetta\Enums\FieldType;
 use PHPinnacle\Rosetta\Fields\ScalarField;
@@ -63,6 +64,15 @@ abstract class TestCase extends ApplicationTestCase
         }
 
         return $sync;
+    }
+
+    /** @param array<string, mixed> $attributes */
+    public static function makeConnector(Connection|Sync $owner, array $attributes): Connector
+    {
+        $connector = Connector::create($attributes);
+        $owner->recordConnector($connector);
+
+        return $connector;
     }
 
     protected function setUp(): void

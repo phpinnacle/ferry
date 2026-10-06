@@ -125,19 +125,23 @@ class SinkConnectorConfigBuilder
     /** @return array{url: string, username: string, password: string} */
     private function targetConnection(?StaticDestination $destination): array
     {
-        $name = $destination?->connection() ?? Config::get('phpinnacle-ferry.connection');
-        $name = is_string($name) ? $name : Config::string('database.default');
-
+        /** @var string $name */
+        $name =
+            $destination?->connection() ?? Config::get('phpinnacle-ferry.connection') ?? Config::string(
+                'database.default',
+            );
+        /** @var string|null $targetHost */
         $targetHost = Config::get('phpinnacle-ferry.target_host');
-        $host = is_string($targetHost) && $targetHost !== ''
-            ? $targetHost
-            : Config::string(sprintf('database.connections.%s.host', $name));
-        $rawPort = Config::get(sprintf('database.connections.%s.port', $name), 5432);
-        $port = is_numeric($rawPort) ? (int) $rawPort : 5432;
+        $host =
+            $targetHost !== null && $targetHost !== ''
+                ? $targetHost
+                : Config::string(sprintf('database.connections.%s.host', $name));
+        /** @var int|numeric-string $port */
+        $port = Config::get(sprintf('database.connections.%s.port', $name), 5432);
         $database = Config::string(sprintf('database.connections.%s.database', $name));
 
         return [
-            'url' => sprintf('jdbc:postgresql://%s:%d/%s', $host, $port, $database),
+            'url' => sprintf('jdbc:postgresql://%s:%d/%s', $host, (int) $port, $database),
             'username' => Config::string(sprintf('database.connections.%s.username', $name), ''),
             'password' => Config::string(sprintf('database.connections.%s.password', $name), ''),
         ];

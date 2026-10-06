@@ -231,7 +231,7 @@ it('validates the static mapping against the declared destination fields', funct
     );
 
     if ($valid) {
-        expect($schema->getState()['static_mapping'])->toBe($mapping);
+        expect($schema->getState()['static_mapping'])->toBe(array_flip($mapping));
 
         return;
     }
