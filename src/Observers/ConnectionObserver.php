@@ -12,9 +12,14 @@ class ConnectionObserver
         private readonly SyncReviewer $syncs,
     ) {}
 
+    public function deleting(Connection $connection): void
+    {
+        $connection->load('connector');
+    }
+
     public function deleted(Connection $connection): void
     {
-        if ($connection->source_connector_status !== null) {
+        if ($connection->connector !== null) {
             app(ConnectorManager::class)->deleteSource($connection);
         }
     }
@@ -31,7 +36,7 @@ class ConnectionObserver
 
         $connection->handleCredentialsChanged();
 
-        if ($connection->source_connector_status !== null) {
+        if ($connection->connector !== null) {
             app(ConnectorManager::class)->refreshSource($connection);
         }
     }

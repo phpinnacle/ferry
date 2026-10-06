@@ -23,7 +23,7 @@ class ActivateSyncAction
             ->visible(
                 fn (Sync $record) => (
                     $record->status !== SyncStatus::Active
-                    || $record->sink_connector_status !== ConnectorStatus::Running
+                    || $record->connector?->status !== ConnectorStatus::Running
                 ),
             )
             ->action(function (ConnectorManager $manager, Sync $record) {

@@ -6,9 +6,9 @@ use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use PHPinnacle\Ferry\Casts\SchemaCast;
 use PHPinnacle\Ferry\Data\FieldMapping;
-use PHPinnacle\Ferry\Enums\ConnectorStatus;
 use PHPinnacle\Ferry\Enums\DestinationType;
 use PHPinnacle\Ferry\Enums\SyncStatus;
 use PHPinnacle\Ferry\Observers\SyncConnectorObserver;
@@ -26,12 +26,10 @@ use PHPinnacle\Ferry\Observers\SyncTableObserver;
  * @property string $source
  * @property string $destination
  * @property list<FieldMapping> $schema
- * @property ConnectorStatus|null $sink_connector_status
- * @property string|null $sink_connector_error
- * @property CarbonImmutable|null $sink_connector_checked_at
  * @property CarbonImmutable $created_at
  * @property CarbonImmutable $updated_at
  * @property-read Connection $connection
+ * @property-read Connector|null $connector
  */
 #[ObservedBy([SyncConnectorObserver::class, SyncDestinationObserver::class, SyncTableObserver::class])]
 class Sync extends Model
@@ -48,8 +46,6 @@ class Sync extends Model
         'status' => SyncStatus::class,
         'is_paused' => 'bool',
         'schema' => SchemaCast::class,
-        'sink_connector_status' => ConnectorStatus::class,
-        'sink_connector_checked_at' => 'immutable_datetime',
     ];
 
     protected $fillable = [
@@ -88,11 +84,9 @@ class Sync extends Model
         $this->save();
     }
 
-    public function recordSinkConnectorStatus(ConnectorStatus $status, ?string $error = null): void
+    /** @return HasOne<Connector, $this> */
+    public function connector(): HasOne
     {
-        $this->sink_connector_status = $status;
-        $this->sink_connector_error = $error;
-        $this->sink_connector_checked_at = CarbonImmutable::now();
-        $this->save();
+        return $this->hasOne(Connector::class, 'sync_id');
     }
 }

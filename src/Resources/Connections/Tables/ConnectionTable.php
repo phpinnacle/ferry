@@ -52,7 +52,7 @@ class ConnectionTable
                     ->label(__('phpinnacle-ferry::resources.connection.fields.structure'))
                     ->badge()
                     ->sortable(),
-                TextColumn::make('source_connector_status')
+                TextColumn::make('connector.status')
                     ->label(__('phpinnacle-ferry::resources.connection.fields.source_connector_status'))
                     ->badge()
                     ->sortable(),

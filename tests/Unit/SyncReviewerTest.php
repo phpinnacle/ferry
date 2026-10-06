@@ -53,13 +53,16 @@ it('does not resume a synchronization paused manually even when its mapping is v
     ], [
         'status' => SyncStatus::Pause,
         'is_paused' => true,
-        'sink_connector_status' => ConnectorStatus::Paused,
     ]);
+    $sync
+        ->connector()
+        ->create(['name' => 'ferry-sink-' . $sync->code])
+        ->recordStatus(ConnectorStatus::Paused);
 
     expect(app(SyncReviewer::class)->shouldResume($sync, $object))->toBeFalse();
 });
 
-it('resumes a synchronization automatically paused for a broken mapping once it becomes valid again', function () {
+it('resumes a synchronization automatically paused for a broken mapping once it becomes valid again', function (?ConnectorStatus $status) {
     $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
     $object = ferry_reviewer_object($connection->id, $connection->generation);
 
@@ -70,11 +73,18 @@ it('resumes a synchronization automatically paused for a broken mapping once it 
     ], [
         'status' => SyncStatus::Pause,
         'is_paused' => false,
-        'sink_connector_status' => ConnectorStatus::Paused,
+    ]);
+    $connector = $sync->connector()->create([
+        'name' => 'ferry-sink-' . $sync->code,
+        'config' => ['connector.class' => 'io.confluent.connect.jdbc.JdbcSinkConnector'],
     ]);
 
+    if ($status !== null) {
+        $connector->recordStatus($status);
+    }
+
     expect(app(SyncReviewer::class)->shouldResume($sync, $object))->toBeTrue();
-});
+})->with(['checked' => [ConnectorStatus::Paused], 'configured' => [null]]);
 
 it('reports static mappings that no longer match the destination declaration', function () {
     app(StaticDestinationRegistry::class)->register(new FakeCustomersDestination);
@@ -146,8 +156,11 @@ it('does not resume a synchronization while its static destination is still gone
     $sync->forceFill([
         'status' => SyncStatus::Pause,
         'is_paused' => false,
-        'sink_connector_status' => ConnectorStatus::Paused,
     ])->saveQuietly();
+    $sync
+        ->connector()
+        ->create(['name' => 'ferry-sink-' . $sync->code])
+        ->recordStatus(ConnectorStatus::Paused);
 
     expect(app(SyncReviewer::class)->shouldResume($sync->fresh(), $object))->toBeFalse();
 });

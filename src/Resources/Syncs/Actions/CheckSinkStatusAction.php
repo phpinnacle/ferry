@@ -21,7 +21,7 @@ class CheckSinkStatusAction
                     $manager->sinkStatus($record);
 
                     Notification::make()
-                        ->title($record->fresh()?->sink_connector_status?->getLabel())
+                        ->title($record->fresh()?->connector?->status?->getLabel())
                         ->send();
                 } catch (Throwable $exception) {
                     Notification::make()

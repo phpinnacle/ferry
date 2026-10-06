@@ -1,0 +1,147 @@
+<?php
+
+use Filament\Tables\Contracts\HasTable;
+use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Migrations\Migrator;
+use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Schema;
+use PHPinnacle\Ferry\Enums\ConnectorStatus;
+use PHPinnacle\Ferry\Models\Connection;
+use PHPinnacle\Ferry\Models\Connector;
+use PHPinnacle\Ferry\Models\Sync;
+use PHPinnacle\Ferry\Resources\Connections\Tables\ConnectionTable;
+use PHPinnacle\Ferry\Resources\Syncs\Actions\RestartSyncAction;
+use PHPinnacle\Ferry\Resources\Syncs\Tables\SyncTable;
+use PHPinnacle\Ferry\Tests\TestCase;
+
+require_once __DIR__ . '/../TestCase.php';
+
+uses(TestCase::class);
+
+beforeEach(function () {
+    Queue::fake();
+});
+
+it('encrypts the JSON configuration and excludes it from model serialization', function () {
+    $connection = TestCase::makeConnection();
+    $config = ['database.hostname' => 'source.internal', 'database.password' => 'connector-secret'];
+    $connector = $connection->connector()->create(['name' => 'ferry-source-test-connection']);
+    $connector->recordConfig($config);
+
+    $stored = DB::table('connectors')->where('id', $connector->id)->value('config');
+
+    expect($stored)
+        ->not->toContain('connector-secret')->and(json_decode(
+            Crypt::decryptString($stored),
+            true,
+            flags: JSON_THROW_ON_ERROR,
+        ))->toBe($config)->and($connector->fresh()->config)->toBe($config)->and($connector->fresh()->toArray())
+        ->not->toHaveKey('config')->and($connection->fresh()->load('connector')->toArray()['connector'])
+        ->not->toHaveKey('config');
+});
+
+it('records status independently of the source and synchronization lifecycle', function () {
+    $sync = TestCase::makeSync();
+    $source = $sync->connection->connector()->create(['name' => 'ferry-source-test-connection']);
+    $sink = $sync->connector()->create(['name' => 'ferry-sink-test-sync']);
+    Event::fake(['eloquent.updated: ' . Connection::class, 'eloquent.updated: ' . Sync::class]);
+
+    $source->recordStatus(ConnectorStatus::Running);
+    $sink->recordStatus(ConnectorStatus::Failed, 'Failed task');
+
+    expect($sync->fresh()->connection->connector?->status)
+        ->toBe(ConnectorStatus::Running)
+        ->and($sync->fresh()->connector?->error)
+        ->toBe('Failed task')
+        ->and($sink->fresh()->checked_at)
+        ->not
+        ->toBeNull()
+        ->and($source->fresh()->connection?->is($sync->connection))
+        ->toBeTrue()
+        ->and($sink->fresh()->sync?->is($sync))
+        ->toBeTrue();
+
+    $sink->recordStatus(ConnectorStatus::Running);
+
+    expect($sink->fresh()->error)->toBeNull();
+    Event::assertNotDispatched('eloquent.updated: ' . Connection::class);
+    Event::assertNotDispatched('eloquent.updated: ' . Sync::class);
+});
+
+it('uses the configured Ferry database for connectors and their owners', function () {
+    config([
+        'phpinnacle-ferry.connection' => 'ferry-test',
+        'database.connections.ferry-test' => config('database.connections.sqlite'),
+    ]);
+    $migration = require __DIR__ . '/../../database/migrations/create_ferry_tables.php';
+    app(Migrator::class)->usingConnection($migration->getConnection(), $migration->up(...));
+
+    $connection = TestCase::makeConnection();
+    $connector = $connection->connector()->create(['name' => 'ferry-source-test-connection']);
+    $connector->recordStatus(ConnectorStatus::Running);
+
+    expect($connection->fresh()->connector?->is($connector))
+        ->toBeTrue()
+        ->and(Connector::query()->count())
+        ->toBe(1)
+        ->and(DB::connection('sqlite')->table('connectors')->count())
+        ->toBe(0);
+});
+
+it('rolls back and reapplies the package tables together', function () {
+    $migration = require __DIR__ . '/../../database/migrations/create_ferry_tables.php';
+    $migration->down();
+
+    foreach (['connectors', 'syncs', 'connection_metadata', 'connections'] as $table) {
+        expect(Schema::hasTable($table))->toBeFalse();
+    }
+
+    $migration->up();
+    $sync = TestCase::makeSync();
+    $connector = $sync->connector()->create(['name' => 'ferry-sink-test-sync']);
+
+    expect($sync->fresh()->connector?->is($connector))->toBeTrue();
+});
+
+it('displays and sorts connector statuses through the owner tables', function () {
+    $sync = TestCase::makeSync();
+    $connection = $sync->connection;
+    $source = $connection->connector()->create(['name' => 'ferry-source-test-connection']);
+    $source->recordStatus(ConnectorStatus::Paused);
+    $sink = $sync->connector()->create(['name' => 'ferry-sink-test-sync']);
+    $sink->recordStatus(ConnectorStatus::Failed);
+
+    $otherConnection = TestCase::makeConnection(['code' => 'other-connection']);
+    $otherConnection
+        ->connector()
+        ->create(['name' => 'ferry-source-other-connection'])
+        ->recordStatus(ConnectorStatus::Running);
+    $otherSync = TestCase::makeSync(['code' => 'other-sync', 'connection_id' => $connection->id]);
+    $otherSync->connector()->create(['name' => 'ferry-sink-other-sync'])->recordStatus(ConnectorStatus::Running);
+
+    $livewire = Mockery::mock(HasTable::class);
+    $livewire->shouldReceive('getTableRecordKey')->andReturnUsing(fn (Model $record) => $record->getKey());
+    $sourceColumn = ConnectionTable::configure(Table::make($livewire))->getColumn(
+        'connector.status',
+    );
+    $sinkColumn = SyncTable::configure(Table::make($livewire))->getColumn('connector.status');
+
+    expect($sourceColumn->record($connection)->getState())
+        ->toBe(ConnectorStatus::Paused)
+        ->and($sinkColumn->record($sync)->getState())
+        ->toBe(ConnectorStatus::Failed)
+        ->and($sourceColumn->applySort(Connection::query())->pluck('id')->all())
+        ->toBe([$connection->id, $otherConnection->id])
+        ->and($sinkColumn->applySort(Sync::query())->pluck('id')->all())
+        ->toBe([$sync->id, $otherSync->id])
+        ->and(RestartSyncAction::table()->record($sync)->authorize(true)->isVisible())
+        ->toBeTrue();
+
+    $sink->recordStatus(ConnectorStatus::Running);
+
+    expect(RestartSyncAction::table()->record($sync->fresh())->authorize(true)->isVisible())->toBeFalse();
+});

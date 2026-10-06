@@ -9,10 +9,10 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Facades\Config;
 use PHPinnacle\Ferry\Casts\StorageMapCast;
 use PHPinnacle\Ferry\Casts\TypeMapCast;
-use PHPinnacle\Ferry\Enums\ConnectorStatus;
 use PHPinnacle\Ferry\Enums\Driver;
 use PHPinnacle\Ferry\Enums\StructureStatus;
 use PHPinnacle\Ferry\Enums\SyncStatus;
@@ -48,13 +48,11 @@ use PHPinnacle\Rosetta\TypeMap;
  * @property CarbonImmutable|null $published_at
  * @property string|null $last_error
  * @property CarbonImmutable|null $heartbeat_at
- * @property ConnectorStatus|null $source_connector_status
- * @property string|null $source_connector_error
- * @property CarbonImmutable|null $source_connector_checked_at
  * @property CarbonImmutable $created_at
  * @property CarbonImmutable $updated_at
  * @property-read Collection<int, ConnectionMetadata> $metadata
  * @property-read Collection<int, Sync> $syncs
+ * @property-read Connector|null $connector
  */
 #[ObservedBy(ConnectionObserver::class)]
 class Connection extends Model implements HasLabel
@@ -97,8 +95,6 @@ class Connection extends Model implements HasLabel
         'type_map' => TypeMapCast::class,
         'published_at' => 'immutable_datetime',
         'heartbeat_at' => 'immutable_datetime',
-        'source_connector_status' => ConnectorStatus::class,
-        'source_connector_checked_at' => 'immutable_datetime',
     ];
 
     protected $fillable = [
@@ -268,14 +264,6 @@ class Connection extends Model implements HasLabel
             ->delete();
     }
 
-    public function recordSourceConnectorStatus(ConnectorStatus $status, ?string $error = null): void
-    {
-        $this->source_connector_status = $status;
-        $this->source_connector_error = $error;
-        $this->source_connector_checked_at = CarbonImmutable::now();
-        $this->save();
-    }
-
     public function recordTestResult(ConnectionTestResult $result): void
     {
         $this->last_tested_at = CarbonImmutable::now();
@@ -287,6 +275,12 @@ class Connection extends Model implements HasLabel
     public function syncs(): HasMany
     {
         return $this->hasMany(Sync::class, 'connection_id');
+    }
+
+    /** @return HasOne<Connector, $this> */
+    public function connector(): HasOne
+    {
+        return $this->hasOne(Connector::class, 'connection_id');
     }
 
     public function toggleActive(): void

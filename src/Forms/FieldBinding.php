@@ -157,7 +157,7 @@ class FieldBinding extends Field
     public function getBindAction(): Action
     {
         return Action::make('bind')
-            ->label(fn () => __('phpinnacle-ferry::resources.binding.bind'))
+            ->label(__('phpinnacle-ferry::resources.binding.bind'))
             ->icon('heroicon-m-plus')
             ->button()
             ->disabled(fn (self $component) => $component->isDisabled())
@@ -167,7 +167,7 @@ class FieldBinding extends Field
     public function getUnbindAction(): Action
     {
         return Action::make('unbind')
-            ->label(fn () => __('phpinnacle-ferry::resources.binding.unbind'))
+            ->label(__('phpinnacle-ferry::resources.binding.unbind'))
             ->icon('heroicon-m-x-mark')
             ->color('gray')
             ->iconButton()

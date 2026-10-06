@@ -2,9 +2,7 @@
 
 namespace PHPinnacle\Ferry\Tests;
 
-use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 use PHPinnacle\Ferry\Data\FieldMapping;
 use PHPinnacle\Ferry\Models\Connection;
 use PHPinnacle\Ferry\Models\Sync;
@@ -85,87 +83,7 @@ abstract class TestCase extends ApplicationTestCase
         DB::purge('sqlite');
         DB::reconnect('sqlite');
 
-        $this->createConnectionsTable();
-        $this->createConnectionMetadataTable();
-        $this->createSyncsTable();
-    }
-
-    private function createConnectionMetadataTable(): void
-    {
-        Schema::create('connection_metadata', function (Blueprint $table) {
-            $table->uuid('id')->primary();
-            $table->uuid('connection_id');
-            $table->uuid('parent_id')->nullable()->index();
-            $table->string('external_id');
-            $table->string('reference_id')->nullable();
-            $table->string('name');
-            $table->unsignedInteger('code');
-            $table->string('kind', 32)->index();
-            $table->string('label');
-            $table->string('title');
-            $table->json('system');
-            $table->json('properties');
-            $table->json('values');
-            $table->unsignedInteger('position');
-            $table->unsignedBigInteger('revision')->default(0);
-            $table->timestamps();
-
-            $table->unique(['connection_id', 'external_id', 'revision']);
-            $table->index(['connection_id', 'revision']);
-        });
-    }
-
-    private function createConnectionsTable(): void
-    {
-        Schema::create('connections', function (Blueprint $table) {
-            $table->uuid('id')->primary();
-            $table->string('name');
-            $table->string('code')->unique();
-            $table->string('driver');
-            $table->string('host');
-            $table->unsignedInteger('port');
-            $table->string('database');
-            $table->string('username');
-            $table->text('password');
-            $table->string('schema')->nullable();
-            $table->string('ssl_mode')->nullable();
-            $table->boolean('is_active')->default(true);
-            $table->timestamp('last_tested_at')->nullable();
-            $table->boolean('last_test_passed')->nullable();
-            $table->string('status', 16)->index();
-            $table->unsignedBigInteger('generation')->default(0);
-            $table->uuid('run_id')->nullable();
-            $table->unsignedInteger('processed')->default(0);
-            $table->unsignedInteger('total')->default(0);
-            $table->json('storage_map')->nullable();
-            $table->json('type_map')->nullable();
-            $table->timestamp('published_at')->nullable();
-            $table->text('last_error')->nullable();
-            $table->timestamp('heartbeat_at')->nullable();
-            $table->string('source_connector_status')->nullable();
-            $table->text('source_connector_error')->nullable();
-            $table->timestamp('source_connector_checked_at')->nullable();
-            $table->timestamps();
-        });
-    }
-
-    private function createSyncsTable(): void
-    {
-        Schema::create('syncs', function (Blueprint $table) {
-            $table->uuid('id')->primary();
-            $table->uuid('connection_id');
-            $table->string('name');
-            $table->string('code')->unique();
-            $table->string('status')->index();
-            $table->boolean('is_paused')->default(false);
-            $table->string('static_destination')->nullable();
-            $table->string('source');
-            $table->string('destination');
-            $table->json('schema');
-            $table->string('sink_connector_status')->nullable();
-            $table->text('sink_connector_error')->nullable();
-            $table->timestamp('sink_connector_checked_at')->nullable();
-            $table->timestamps();
-        });
+        $migration = require __DIR__ . '/../database/migrations/create_ferry_tables.php';
+        $migration->up();
     }
 }

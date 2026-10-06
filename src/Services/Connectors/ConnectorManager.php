@@ -8,13 +8,12 @@ use PHPinnacle\Ferry\Enums\ConnectorStatus;
 use PHPinnacle\Ferry\Enums\Driver;
 use PHPinnacle\Ferry\Models\Connection;
 use PHPinnacle\Ferry\Models\ConnectionMetadata;
+use PHPinnacle\Ferry\Models\Connector;
 use PHPinnacle\Ferry\Models\Sync;
 use PHPinnacle\Ferry\Services\SyncReviewer;
 use PHPinnacle\Franz\Client;
 use PHPinnacle\Franz\Exception\ApiException;
 use PHPinnacle\Franz\Request\ConnectorConfigRequest;
-use PHPinnacle\Franz\Response\ConnectorStatusResponse;
-use PHPinnacle\Franz\Response\TaskStatusResponse;
 
 class ConnectorManager
 {
@@ -33,22 +32,21 @@ class ConnectorManager
         $this->assertPgsqlDriver($connection);
         $this->assertValidMapping($sync);
 
-        $name = $this->sink->name($sync);
+        $sink = $this->connector($sync);
 
         $previousColumns = $this->previousColumns($connection);
 
         $config = $this->pushSource($connection, $this->syncsWith($connection, $sync));
 
-        $this->client
-            ->connector($name)
-            ->updateConfig(new ConnectorConfigRequest($this->sink->build($sync)));
+        $this->pushConfig($sink, $this->sink->build($sync));
+        $sync->setRelation('connector', $sink);
 
         if ($previousColumns !== null) {
             $this->signaler->requestSnapshot($connection, $this->newlyScopedTables($previousColumns, $config));
         }
 
-        $this->client->connector($this->source->name($connection))->resume();
-        $this->client->connector($name)->resume();
+        $this->client->connector($this->connector($connection)->name)->resume();
+        $this->client->connector($sink->name)->resume();
 
         $sync->activate();
 
@@ -60,13 +58,15 @@ class ConnectorManager
     {
         $connection = $sync->connection;
 
-        $this->deleteConnector($this->sink->name($sync));
+        $this->deleteConnector($this->connector($sync));
+        $sync->setRelation('connector', null);
         $this->pushSource($connection, $this->syncsWithout($connection, $sync));
     }
 
     public function deleteSource(Connection $connection): void
     {
-        $this->deleteConnector($this->source->name($connection));
+        $this->deleteConnector($this->connector($connection));
+        $connection->setRelation('connector', null);
     }
 
     public function pause(Sync $sync, bool $manually = true): void
@@ -76,7 +76,7 @@ class ConnectorManager
         $this->assertPgsqlDriver($connection);
 
         try {
-            $this->client->connector($this->sink->name($sync))->pause();
+            $this->client->connector($this->connector($sync)->name)->pause();
         } catch (ApiException $exception) {
             if ($exception->statusCode !== 404) {
                 throw $exception;
@@ -103,8 +103,11 @@ class ConnectorManager
 
         $this->assertPgsqlDriver($connection);
 
-        $this->client->connector($this->source->name($connection))->restart(includeTasks: true, onlyFailed: true);
-        $this->client->connector($this->sink->name($sync))->restart(includeTasks: true, onlyFailed: true);
+        $this->client->connector($this->connector($connection)->name)->restart(
+            includeTasks: true,
+            onlyFailed: true,
+        );
+        $this->client->connector($this->connector($sync)->name)->restart(includeTasks: true, onlyFailed: true);
 
         $this->sourceStatus($connection);
         $this->sinkStatus($sync);
@@ -112,27 +115,29 @@ class ConnectorManager
 
     public function sinkStatus(Sync $sync): void
     {
-        $status = $this->status($this->sink->name($sync));
-
-        $sync->recordSinkConnectorStatus($status['status'], $status['error']);
+        $connector = $this->connector($sync);
+        $this->refreshStatus($connector);
+        $sync->setRelation('connector', $connector);
     }
 
     public function sourceStatus(Connection $connection): void
     {
-        $status = $this->status($this->source->name($connection));
-
-        $connection->recordSourceConnectorStatus($status['status'], $status['error']);
+        $connector = $this->connector($connection);
+        $this->refreshStatus($connector);
+        $connection->setRelation('connector', $connector);
     }
 
-    private function deleteConnector(string $name): void
+    private function deleteConnector(Connector $connector): void
     {
         try {
-            $this->client->connector($name)->delete();
+            $this->client->connector($connector->name)->delete();
         } catch (ApiException $exception) {
             if ($exception->statusCode !== 404) {
                 throw $exception;
             }
         }
+
+        $connector->delete();
     }
 
     private function assertPgsqlDriver(Connection $connection): void
@@ -162,24 +167,31 @@ class ConnectorManager
      */
     private function pushSource(Connection $connection, Collection $syncs): array
     {
-        $connector = $this->client->connector($this->source->name($connection));
-
+        $record = $this->connector($connection);
         $config = $this->source->build($connection, $syncs);
 
-        $connector->updateConfig(new ConnectorConfigRequest($config));
+        $this->pushConfig($record, $config);
+        $connection->setRelation('connector', $record);
 
         if ($syncs->isEmpty()) {
-            $connector->pause();
+            $this->client->connector($record->name)->pause();
         }
 
         return $config;
+    }
+
+    /** @param array<string, string> $config */
+    private function pushConfig(Connector $connector, array $config): void
+    {
+        $this->client->connector($connector->name)->updateConfig(new ConnectorConfigRequest($config));
+        $connector->recordConfig($config);
     }
 
     /** @return list<string>|null */
     private function previousColumns(Connection $connection): ?array
     {
         try {
-            $config = $this->client->connector($this->source->name($connection))->config();
+            $config = $this->client->connector($this->connector($connection)->name)->config();
         } catch (ApiException $exception) {
             if ($exception->statusCode !== 404) {
                 throw $exception;
@@ -223,40 +235,41 @@ class ConnectorManager
         return array_keys($tables);
     }
 
-    /** @return array{status: ConnectorStatus, error: string|null} */
-    private function status(string $name): array
+    private function refreshStatus(Connector $connector): void
     {
         try {
-            $response = $this->client->connector($name)->status();
-
-            $failedTask = $this->failedTask($response);
-
-            if ($failedTask !== null) {
-                return ['status' => ConnectorStatus::Failed, 'error' => $failedTask->trace];
-            }
-
-            return [
-                'status' => ConnectorStatus::fromConnectState($response->connector->state),
-                'error' => $response->connector->trace,
-            ];
+            $response = $this->client->connector($connector->name)->status();
         } catch (ApiException $exception) {
             if ($exception->statusCode !== 404) {
                 throw $exception;
             }
 
-            return ['status' => ConnectorStatus::Unknown, 'error' => null];
-        }
-    }
+            $connector->recordStatus(ConnectorStatus::Unknown);
 
-    private function failedTask(ConnectorStatusResponse $response): ?TaskStatusResponse
-    {
+            return;
+        }
+
         foreach ($response->tasks as $task) {
             if (strtoupper($task->state) === 'FAILED') {
-                return $task;
+                $connector->recordStatus(ConnectorStatus::Failed, $task->trace);
+
+                return;
             }
         }
 
-        return null;
+        $connector->recordStatus(
+            ConnectorStatus::fromConnectState($response->connector->state),
+            $response->connector->trace,
+        );
+    }
+
+    private function connector(Connection|Sync $owner): Connector
+    {
+        return $owner->connector ?? $owner
+            ->connector()
+            ->make([
+                'name' => $owner instanceof Connection ? $this->source->name($owner) : $this->sink->name($owner),
+            ]);
     }
 
     /** @return Collection<int, Sync> */

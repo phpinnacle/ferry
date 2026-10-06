@@ -5,6 +5,8 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 use PHPinnacle\Ferry\Models\Connection;
 use PHPinnacle\Ferry\Models\ConnectionMetadata;
+use PHPinnacle\Ferry\Models\Connector;
+use PHPinnacle\Ferry\Models\Sync;
 
 return new class extends Migration {
     public function up(): void
@@ -35,9 +37,6 @@ return new class extends Migration {
             $table->timestamp('published_at')->nullable();
             $table->text('last_error')->nullable();
             $table->timestamp('heartbeat_at')->nullable();
-            $table->string('source_connector_status')->nullable();
-            $table->text('source_connector_error')->nullable();
-            $table->timestamp('source_connector_checked_at')->nullable();
             $table->timestamps();
 
             $this->addTenancy($table);
@@ -73,10 +72,57 @@ return new class extends Migration {
 
             $this->addTenancy($table);
         });
+
+        /** @see Sync */
+        Schema::create('syncs', function (Blueprint $table) {
+            $table->uuid('id')->primary();
+            $table
+                ->foreignIdFor(Connection::class, 'connection_id')
+                ->constrained('connections')
+                ->cascadeOnDelete();
+            $table->string('name');
+            $table->string('code')->unique();
+            $table->string('status')->index();
+            $table->boolean('is_paused')->default(false);
+            $table->string('static_destination')->nullable();
+            $table->string('source');
+            $table->string('destination');
+            $table->json('schema');
+            $table->timestamps();
+
+            $this->addTenancy($table);
+        });
+
+        /** @see Connector */
+        Schema::create('connectors', function (Blueprint $table) {
+            $table->uuid('id')->primary();
+            $table
+                ->foreignIdFor(Connection::class, 'connection_id')
+                ->nullable()
+                ->unique()
+                ->constrained('connections')
+                ->cascadeOnDelete();
+            $table
+                ->foreignIdFor(Sync::class, 'sync_id')
+                ->nullable()
+                ->unique()
+                ->constrained('syncs')
+                ->cascadeOnDelete();
+            $table->string('name')->unique();
+            $table->text('config')->nullable();
+            $table->string('status')->nullable()->index();
+            $table->text('error')->nullable();
+            $table->timestamp('checked_at')->nullable();
+            $table->timestamps();
+
+            $this->addTenancy($table);
+        });
     }
 
     public function down(): void
     {
+        Schema::dropIfExists('connectors');
+        Schema::dropIfExists('syncs');
         Schema::dropIfExists('connection_metadata');
         Schema::dropIfExists('connections');
     }

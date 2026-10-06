@@ -19,7 +19,7 @@ class RestartSyncAction
             ->icon('phosphor-arrow-counter-clockwise')
             ->iconButton()
             ->color('warning')
-            ->visible(fn (Sync $record) => $record->sink_connector_status === ConnectorStatus::Failed)
+            ->visible(fn (Sync $record) => $record->connector?->status === ConnectorStatus::Failed)
             ->action(function (ConnectorManager $manager, Sync $record) {
                 try {
                     $manager->restart($record);

@@ -52,7 +52,7 @@ class SyncReviewer
     {
         $objects = $connection->publishedMetadata()->get()->keyBy('external_id');
 
-        foreach ($connection->syncs()->get() as $sync) {
+        foreach ($connection->syncs()->with('connector')->get() as $sync) {
             if ($sync->status === SyncStatus::Pause) {
                 continue;
             }
@@ -60,7 +60,7 @@ class SyncReviewer
             $object = $objects->get($sync->source);
 
             if (!$object instanceof ConnectionMetadata || !$this->isValid($sync, $object)) {
-                if ($sync->sink_connector_status !== null) {
+                if ($sync->connector !== null) {
                     app(ConnectorManager::class)->pause($sync, manually: false);
                 } else {
                     $sync->pause(manually: false);
@@ -71,7 +71,7 @@ class SyncReviewer
 
     public function shouldResume(Sync $sync, ConnectionMetadata $object): bool
     {
-        if ($sync->sink_connector_status === null) {
+        if ($sync->connector === null) {
             return false;
         }
 

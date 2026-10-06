@@ -16,7 +16,7 @@ Ferry adds a data source connections section to the admin panel: administrators 
 - `Sync` model storing the source object, the field mapping schema and the generated destination table name.
 - Static destinations: application-registered tables such as customers or products that synchronizations fill instead of a generated table.
 - Filament `SyncResource` that selects an active connection with a ready structure and an object from the published snapshot, maps source fields to column names and keeps the physical destination table in sync with the record.
-- Kafka Connect connector management built on `phpinnacle/franz`: one Debezium source connector per connection, one JDBC sink connector per synchronization.
+- Kafka Connect connector management built on `phpinnacle/franz`: one Debezium source connector per connection, one JDBC sink connector per synchronization, with status and applied configuration stored in `Connector` models.
 - Policy-backed connection and synchronization management (`ConnectionPolicy`, `SyncPolicy`), custom database connection and optional tenancy.
 
 ## Installation
@@ -26,6 +26,8 @@ composer require phpinnacle/ferry
 php artisan vendor:publish --tag="phpinnacle-ferry-migrations"
 php artisan migrate
 ```
+
+The package publishes a single `create_ferry_tables` migration for connections, metadata, synchronizations and connectors.
 
 Register `FerryPlugin::make()` in the target Filament panel. Publish `phpinnacle-ferry-config` when using a non-default database connection, tenant model or timeout. Structure preparation runs on the queue, so a worker must be running.
 
@@ -137,11 +139,13 @@ $connectors->pause($sync);           // pause the sink connector while the sourc
 $connectors->restart($sync);         // restart the failed tasks of both connectors
 $connectors->delete($sync);          // delete the sink connector and rescope the source connector
 $connectors->refreshSource($record); // push the source configuration after a credential change
-$connectors->sinkStatus($sync);      // store the reported state on the synchronization
-$connectors->sourceStatus($record);  // store the reported state on the connection
+$connectors->sinkStatus($sync);      // update the sink Connector record
+$connectors->sourceStatus($record);  // update the source Connector record
 ```
 
-A source connector failure is stored on the connection and therefore concerns all of its synchronizations, while a sink connector failure is stored on the synchronization alone. A connector that reports itself as running while one of its tasks has failed is recorded as failed together with the trace of that task, so a stalled transfer stays visible. Both states are shown as badges in the Filament tables and can be refreshed from there. Deleting a synchronization removes only its sink connector; the source connector is owned by the connection and is removed with it.
+The `connector` relation on `Connection` and `Sync` each return a `Connector` model, or `null` before any configuration has been applied or status checked. The model stores the Kafka Connect `name`, `status`, `error`, `checked_at` and the last successfully applied `config`. Configuration is a JSON object exposed as `array<string, string>`; because it includes database credentials, Laravel encrypts it in a `text` column using `encrypted:array` and excludes it from model serialization. A status check does not change the stored configuration.
+
+A source connector failure concerns all synchronizations of its connection, while a sink connector failure concerns its synchronization alone. A connector that reports itself as running while one of its tasks has failed is recorded as failed together with the trace of that task, so a stalled transfer stays visible. Both states are shown as badges in the Filament tables and can be refreshed from there. Deleting a synchronization removes only its sink connector; the source connector is owned by the connection and is removed with it.
 
 Because the target Kafka Connect cluster is shared, the connectors pin their own converters instead of relying on worker defaults, and the sink flattens Debezium envelopes with `ExtractNewRecordState` before applying the field renames taken from the synchronization schema. Each sink also restricts itself to its own mapped columns with `fields.whitelist`, so two synchronizations reading the same source table with different field selections never write each other's columns.
 

@@ -47,7 +47,7 @@ class SyncTable
                 TextColumn::make('destination')
                     ->label(__('phpinnacle-ferry::resources.sync.fields.destination'))
                     ->searchable(),
-                TextColumn::make('sink_connector_status')
+                TextColumn::make('connector.status')
                     ->label(__('phpinnacle-ferry::resources.sync.fields.sink_connector_status'))
                     ->badge()
                     ->sortable(),
