@@ -5,14 +5,17 @@ namespace PHPinnacle\Ferry;
 use Filament\Support\Assets\AlpineComponent;
 use Filament\Support\Assets\Css;
 use Filament\Support\Facades\FilamentAsset;
+use Illuminate\Container\Container;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\Facades\Config;
 use PHPinnacle\Ferry\Contracts\SignalProducer;
+use PHPinnacle\Ferry\Services\Connectors\ConnectorManager;
 use PHPinnacle\Ferry\Services\Connectors\RdKafkaSignalProducer;
 use PHPinnacle\Franz\Client as ConnectClient;
 use Psr\Http\Client\ClientInterface;
 use Psr\Http\Message\RequestFactoryInterface;
 use Psr\Http\Message\StreamFactoryInterface;
+use ReflectionClass;
 use RuntimeException;
 use Spatie\LaravelPackageTools\Commands\InstallCommand;
 use Spatie\LaravelPackageTools\Package;
@@ -26,6 +29,9 @@ class FerryServiceProvider extends PackageServiceProvider
 
     public function packageRegistered(): void
     {
+        $this->app->bind(ConnectorManager::class, fn (Container $app) => new ReflectionClass(ConnectorManager::class)
+            ->newLazyProxy(fn () => $app->build(ConnectorManager::class)));
+
         $this->app->singleton(ConnectClient::class, function (Application $app) {
             $baseUri = Config::get('phpinnacle-ferry.kafka_connect.base_uri');
 

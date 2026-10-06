@@ -1,5 +1,6 @@
 <?php
 
+use Filament\Actions\Action;
 use Filament\Schemas\Concerns\InteractsWithSchemas;
 use Filament\Schemas\Contracts\HasSchemas;
 use Filament\Schemas\Schema as FormSchema;
@@ -11,19 +12,14 @@ use Livewire\Component as LivewireComponent;
 use PHPinnacle\Ferry\Data\FieldMapping;
 use PHPinnacle\Ferry\Enums\DestinationType;
 use PHPinnacle\Ferry\Enums\StructureStatus;
-use PHPinnacle\Ferry\Models\ConnectionMetadata;
+use PHPinnacle\Ferry\Enums\SyncStatus;
 use PHPinnacle\Ferry\Models\Sync;
-use PHPinnacle\Ferry\Resources\Syncs\Pages\CreateSync;
 use PHPinnacle\Ferry\Resources\Syncs\Pages\EditSync;
 use PHPinnacle\Ferry\Resources\Syncs\Schemas\SyncForm;
 use PHPinnacle\Ferry\Services\StaticDestinationRegistry;
-use PHPinnacle\Ferry\Services\SyncDestinationResolver;
-use PHPinnacle\Ferry\Services\SyncReviewer;
-use PHPinnacle\Ferry\Services\SyncSchemaBuilder;
 use PHPinnacle\Ferry\Tests\Fakes\FakeCustomersDestination;
 use PHPinnacle\Ferry\Tests\TestCase;
 use PHPinnacle\Rosetta\Enums\FieldType;
-use PHPinnacle\Rosetta\Enums\MetadataKind;
 use PHPinnacle\Rosetta\Fields\ScalarField;
 use PHPinnacle\Rosetta\Fields\StringField;
 
@@ -38,24 +34,17 @@ beforeEach(function () {
     app(StaticDestinationRegistry::class)->register(new FakeCustomersDestination);
 });
 
-it('creates and edits a synchronization through its page handlers', function (?string $destination) {
+it('prepares typed synchronization attributes from its form', function (?string $destination) {
+    config([
+        'phpinnacle-ferry.kafka_connect.base_uri' => null,
+        'phpinnacle-ferry.kafka_connect.signal.bootstrap_servers' => null,
+    ]);
     $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
-    ConnectionMetadata::create([
-        'connection_id' => $connection->id,
-        'external_id' => 'object-0',
-        'name' => '_reference0',
-        'code' => 1,
-        'kind' => MetadataKind::Reference,
-        'label' => 'Object 0',
-        'title' => 'Object 0',
+    TestCase::makeMetadata($connection, [
         'system' => [
             '_code' => new StringField(length: 11, fixed: true),
             '_description' => new StringField(length: 100, fixed: false),
         ],
-        'properties' => [],
-        'values' => [],
-        'position' => 0,
-        'revision' => $connection->generation,
     ]);
 
     $data = [
@@ -67,12 +56,8 @@ it('creates and edits a synchronization through its page handlers', function (?s
         $destination === null ? 'schema' : 'static_mapping' => ['_description' => 'name', '_code' => 'tax_number'],
     ];
 
-    $create = new CreateSync;
-    $create->boot(app(SyncSchemaBuilder::class), app(SyncDestinationResolver::class));
-    $sync = new ReflectionMethod($create, 'handleRecordCreation')->invoke($create, $data);
-
-    $edit = new EditSync;
-    $edit->boot(app(SyncSchemaBuilder::class), app(SyncReviewer::class), app(SyncDestinationResolver::class));
+    $destinations = app(StaticDestinationRegistry::class);
+    $sync = Sync::create(SyncForm::forCreate($data, $destinations));
     $livewire = new class extends LivewireComponent implements HasSchemas {
         use InteractsWithSchemas;
 
@@ -82,8 +67,7 @@ it('creates and edits a synchronization through its page handlers', function (?s
     $livewire->setId('sync-mapping-round-trip');
     $livewire->setName('sync-mapping-round-trip');
     $form = SyncForm::configure(FormSchema::make($livewire)->statePath('data')->record($sync)->operation('edit'));
-    $filled = new ReflectionMethod($edit, 'mutateFormDataBeforeFill')->invoke($edit, $sync->toArray());
-    $form->fill($filled);
+    $form->fill(SyncForm::fill($sync->toArray()));
     $livewire->data['name'] = 'Renamed';
 
     if ($destination !== null) {
@@ -96,7 +80,7 @@ it('creates and edits a synchronization through its page handlers', function (?s
         '_description' => 'name',
         '_code' => 'tax_number',
     ]);
-    new ReflectionMethod($edit, 'handleRecordUpdate')->invoke($edit, $sync, $dehydrated);
+    $sync->update(SyncForm::forUpdate($dehydrated, $sync, $destinations));
 
     expect($sync->fresh()->name)
         ->toBe('Renamed')
@@ -107,6 +91,74 @@ it('creates and edits a synchronization through its page handlers', function (?s
         ->and(Schema::hasTable('ferry_sync_customers_sync'))
         ->toBe($destination === null);
 })->with(['dynamic' => [null], 'static' => ['customers']]);
+
+it('confirms removed and retyped dynamic columns when saving the form', function (string $change, array $columns) {
+    $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
+    $object = TestCase::makeMetadata($connection, [
+        'system' => [
+            '_description' => new StringField(length: 100, fixed: false),
+            '_code' => new StringField(length: 11, fixed: true),
+        ],
+    ]);
+    $sync = TestCase::makeSync([
+        'connection_id' => $connection->id,
+        'static_destination' => $change === 'static' ? 'customers' : null,
+        'schema' => [
+            new FieldMapping('_description', 'name', $object->field('_description')),
+            new FieldMapping('_code', 'tax_number', $object->field('_code')),
+        ],
+    ]);
+
+    if ($change === 'retyped') {
+        $object->update(['system' => [
+            '_description' => new StringField(length: 100, fixed: false),
+            '_code' => new ScalarField(FieldType::Boolean),
+        ]]);
+    }
+
+    $page = new class extends EditSync {
+        public function saveAction(): Action
+        {
+            return $this->getSaveFormAction()->livewire($this);
+        }
+    };
+    $page->setId('sync-drop-confirmation');
+    $page->setName('sync-drop-confirmation');
+    $page->record = $sync;
+    $this->app->call([$page, 'boot']);
+    $page->form->fill(SyncForm::fill($sync->toArray()));
+
+    if ($change === 'removed') {
+        $field = $page->form->getComponent('schema');
+        unset($page->data['schema'][$field->getBindingKey('_description')]);
+    }
+
+    if ($change === 'renamed') {
+        $field = $page->form->getComponent('schema');
+        $page->data['schema'][$field->getBindingKey('_description')]['column'] = 'display_name';
+    }
+
+    $action = $page->saveAction();
+    $action->mount(['schema' => null]);
+
+    expect($action->shouldOpenModal())
+        ->toBe($columns !== [])
+        ->and($page->record->isDirty())
+        ->toBeFalse();
+
+    if ($columns !== []) {
+        expect($action->getModalDescription())->toBe(__(
+            'phpinnacle-ferry::resources.sync.modals.drop_columns.description',
+            ['columns' => implode(', ', $columns)],
+        ));
+    }
+})->with([
+    'unchanged mapping' => ['unchanged', []],
+    'removed field' => ['removed', ['name']],
+    'retyped field' => ['retyped', ['tax_number']],
+    'renamed column' => ['renamed', []],
+    'static destination' => ['static', []],
+]);
 
 it('resolves the destination table from the registered static destination', function () {
     $sync = TestCase::makeSync([
@@ -147,23 +199,10 @@ it('does not affect the destination table when a static synchronization is delet
         ->toBe(0);
 });
 
-it('rejects saving a synchronization whose static destination is no longer registered', function () {
+it('pauses a synchronization and rejects editing when its destination is no longer registered', function () {
     $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
 
-    ConnectionMetadata::create([
-        'connection_id' => $connection->id,
-        'external_id' => 'object-0',
-        'name' => '_reference0',
-        'code' => 1,
-        'kind' => MetadataKind::Reference,
-        'label' => 'Object 0',
-        'title' => 'Object 0',
-        'system' => ['_idrref' => new ScalarField(FieldType::Id)],
-        'properties' => [],
-        'values' => [],
-        'position' => 0,
-        'revision' => $connection->generation,
-    ]);
+    TestCase::makeMetadata($connection);
 
     $sync = TestCase::makeSync([
         'connection_id' => $connection->id,
@@ -171,18 +210,18 @@ it('rejects saving a synchronization whose static destination is no longer regis
         'static_destination' => 'customers',
     ]);
     $sync->forceFill(['static_destination' => 'gone'])->saveQuietly();
+    $connection->metadata()->update(['revision' => $connection->draftRevision()]);
+    $connection->publishStructure();
 
-    $page = new EditSync;
-    $page->boot(
-        app(SyncSchemaBuilder::class),
-        app(SyncReviewer::class),
-        app(SyncDestinationResolver::class),
-    );
+    expect($sync->fresh()->status)
+        ->toBe(SyncStatus::Pause)
+        ->and($sync->fresh()->is_paused)
+        ->toBeFalse();
 
-    expect(fn () => new ReflectionMethod($page, 'handleRecordUpdate')->invoke(
-        $page,
-        $sync->fresh(),
+    expect(fn () => SyncForm::forUpdate(
         ['name' => 'Renamed', 'schema' => []],
+        $sync->fresh(),
+        app(StaticDestinationRegistry::class),
     ))
         ->toThrow(
             ValidationException::class,

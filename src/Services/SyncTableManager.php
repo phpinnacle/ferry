@@ -3,7 +3,6 @@
 namespace PHPinnacle\Ferry\Services;
 
 use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Database\Schema\Builder as SchemaBuilder;
 use Illuminate\Database\Schema\ColumnDefinition;
 use LogicException;
 use PHPinnacle\Ferry\Data\FieldMapping;
@@ -14,69 +13,54 @@ use PHPinnacle\Rosetta\Fields\StringField;
 
 class SyncTableManager
 {
-    public const string ID_COLUMN = 'idrref';
-
-    public const array RESERVED_COLUMNS = [
-        self::ID_COLUMN,
-    ];
-
     public function create(Sync $sync): void
     {
-        $this->schema($sync)->create($sync->destination, function (Blueprint $table) use ($sync) {
-            $this->technicalColumns($table);
+        $sync
+            ->getConnection()
+            ->getSchemaBuilder()
+            ->create($sync->destination, function (Blueprint $table) use ($sync) {
+                $table->string(Sync::ID_COLUMN)->primary();
 
-            foreach ($sync->schema as $mapping) {
-                $this->column($table, $mapping)->nullable();
-            }
-        });
+                foreach ($sync->schema as $mapping) {
+                    $this->column($table, $mapping)->nullable();
+                }
+            });
     }
 
     public function drop(Sync $sync): void
     {
-        $this->schema($sync)->dropIfExists($sync->destination);
+        $sync->getConnection()->getSchemaBuilder()->dropIfExists($sync->destination);
     }
 
-    /**
-     * @param list<FieldMapping> $previousMappings
-     * @param list<FieldMapping> $currentMappings
-     */
-    public function update(Sync $sync, array $previousMappings, array $currentMappings): void
+    public function update(Sync $sync): void
     {
-        $previous = [];
+        /** @var list<FieldMapping> $previousMappings */
+        $previousMappings = $sync->getOriginal('schema');
+        $previous = array_column($previousMappings, null, 'source');
+        $dropped = $sync->droppedColumns();
 
-        foreach ($previousMappings as $mapping) {
-            $previous[$mapping->source] = $mapping;
-        }
-
-        $current = [];
-
-        foreach ($currentMappings as $mapping) {
-            $current[$mapping->source] = $mapping;
-        }
-
-        $this->schema($sync)->table($sync->destination, function (Blueprint $table) use ($previous, $current) {
-            foreach ($previous as $mapping) {
-                $replacement = $current[$mapping->source] ?? null;
-
-                if ($replacement === null || $replacement->type() !== $mapping->type()) {
-                    $table->dropColumn($mapping->column);
-                }
-            }
-
-            foreach ($current as $mapping) {
-                $existing = $previous[$mapping->source] ?? null;
-
-                if ($existing === null || $existing->type() !== $mapping->type()) {
-                    $this->column($table, $mapping)->nullable();
-
-                    continue;
+        $sync
+            ->getConnection()
+            ->getSchemaBuilder()
+            ->table($sync->destination, function (Blueprint $table) use ($sync, $previous, $dropped) {
+                foreach ($dropped as $column) {
+                    $table->dropColumn($column);
                 }
 
-                if ($existing->column !== $mapping->column) {
-                    $table->renameColumn($existing->column, $mapping->column);
+                foreach ($sync->schema as $mapping) {
+                    $existing = $previous[$mapping->source] ?? null;
+
+                    if ($existing === null || $existing->type() !== $mapping->type()) {
+                        $this->column($table, $mapping)->nullable();
+
+                        continue;
+                    }
+
+                    if ($existing->column !== $mapping->column) {
+                        $table->renameColumn($existing->column, $mapping->column);
+                    }
                 }
-            }
-        });
+            });
     }
 
     private function column(Blueprint $table, FieldMapping $mapping): ColumnDefinition
@@ -105,15 +89,5 @@ class SyncTableManager
                 : $table->text($mapping->column),
             ColumnType::Reference => $table->text($mapping->column),
         };
-    }
-
-    private function schema(Sync $sync): SchemaBuilder
-    {
-        return $sync->getConnection()->getSchemaBuilder();
-    }
-
-    private function technicalColumns(Blueprint $table): void
-    {
-        $table->string(self::ID_COLUMN)->primary();
     }
 }

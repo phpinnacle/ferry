@@ -6,8 +6,11 @@ use Illuminate\Database\Connection as DatabaseConnection;
 use Illuminate\Database\Connectors\ConnectionFactory;
 use Illuminate\Support\Facades\Config;
 use PDO;
+use PHPinnacle\Ferry\Data\ConnectionTestResult;
+use PHPinnacle\Ferry\Support\ConnectionErrorFormatter;
+use Throwable;
 
-class SourceConnectionFactory
+class SourceConnection
 {
     public function __construct(
         private readonly ConnectionFactory $factory,
@@ -34,5 +37,25 @@ class SourceConnectionFactory
             ],
             fn (mixed $value) => $value !== null,
         ));
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    public function test(array $data): ConnectionTestResult
+    {
+        try {
+            $connection = $this->make($data);
+
+            $connection->select('select 1');
+
+            $connection->disconnect();
+
+            return ConnectionTestResult::success(
+                __('phpinnacle-ferry::resources.connection.messages.test_success'),
+            );
+        } catch (Throwable $exception) {
+            return ConnectionTestResult::failure(ConnectionErrorFormatter::format($exception));
+        }
     }
 }

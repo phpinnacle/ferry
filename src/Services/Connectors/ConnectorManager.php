@@ -3,14 +3,16 @@
 namespace PHPinnacle\Ferry\Services\Connectors;
 
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Facades\Config;
 use LogicException;
+use PHPinnacle\Ferry\Contracts\SignalProducer;
 use PHPinnacle\Ferry\Enums\ConnectorStatus;
 use PHPinnacle\Ferry\Enums\Driver;
 use PHPinnacle\Ferry\Models\Connection;
 use PHPinnacle\Ferry\Models\ConnectionMetadata;
 use PHPinnacle\Ferry\Models\Connector;
 use PHPinnacle\Ferry\Models\Sync;
-use PHPinnacle\Ferry\Services\SyncReviewer;
+use PHPinnacle\Ferry\Services\StaticDestinationRegistry;
 use PHPinnacle\Franz\Client;
 use PHPinnacle\Franz\Exception\ApiException;
 use PHPinnacle\Franz\Request\ConnectorConfigRequest;
@@ -19,10 +21,9 @@ class ConnectorManager
 {
     public function __construct(
         private readonly Client $client,
-        private readonly SourceConnectorConfigBuilder $source,
-        private readonly SinkConnectorConfigBuilder $sink,
-        private readonly SnapshotSignaler $signaler,
-        private readonly SyncReviewer $reviewer,
+        private readonly ConnectorConfigBuilder $configs,
+        private readonly SignalProducer $signals,
+        private readonly StaticDestinationRegistry $destinations,
     ) {}
 
     public function activate(Sync $sync): void
@@ -36,13 +37,13 @@ class ConnectorManager
 
         $previousColumns = $this->previousColumns($connection);
 
-        $config = $this->pushSource($connection, $this->syncsWith($connection, $sync));
+        $config = $this->pushSource($connection, $connection->trackedSyncs()->except([$sync->id])->push($sync));
 
-        $this->pushConfig($sink, $this->sink->build($sync));
+        $this->pushConfig($sink, $this->configs->sink($sync));
         $sync->recordConnector($sink);
 
         if ($previousColumns !== null) {
-            $this->signaler->requestSnapshot($connection, $this->newlyScopedTables($previousColumns, $config));
+            $this->requestSnapshot($config['topic.prefix'], $this->newlyScopedTables($previousColumns, $config));
         }
 
         $this->client->connector($this->connector($connection)->name)->resume();
@@ -60,7 +61,7 @@ class ConnectorManager
 
         $this->deleteConnector($this->connector($sync));
         $sync->connector()->dissociate();
-        $this->pushSource($connection, $this->syncsWithout($connection, $sync));
+        $this->pushSource($connection, $connection->trackedSyncs()->except([$sync->id]));
     }
 
     public function deleteSource(Connection $connection): void
@@ -146,7 +147,7 @@ class ConnectorManager
     {
         $object = $sync->connection->publishedObject($sync->source);
 
-        if ($object instanceof ConnectionMetadata && !$this->reviewer->isValid($sync, $object)) {
+        if ($object instanceof ConnectionMetadata && !$sync->hasValidSchema($object, $this->destinations)) {
             throw new LogicException(__('phpinnacle-ferry::resources.sync.errors.invalid_mapping', [
                 'code' => $sync->code,
             ]));
@@ -161,7 +162,7 @@ class ConnectorManager
     private function pushSource(Connection $connection, Collection $syncs): array
     {
         $record = $this->connector($connection);
-        $config = $this->source->build($connection, $syncs);
+        $config = $this->configs->source($connection, $syncs);
 
         $this->pushConfig($record, $config);
         $connection->recordConnector($record);
@@ -260,26 +261,30 @@ class ConnectorManager
     {
         return (
             $owner->connector ?? new Connector([
-                'name' => $owner instanceof Connection ? $this->source->name($owner) : $this->sink->name($owner),
+                'name' => $this->configs->name($owner),
             ])
         );
     }
 
-    /** @return Collection<int, Sync> */
-    private function syncsWith(Connection $connection, Sync $sync): Collection
+    /** @param list<string> $tables */
+    private function requestSnapshot(string $key, array $tables): void
     {
-        $syncs = $this->syncsWithout($connection, $sync);
-        $syncs->push($sync);
+        if ($tables === []) {
+            return;
+        }
 
-        return $syncs;
-    }
+        $payload = json_encode([
+            'type' => 'execute-snapshot',
+            'data' => [
+                'data-collections' => $tables,
+                'type' => 'INCREMENTAL',
+            ],
+        ], JSON_THROW_ON_ERROR);
 
-    /** @return Collection<int, Sync> */
-    private function syncsWithout(Connection $connection, Sync $sync): Collection
-    {
-        return $connection
-            ->trackedSyncs()
-            ->reject(fn (Sync $item) => $item->is($sync))
-            ->values();
+        $this->signals->publish(
+            Config::string('phpinnacle-ferry.kafka_connect.signal.topic'),
+            $key,
+            $payload,
+        );
     }
 }

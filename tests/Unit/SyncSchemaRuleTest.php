@@ -1,8 +1,8 @@
 <?php
 
 use Illuminate\Support\Facades\Validator;
+use PHPinnacle\Ferry\Models\Sync;
 use PHPinnacle\Ferry\Rules\SyncSchema;
-use PHPinnacle\Ferry\Services\SyncTableManager;
 use Tests\TestCase;
 
 uses(TestCase::class);
@@ -70,9 +70,9 @@ it('accepts only snake case latin column names', function (string $column) use (
 ]);
 
 it('forbids reserved technical column names', function () use ($validate) {
-    expect($validate([['source' => '_idrref', 'column' => SyncTableManager::ID_COLUMN]]))
+    expect($validate([['source' => '_idrref', 'column' => Sync::ID_COLUMN]]))
         ->toBe(__(
             'phpinnacle-ferry::validation.sync_schema.column_reserved',
-            ['column' => SyncTableManager::ID_COLUMN],
+            ['column' => Sync::ID_COLUMN],
         ));
 });

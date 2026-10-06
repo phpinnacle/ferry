@@ -2,14 +2,17 @@
 
 namespace PHPinnacle\Ferry\Observers;
 
+use PHPinnacle\Ferry\Enums\SyncStatus;
 use PHPinnacle\Ferry\Models\Connection;
+use PHPinnacle\Ferry\Models\ConnectionMetadata;
 use PHPinnacle\Ferry\Services\Connectors\ConnectorManager;
-use PHPinnacle\Ferry\Services\SyncReviewer;
+use PHPinnacle\Ferry\Services\StaticDestinationRegistry;
 
 class ConnectionObserver
 {
     public function __construct(
-        private readonly SyncReviewer $syncs,
+        private readonly StaticDestinationRegistry $destinations,
+        private readonly ConnectorManager $connectors,
     ) {}
 
     public function deleting(Connection $connection): void
@@ -20,7 +23,7 @@ class ConnectionObserver
     public function deleted(Connection $connection): void
     {
         if ($connection->connector !== null) {
-            app(ConnectorManager::class)->deleteSource($connection);
+            $this->connectors->deleteSource($connection);
         }
 
         foreach ($connection->syncs as $sync) {
@@ -31,7 +34,7 @@ class ConnectionObserver
     public function updated(Connection $connection): void
     {
         if ($connection->structurePublished()) {
-            $this->syncs->review($connection);
+            $this->reviewSyncs($connection);
         }
 
         if (!$connection->credentialsChanged()) {
@@ -41,7 +44,28 @@ class ConnectionObserver
         $connection->handleCredentialsChanged();
 
         if ($connection->connector !== null) {
-            app(ConnectorManager::class)->refreshSource($connection);
+            $this->connectors->refreshSource($connection);
+        }
+    }
+
+    private function reviewSyncs(Connection $connection): void
+    {
+        $objects = $connection->publishedMetadata()->get()->keyBy('external_id');
+
+        foreach ($connection->syncs()->with('connector')->get() as $sync) {
+            if ($sync->status === SyncStatus::Pause) {
+                continue;
+            }
+
+            $object = $objects->get($sync->source);
+
+            if (!$object instanceof ConnectionMetadata || !$sync->hasValidSchema($object, $this->destinations)) {
+                if ($sync->connector !== null) {
+                    $this->connectors->pause($sync, manually: false);
+                } else {
+                    $sync->pause(manually: false);
+                }
+            }
         }
     }
 }

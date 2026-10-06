@@ -5,10 +5,10 @@ namespace PHPinnacle\Ferry\Resources\Connections\Actions;
 use Filament\Actions\Action;
 use Filament\Notifications\Notification;
 use Filament\Schemas\Components\Utilities\Get;
+use PHPinnacle\Ferry\Data\ConnectionTestResult;
 use PHPinnacle\Ferry\Enums\Driver;
 use PHPinnacle\Ferry\Models\Connection;
-use PHPinnacle\Ferry\Services\ConnectionTester;
-use PHPinnacle\Ferry\Services\ConnectionTestResult;
+use PHPinnacle\Ferry\Services\SourceConnection;
 
 class TestConnectionAction
 {
@@ -18,7 +18,7 @@ class TestConnectionAction
             ->label(__('phpinnacle-ferry::resources.connection.actions.test_connection'))
             ->icon('phosphor-plugs-connected')
             ->color('gray')
-            ->action(function (ConnectionTester $tester, Get $get, ?Connection $record) {
+            ->action(function (SourceConnection $tester, Get $get, ?Connection $record) {
                 $password = $get('password');
 
                 if (!filled($password) && $record !== null) {
@@ -46,7 +46,7 @@ class TestConnectionAction
             ->label(__('phpinnacle-ferry::resources.connection.actions.test_connection'))
             ->icon('phosphor-plugs-connected')
             ->iconButton()
-            ->action(fn (ConnectionTester $tester, Connection $record) => self::notify(
+            ->action(fn (SourceConnection $tester, Connection $record) => self::notify(
                 $tester->test($record->credentials()),
                 $record,
             ));

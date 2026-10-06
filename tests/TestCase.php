@@ -5,9 +5,11 @@ namespace PHPinnacle\Ferry\Tests;
 use Illuminate\Support\Facades\DB;
 use PHPinnacle\Ferry\Data\FieldMapping;
 use PHPinnacle\Ferry\Models\Connection;
+use PHPinnacle\Ferry\Models\ConnectionMetadata;
 use PHPinnacle\Ferry\Models\Connector;
 use PHPinnacle\Ferry\Models\Sync;
 use PHPinnacle\Rosetta\Enums\FieldType;
+use PHPinnacle\Rosetta\Enums\MetadataKind;
 use PHPinnacle\Rosetta\Fields\ScalarField;
 use Tests\TestCase as ApplicationTestCase;
 
@@ -37,6 +39,26 @@ abstract class TestCase extends ApplicationTestCase
         }
 
         return $connection;
+    }
+
+    /** @param array<string, mixed> $attributes */
+    public static function makeMetadata(Connection $connection, array $attributes = []): ConnectionMetadata
+    {
+        return ConnectionMetadata::create([
+            'connection_id' => $connection->id,
+            'external_id' => 'object-0',
+            'name' => '_reference0',
+            'code' => 1,
+            'kind' => MetadataKind::Reference,
+            'label' => 'Object 0',
+            'title' => 'Object 0',
+            'system' => ['_idrref' => new ScalarField(FieldType::Id)],
+            'properties' => [],
+            'values' => [],
+            'position' => 0,
+            'revision' => $connection->generation,
+            ...$attributes,
+        ]);
     }
 
     /**

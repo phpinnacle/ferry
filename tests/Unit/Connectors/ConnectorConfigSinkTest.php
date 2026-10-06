@@ -2,20 +2,13 @@
 
 use Illuminate\Support\Facades\Queue;
 use PHPinnacle\Ferry\Enums\StructureStatus;
-use PHPinnacle\Ferry\Models\Connection;
-use PHPinnacle\Ferry\Models\ConnectionMetadata;
-use PHPinnacle\Ferry\Services\Connectors\SinkConnectorConfigBuilder;
-use PHPinnacle\Ferry\Services\Connectors\SourceConnectorConfigBuilder;
+use PHPinnacle\Ferry\Rules\SyncSchema;
+use PHPinnacle\Ferry\Services\Connectors\ConnectorConfigBuilder;
 use PHPinnacle\Ferry\Services\StaticDestinationRegistry;
-use PHPinnacle\Ferry\Services\SyncDestinationResolver;
-use PHPinnacle\Ferry\Services\SyncSchemaBuilder;
 use PHPinnacle\Ferry\Tests\Fakes\FakeCustomersDestination;
 use PHPinnacle\Ferry\Tests\TestCase;
 use PHPinnacle\Rosetta\Data\MetadataProperty;
-use PHPinnacle\Rosetta\Enums\FieldType;
-use PHPinnacle\Rosetta\Enums\MetadataKind;
 use PHPinnacle\Rosetta\Enums\PropertyKind;
-use PHPinnacle\Rosetta\Fields\ScalarField;
 use PHPinnacle\Rosetta\Fields\StringField;
 
 require_once __DIR__ . '/../../TestCase.php';
@@ -37,22 +30,6 @@ beforeEach(function () {
     ]);
 });
 
-$makeObject = fn (Connection $connection, array $attributes = []) => ConnectionMetadata::create([
-    'connection_id' => $connection->id,
-    'external_id' => 'object-0',
-    'name' => '_reference0',
-    'code' => 1,
-    'kind' => MetadataKind::Reference,
-    'label' => 'Object 0',
-    'title' => 'Object 0',
-    'system' => ['_idrref' => new ScalarField(FieldType::Id)],
-    'properties' => [],
-    'values' => [],
-    'position' => 0,
-    'revision' => $connection->generation,
-    ...$attributes,
-]);
-
 $makeProperty = fn (string $id, string $name, object $field) => new MetadataProperty(
     id: $id,
     name: $name,
@@ -63,34 +40,32 @@ $makeProperty = fn (string $id, string $name, object $field) => new MetadataProp
     field: $field,
 );
 
-it('builds a confluent jdbc sink connector config with field renames', function () use ($makeObject, $makeProperty) {
+it('builds a confluent jdbc sink connector config with field renames', function () use ($makeProperty) {
     $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
-    $object = $makeObject($connection, [
+    $object = TestCase::makeMetadata($connection, [
         'properties' => [$makeProperty('title', '_fld1', new StringField(length: 100, fixed: false))],
     ]);
 
     $sync = TestCase::makeSync([
         'connection_id' => $connection->id,
         'source' => 'object-0',
-        'schema' => app(SyncSchemaBuilder::class)->build($object, [
-            ['source' => 'title', 'column' => 'title'],
+        'schema' => SyncSchema::fromBindings($object, [
+            'title' => 'title',
         ]),
     ]);
 
-    $sourceBuilder = new SourceConnectorConfigBuilder;
-    $builder = new SinkConnectorConfigBuilder(
-        $sourceBuilder,
-        new SyncDestinationResolver(new StaticDestinationRegistry),
+    $builder = new ConnectorConfigBuilder(
+        new StaticDestinationRegistry,
     );
 
-    $config = $builder->build($sync->fresh());
+    $config = $builder->sink($sync->fresh());
 
     expect($builder->name($sync))
         ->toBe('ferry-sink-test-sync')
         ->and($config['connector.class'])
         ->toBe('io.confluent.connect.jdbc.JdbcSinkConnector')
         ->and($config['topics'])
-        ->toBe($sourceBuilder->topic($connection, $object))
+        ->toBe($builder->topic($connection, $object))
         ->and($config['table.name.format'])
         ->toBe($sync->destination)
         ->and($config['pk.mode'])
@@ -118,11 +93,10 @@ it('builds a confluent jdbc sink connector config with field renames', function 
 });
 
 it('keeps each sink limited to the fields of its own mapping when several syncs share a source table', function () use (
-    $makeObject,
     $makeProperty,
 ) {
     $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
-    $object = $makeObject($connection, [
+    $object = TestCase::makeMetadata($connection, [
         'properties' => [
             $makeProperty('title', '_fld1', new StringField(length: 100, fixed: false)),
             $makeProperty('taxNumber', '_fld2', new StringField(length: 100, fixed: false)),
@@ -133,8 +107,8 @@ it('keeps each sink limited to the fields of its own mapping when several syncs 
         'connection_id' => $connection->id,
         'code' => 'sync-a',
         'source' => 'object-0',
-        'schema' => app(SyncSchemaBuilder::class)->build($object, [
-            ['source' => 'title', 'column' => 'title'],
+        'schema' => SyncSchema::fromBindings($object, [
+            'title' => 'title',
         ]),
     ]);
 
@@ -142,19 +116,17 @@ it('keeps each sink limited to the fields of its own mapping when several syncs 
         'connection_id' => $connection->id,
         'code' => 'sync-b',
         'source' => 'object-0',
-        'schema' => app(SyncSchemaBuilder::class)->build($object, [
-            ['source' => 'taxNumber', 'column' => 'tax_number'],
+        'schema' => SyncSchema::fromBindings($object, [
+            'taxNumber' => 'tax_number',
         ]),
     ]);
 
-    $sourceBuilder = new SourceConnectorConfigBuilder;
-    $builder = new SinkConnectorConfigBuilder(
-        $sourceBuilder,
-        new SyncDestinationResolver(new StaticDestinationRegistry),
+    $builder = new ConnectorConfigBuilder(
+        new StaticDestinationRegistry,
     );
 
-    $firstConfig = $builder->build($first->fresh());
-    $secondConfig = $builder->build($second->fresh());
+    $firstConfig = $builder->sink($first->fresh());
+    $secondConfig = $builder->sink($second->fresh());
 
     expect($firstConfig['fields.whitelist'])
         ->toBe('idrref,title')
@@ -162,15 +134,15 @@ it('keeps each sink limited to the fields of its own mapping when several syncs 
         ->toBe('idrref,tax_number');
 });
 
-it('adds InsertField transforms and fixed columns for a static destination', function () use (
-    $makeObject,
-    $makeProperty,
-) {
+it('builds a static sink with fixed fields and its target connection', function (
+    ?string $connectionName,
+    array $target,
+) use ($makeProperty) {
     $registry = app(StaticDestinationRegistry::class);
-    $registry->register(new FakeCustomersDestination);
+    $registry->register(new FakeCustomersDestination($connectionName));
 
     $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
-    $object = $makeObject($connection, [
+    $object = TestCase::makeMetadata($connection, [
         'properties' => [$makeProperty('title', '_fld1', new StringField(length: 100, fixed: false))],
     ]);
 
@@ -178,15 +150,14 @@ it('adds InsertField transforms and fixed columns for a static destination', fun
         'connection_id' => $connection->id,
         'static_destination' => 'customers',
         'source' => 'object-0',
-        'schema' => app(SyncSchemaBuilder::class)->build($object, [
-            ['source' => 'title', 'column' => 'name'],
+        'schema' => SyncSchema::fromBindings($object, [
+            'title' => 'name',
         ]),
     ]);
 
-    $sourceBuilder = new SourceConnectorConfigBuilder;
-    $builder = new SinkConnectorConfigBuilder($sourceBuilder, new SyncDestinationResolver($registry));
+    $builder = new ConnectorConfigBuilder($registry);
 
-    $config = $builder->build($sync->fresh());
+    $config = $builder->sink($sync->fresh());
 
     expect($config['table.name.format'])
         ->toBe('customers')
@@ -207,71 +178,35 @@ it('adds InsertField transforms and fixed columns for a static destination', fun
         ->and($config['transforms.insert_profile_id.static.field'])
         ->toBe('profile_id')
         ->and($config['transforms.insert_profile_id.static.value'])
-        ->toBe('b2b-profile-id');
-});
+        ->toBe('b2b-profile-id')
+        ->and($config)
+        ->toMatchArray([
+            'delete.enabled' => 'false',
+            'transforms.unwrap.delete.tombstone.handling.mode' => 'drop',
+            ...$target,
+        ]);
+})->with([
+    'default Ferry connection' => [
+        null,
+        [
+            'connection.url' => 'jdbc:postgresql://db.internal:5432/:memory:',
+            'connection.user' => '',
+            'connection.password' => '',
+        ],
+    ],
+    'application connection' => [
+        'sales',
+        [
+            'connection.url' => 'jdbc:postgresql://sales.internal:5432/prozoo_sales',
+            'connection.user' => 'sales_user',
+            'connection.password' => 'sales_secret',
+        ],
+    ],
+]);
 
-it('targets the static destination\'s own database connection', function () use ($makeObject, $makeProperty) {
-    $registry = app(StaticDestinationRegistry::class);
-    $registry->register(new FakeCustomersDestination('sales'));
-
+it('refuses to build a sink for an unregistered static destination', function () {
     $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
-    $object = $makeObject($connection, [
-        'properties' => [$makeProperty('title', '_fld1', new StringField(length: 100, fixed: false))],
-    ]);
-
-    $sync = TestCase::makeSync([
-        'connection_id' => $connection->id,
-        'static_destination' => 'customers',
-        'source' => 'object-0',
-        'schema' => app(SyncSchemaBuilder::class)->build($object, [
-            ['source' => 'title', 'column' => 'name'],
-        ]),
-    ]);
-
-    $sourceBuilder = new SourceConnectorConfigBuilder;
-    $builder = new SinkConnectorConfigBuilder($sourceBuilder, new SyncDestinationResolver($registry));
-
-    $config = $builder->build($sync->fresh());
-
-    expect($config['connection.url'])
-        ->toBe('jdbc:postgresql://sales.internal:5432/prozoo_sales')
-        ->and($config['connection.user'])
-        ->toBe('sales_user')
-        ->and($config['connection.password'])
-        ->toBe('sales_secret');
-});
-
-it('never propagates source deletions into a static destination', function () use ($makeObject, $makeProperty) {
-    $registry = app(StaticDestinationRegistry::class);
-    $registry->register(new FakeCustomersDestination);
-
-    $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
-    $object = $makeObject($connection, [
-        'properties' => [$makeProperty('title', '_fld1', new StringField(length: 100, fixed: false))],
-    ]);
-
-    $sync = TestCase::makeSync([
-        'connection_id' => $connection->id,
-        'static_destination' => 'customers',
-        'source' => 'object-0',
-        'schema' => app(SyncSchemaBuilder::class)->build($object, [
-            ['source' => 'title', 'column' => 'name'],
-        ]),
-    ]);
-
-    $builder = new SinkConnectorConfigBuilder(new SourceConnectorConfigBuilder, new SyncDestinationResolver($registry));
-
-    $config = $builder->build($sync->fresh());
-
-    expect($config['delete.enabled'])
-        ->toBe('false')
-        ->and($config['transforms.unwrap.delete.tombstone.handling.mode'])
-        ->toBe('drop');
-});
-
-it('refuses to build a sink for an unregistered static destination', function () use ($makeObject) {
-    $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
-    $makeObject($connection);
+    TestCase::makeMetadata($connection);
 
     $sync = TestCase::makeSync([
         'connection_id' => $connection->id,
@@ -279,12 +214,11 @@ it('refuses to build a sink for an unregistered static destination', function ()
     ]);
     $sync->forceFill(['static_destination' => 'customers'])->saveQuietly();
 
-    $builder = new SinkConnectorConfigBuilder(
-        new SourceConnectorConfigBuilder,
-        new SyncDestinationResolver(new StaticDestinationRegistry),
+    $builder = new ConnectorConfigBuilder(
+        new StaticDestinationRegistry,
     );
 
-    expect(fn () => $builder->build($sync->fresh()))
+    expect(fn () => $builder->sink($sync->fresh()))
         ->toThrow(LogicException::class, __('phpinnacle-ferry::resources.sync.errors.static_destination_missing', [
             'destination' => 'customers',
         ]));
@@ -295,9 +229,9 @@ it('keeps configured sink hosts and environment ports while applying the default
     int|string|null $port,
     string $expectedHost,
     int $expectedPort,
-) use ($makeObject) {
+) {
     $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
-    $makeObject($connection);
+    TestCase::makeMetadata($connection);
     $sync = TestCase::makeSync(['connection_id' => $connection->id]);
     config(['phpinnacle-ferry.target_host' => $host]);
 
@@ -309,12 +243,11 @@ it('keeps configured sink hosts and environment ports while applying the default
         config(['database.connections.sqlite.port' => $port]);
     }
 
-    $builder = new SinkConnectorConfigBuilder(
-        new SourceConnectorConfigBuilder,
-        new SyncDestinationResolver(new StaticDestinationRegistry),
+    $builder = new ConnectorConfigBuilder(
+        new StaticDestinationRegistry,
     );
 
-    expect($builder->build($sync)['connection.url'])
+    expect($builder->sink($sync)['connection.url'])
         ->toBe(sprintf('jdbc:postgresql://%s:%d/:memory:', $expectedHost, $expectedPort));
 })->with([
     'environment port' => [null, '5544', 'db.internal', 5544],

@@ -19,7 +19,7 @@ class FerryPlugin implements Plugin
     {
         // @mago-expect lint:inline-variable-return
         /** @var static $plugin */
-        $plugin = filament(static::make()->getId());
+        $plugin = filament(self::ID);
 
         return $plugin;
     }

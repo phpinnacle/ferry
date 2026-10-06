@@ -3,7 +3,6 @@
 use Illuminate\Support\Facades\Lang;
 use PHPinnacle\Ferry\Enums\ColumnType;
 use PHPinnacle\Ferry\Models\ConnectionMetadata;
-use PHPinnacle\Ferry\Tests\TestCase;
 use PHPinnacle\Rosetta\Data\MetadataProperty;
 use PHPinnacle\Rosetta\Enums\FieldType;
 use PHPinnacle\Rosetta\Enums\MetadataKind;
@@ -11,8 +10,7 @@ use PHPinnacle\Rosetta\Enums\PropertyKind;
 use PHPinnacle\Rosetta\Fields\ReferenceField;
 use PHPinnacle\Rosetta\Fields\ScalarField;
 use PHPinnacle\Rosetta\Fields\StringField;
-
-require_once __DIR__ . '/../TestCase.php';
+use Tests\TestCase;
 
 uses(TestCase::class);
 
@@ -103,13 +101,8 @@ it('lists mappable fields with translated system titles and property titles', fu
         ->not->toContain('_idrref');
 });
 
-it('translates every mappable system field of the 1C structure in every locale', function (
-    string $name,
-    string $locale,
-) {
-    expect(Lang::has('phpinnacle-ferry::resources.sync.system_fields.' . $name, $locale, false))->toBeTrue();
-})
-    ->with([
+it('translates every mappable system field without locale fallback', function (string $locale) {
+    expect(Lang::get('phpinnacle-ferry::resources.sync.system_fields', [], $locale, false))->toHaveKeys([
         '_idrref',
         '_version',
         '_predefinedid',
@@ -128,5 +121,5 @@ it('translates every mappable system field of the 1C structure in every locale',
         '_active',
         '_recordkind',
         '_enumorder',
-    ])
-    ->with(['en', 'ru']);
+    ]);
+})->with(['en', 'ru']);

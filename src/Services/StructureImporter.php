@@ -35,7 +35,7 @@ class StructureImporter
     ];
 
     public function __construct(
-        private readonly SourceConnectionFactory $factory,
+        private readonly SourceConnection $factory,
         private readonly MetadataLoader $loader,
     ) {}
 

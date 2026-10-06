@@ -4,7 +4,13 @@ namespace PHPinnacle\Ferry\Rules;
 
 use Closure;
 use Illuminate\Contracts\Validation\ValidationRule;
-use PHPinnacle\Ferry\Services\SyncTableManager;
+use Illuminate\Validation\ValidationException;
+use PHPinnacle\Ferry\Contracts\StaticDestination;
+use PHPinnacle\Ferry\Data\DestinationField;
+use PHPinnacle\Ferry\Data\FieldMapping;
+use PHPinnacle\Ferry\Enums\ColumnType;
+use PHPinnacle\Ferry\Models\ConnectionMetadata;
+use PHPinnacle\Ferry\Models\Sync;
 
 readonly class SyncSchema implements ValidationRule
 {
@@ -65,7 +71,7 @@ readonly class SyncSchema implements ValidationRule
                 return;
             }
 
-            if (in_array($column, SyncTableManager::RESERVED_COLUMNS, true)) {
+            if (in_array($column, Sync::RESERVED_COLUMNS, true)) {
                 $fail('phpinnacle-ferry::validation.sync_schema.column_reserved')->translate([
                     'column' => $column,
                 ]);
@@ -75,6 +81,101 @@ readonly class SyncSchema implements ValidationRule
 
             $sources[$source] = true;
             $columns[$column] = true;
+        }
+    }
+
+    /**
+     * @param array<string, string> $bindings
+     * @return list<FieldMapping>
+     */
+    public static function fromBindings(
+        ConnectionMetadata $object,
+        array $bindings,
+        ?StaticDestination $destination = null,
+    ): array {
+        $mappings = [];
+        $fields = array_column($destination?->fields() ?? [], null, 'id');
+
+        foreach ($bindings as $source => $column) {
+            $source = (string) $source;
+            $field = $object->field($source);
+
+            if ($field === null) {
+                throw ValidationException::withMessages([
+                    'data.schema' => __('phpinnacle-ferry::resources.sync.errors.unknown_field', [
+                        'field' => $source,
+                    ]),
+                ]);
+            }
+
+            if ($destination !== null) {
+                self::assertNotKeyField($object, $source);
+                self::assertCompatibleWithDestination($fields, $column, ColumnType::fromField($field));
+            }
+
+            $mappings[] = new FieldMapping($source, $column, $field);
+        }
+
+        if ($destination !== null) {
+            self::assertRequiredFieldsMapped($fields, $mappings);
+        }
+
+        return $mappings;
+    }
+
+    /** @param array<string, DestinationField> $fields */
+    private static function assertCompatibleWithDestination(
+        array $fields,
+        string $column,
+        ?ColumnType $type,
+    ): void {
+        $field = $fields[$column] ?? null;
+
+        if ($field === null) {
+            throw ValidationException::withMessages([
+                'data.schema' => __('phpinnacle-ferry::resources.sync.errors.unknown_destination_field', [
+                    'field' => $column,
+                ]),
+            ]);
+        }
+
+        if ($field->type !== $type) {
+            throw ValidationException::withMessages([
+                'data.schema' => __('phpinnacle-ferry::resources.sync.errors.incompatible_destination_field', [
+                    'field' => $field->label,
+                ]),
+            ]);
+        }
+    }
+
+    private static function assertNotKeyField(ConnectionMetadata $object, string $source): void
+    {
+        if ($object->physicalColumn($source) === ConnectionMetadata::KEY_COLUMN) {
+            throw ValidationException::withMessages([
+                'data.schema' => __('phpinnacle-ferry::resources.sync.errors.key_field_not_mappable', [
+                    'field' => $source,
+                ]),
+            ]);
+        }
+    }
+
+    /**
+     * @param array<string, DestinationField> $fields
+     * @param list<FieldMapping> $mappings
+     */
+    private static function assertRequiredFieldsMapped(array $fields, array $mappings): void
+    {
+        $mapped = array_map(static fn (FieldMapping $mapping) => $mapping->column, $mappings);
+
+        foreach ($fields as $field) {
+            if ($field->required && !in_array($field->id, $mapped, true)) {
+                throw ValidationException::withMessages([
+                    'data.schema' => __(
+                        'phpinnacle-ferry::resources.sync.errors.required_destination_field_missing',
+                        ['field' => $field->label],
+                    ),
+                ]);
+            }
         }
     }
 }

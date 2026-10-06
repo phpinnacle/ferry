@@ -6,41 +6,25 @@ use Filament\Actions\Action;
 use Filament\Actions\DeleteAction;
 use Filament\Resources\Pages\EditRecord;
 use Illuminate\Contracts\Support\Htmlable;
-use Illuminate\Database\Eloquent\Model;
-use Illuminate\Validation\ValidationException;
 use PHPinnacle\Ferry\Enums\DestinationType;
-use PHPinnacle\Ferry\Forms\FieldBinding;
-use PHPinnacle\Ferry\Models\ConnectionMetadata;
 use PHPinnacle\Ferry\Models\Sync;
+use PHPinnacle\Ferry\Resources\Syncs\Actions\ConfirmSchemaChangesAction;
+use PHPinnacle\Ferry\Resources\Syncs\Schemas\SyncForm;
 use PHPinnacle\Ferry\Resources\Syncs\SyncResource;
-use PHPinnacle\Ferry\Services\Connectors\ConnectorManager;
-use PHPinnacle\Ferry\Services\SyncDestinationResolver;
-use PHPinnacle\Ferry\Services\SyncReviewer;
-use PHPinnacle\Ferry\Services\SyncSchemaBuilder;
+use PHPinnacle\Ferry\Services\StaticDestinationRegistry;
 
 /**
  * @property Sync $record
+ * @phpstan-import-type EditState from SyncForm
  */
 class EditSync extends EditRecord
 {
     protected static string $resource = SyncResource::class;
 
-    /** @var list<string>|null */
-    private ?array $columnsToDrop = null;
+    private StaticDestinationRegistry $destinations;
 
-    private SyncSchemaBuilder $schemas;
-
-    private SyncReviewer $reviewer;
-
-    private SyncDestinationResolver $destinations;
-
-    public function boot(
-        SyncSchemaBuilder $schemas,
-        SyncReviewer $reviewer,
-        SyncDestinationResolver $destinations,
-    ): void {
-        $this->schemas = $schemas;
-        $this->reviewer = $reviewer;
+    public function boot(StaticDestinationRegistry $destinations): void
+    {
         $this->destinations = $destinations;
     }
 
@@ -73,111 +57,17 @@ class EditSync extends EditRecord
 
     protected function getSaveFormAction(): Action
     {
-        return parent::getSaveFormAction()
-            ->mountUsing(fn () => $this->form->validate())
-            ->action($this->save(...))
-            ->modal(fn () => $this->droppedColumns() !== [])
-            ->requiresConfirmation()
-            ->modalHeading(__('phpinnacle-ferry::resources.sync.modals.drop_columns.heading'))
-            ->modalDescription(fn () => __(
-                'phpinnacle-ferry::resources.sync.modals.drop_columns.description',
-                ['columns' => implode(', ', $this->droppedColumns())],
-            ));
+        return ConfirmSchemaChangesAction::configure(parent::getSaveFormAction());
     }
 
-    protected function handleRecordUpdate(Model $record, array $data): Model
+    /** @param EditState $data */
+    protected function mutateFormDataBeforeSave(array $data): array
     {
-        /** @var Sync $record */
-        $object = $record->connection->publishedObject($record->source);
-
-        if ($object === null) {
-            throw ValidationException::withMessages([
-                'data.schema' => __('phpinnacle-ferry::resources.sync.errors.unknown_object'),
-            ]);
-        }
-
-        $destination = $this->destinations->find($record->static_destination);
-
-        if ($record->static_destination !== null && $destination === null) {
-            throw ValidationException::withMessages([
-                'data.schema' => __('phpinnacle-ferry::resources.sync.errors.static_destination_missing', [
-                    'destination' => $record->static_destination,
-                ]),
-            ]);
-        }
-
-        /** @var array<string, string> $bindings */
-        $bindings = $data[$destination === null ? 'schema' : 'static_mapping'];
-
-        $schema = $this->schemas->fromBindings($object, $bindings, $destination);
-
-        $shouldActivate = $record
-            ->getConnection()
-            ->transaction(function () use ($record, $data, $schema, $object) {
-                $record->update([
-                    'name' => $data['name'],
-                    'schema' => $schema,
-                ]);
-
-                return $this->reviewer->shouldResume($record, $object);
-            });
-
-        if ($shouldActivate) {
-            app(ConnectorManager::class)->activate($record);
-        }
-
-        return $record;
+        return SyncForm::forUpdate($data, $this->record, $this->destinations);
     }
 
     protected function mutateFormDataBeforeFill(array $data): array
     {
-        /** @var list<array{source: string, column: string}> $schema */
-        $schema = $data['schema'];
-        $data['schema'] = array_column($schema, 'column', 'source');
-        $data['static_mapping'] = $data['schema'];
-
-        return $data;
-    }
-
-    /** @return list<string> */
-    private function droppedColumns(): array
-    {
-        if ($this->columnsToDrop !== null) {
-            return $this->columnsToDrop;
-        }
-
-        /** @var Sync $record */
-        $record = $this->getRecord();
-
-        if ($record->destinationType() === DestinationType::Static) {
-            return $this->columnsToDrop = [];
-        }
-
-        /** @var FieldBinding $field */
-        $field = $this->form->getComponent('schema');
-        /** @var array<string, mixed> $bindings */
-        $bindings = $this->data['schema'] ?? [];
-        $sources = [];
-
-        foreach ($field->getSources() as $source) {
-            if (array_key_exists($field->getBindingKey($source['id']), $bindings)) {
-                $sources[$source['id']] = true;
-            }
-        }
-
-        $object = $record->connection->publishedObject($record->source);
-        $retyped = $object instanceof ConnectionMetadata
-            ? $this->reviewer->brokenColumns($record, $object)
-            : [];
-
-        $dropped = [];
-
-        foreach ($record->schema as $mapping) {
-            if (!array_key_exists($mapping->source, $sources) || in_array($mapping->column, $retyped, true)) {
-                $dropped[] = $mapping->column;
-            }
-        }
-
-        return $this->columnsToDrop = $dropped;
+        return SyncForm::fill($data);
     }
 }

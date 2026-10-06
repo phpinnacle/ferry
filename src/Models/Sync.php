@@ -6,13 +6,14 @@ use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Facades\Config;
 use PHPinnacle\Ferry\Casts\SchemaCast;
 use PHPinnacle\Ferry\Data\FieldMapping;
+use PHPinnacle\Ferry\Enums\ColumnType;
 use PHPinnacle\Ferry\Enums\DestinationType;
 use PHPinnacle\Ferry\Enums\SyncStatus;
-use PHPinnacle\Ferry\Observers\SyncConnectorObserver;
-use PHPinnacle\Ferry\Observers\SyncDestinationObserver;
-use PHPinnacle\Ferry\Observers\SyncTableObserver;
+use PHPinnacle\Ferry\Observers\SyncObserver;
+use PHPinnacle\Ferry\Services\StaticDestinationRegistry;
 
 /**
  * @property string $id
@@ -31,10 +32,14 @@ use PHPinnacle\Ferry\Observers\SyncTableObserver;
  * @property-read Connection $connection
  * @property-read Connector|null $connector
  */
-#[ObservedBy([SyncConnectorObserver::class, SyncDestinationObserver::class, SyncTableObserver::class])]
+#[ObservedBy(SyncObserver::class)]
 class Sync extends Model
 {
     use HasUuids;
+
+    public const string ID_COLUMN = 'idrref';
+
+    public const array RESERVED_COLUMNS = [self::ID_COLUMN];
 
     protected $table = 'syncs';
 
@@ -57,12 +62,21 @@ class Sync extends Model
         'schema',
     ];
 
+    /** @param array<string, mixed> $options */
+    public function save(array $options = []): bool
+    {
+        return $this->getConnection()->transaction(fn () => parent::save($options));
+    }
+
     /** @internal  */
     public function activate(): void
     {
         $this->status = SyncStatus::Active;
         $this->is_paused = false;
-        $this->save();
+
+        if ($this->isDirty()) {
+            $this->save();
+        }
     }
 
     /** @return BelongsTo<Connection, $this> */
@@ -76,12 +90,22 @@ class Sync extends Model
         return $this->static_destination === null ? DestinationType::Dynamic : DestinationType::Static;
     }
 
+    public function initializeDestination(StaticDestinationRegistry $destinations): void
+    {
+        $this->destination = $this->static_destination === null
+            ? Config::string('phpinnacle-ferry.sync.table_prefix') . $this->code
+            : $destinations->getOrFail($this->static_destination)->table();
+    }
+
     /** @internal */
     public function pause(bool $manually = true): void
     {
         $this->status = SyncStatus::Pause;
         $this->is_paused = $manually;
-        $this->save();
+
+        if ($this->isDirty()) {
+            $this->save();
+        }
     }
 
     public function recordConnector(Connector $connector): void
@@ -97,5 +121,103 @@ class Sync extends Model
     public function connector(): BelongsTo
     {
         return $this->belongsTo(Connector::class, 'connector_id');
+    }
+
+    /** @return list<string> */
+    public function brokenColumns(?ConnectionMetadata $object, StaticDestinationRegistry $destinations): array
+    {
+        $destination = $destinations->get($this->static_destination);
+
+        if ($object === null || $this->static_destination !== null && $destination === null) {
+            return array_map(static fn (FieldMapping $mapping) => $mapping->column, $this->schema);
+        }
+
+        $fields = array_column($destination?->fields() ?? [], null, 'id');
+        $columns = [];
+        $destinationColumns = [];
+
+        foreach ($this->schema as $mapping) {
+            $field = $object->field($mapping->source);
+            $type = $mapping->type();
+
+            if ($field === null || ColumnType::fromField($field) !== $type) {
+                $columns[] = $mapping->column;
+            }
+
+            if ($destination !== null && ($fields[$mapping->column] ?? null)?->type !== $type) {
+                $destinationColumns[] = $mapping->column;
+            }
+
+            unset($fields[$mapping->column]);
+        }
+
+        foreach ($fields as $field) {
+            if ($field->required) {
+                $destinationColumns[] = $field->id;
+            }
+        }
+
+        return array_values(array_unique([...$columns, ...$destinationColumns]));
+    }
+
+    public function hasValidSchema(ConnectionMetadata $object, StaticDestinationRegistry $destinations): bool
+    {
+        return $this->brokenColumns($object, $destinations) === [];
+    }
+
+    /** @return list<string> */
+    public function droppedColumns(): array
+    {
+        if ($this->destinationType() === DestinationType::Static) {
+            return [];
+        }
+
+        /** @var list<FieldMapping> $previous */
+        $previous = $this->getOriginal('schema');
+        $next = array_column($this->schema, null, 'source');
+        $columns = [];
+
+        foreach ($previous as $mapping) {
+            $replacement = $next[$mapping->source] ?? null;
+
+            if ($replacement === null || $replacement->type() !== $mapping->type()) {
+                $columns[] = $mapping->column;
+            }
+        }
+
+        return $columns;
+    }
+
+    public function shouldResume(ConnectionMetadata $object, StaticDestinationRegistry $destinations): bool
+    {
+        if ($this->connector === null) {
+            return false;
+        }
+
+        if ($this->status === SyncStatus::Active) {
+            return true;
+        }
+
+        return (
+            $this->status === SyncStatus::Pause
+            && !$this->is_paused
+            && $this->hasValidSchema($object, $destinations)
+        );
+    }
+
+    /** @return array<string, string> */
+    public function columnMap(ConnectionMetadata $object, string $keyColumn = self::ID_COLUMN): array
+    {
+        $columns = [ConnectionMetadata::KEY_COLUMN => $keyColumn];
+
+        foreach ($this->schema as $mapping) {
+            $column = $object->physicalColumn($mapping->source);
+
+            if ($column !== null && $column !== ConnectionMetadata::KEY_COLUMN) {
+                $columns[$column] = $mapping->column;
+            }
+        }
+
+        return $columns;
     }
 }

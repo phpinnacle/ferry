@@ -8,7 +8,7 @@ use PHPinnacle\Ferry\Jobs\FinishStructureJob;
 use PHPinnacle\Ferry\Jobs\PrepareStructureJob;
 use PHPinnacle\Ferry\Models\Connection;
 use PHPinnacle\Ferry\Models\ConnectionMetadata;
-use PHPinnacle\Ferry\Services\SourceConnectionFactory;
+use PHPinnacle\Ferry\Services\SourceConnection;
 use PHPinnacle\Ferry\Services\StructureImporter;
 use PHPinnacle\Ferry\Support\ConnectionErrorFormatter;
 use PHPinnacle\Ferry\Tests\TestCase;
@@ -38,7 +38,7 @@ $makeImporter = function (int $total) {
         public function __construct(
             private readonly int $total,
         ) {
-            parent::__construct(app(SourceConnectionFactory::class), app(MetadataLoader::class));
+            parent::__construct(app(SourceConnection::class), app(MetadataLoader::class));
         }
 
         public function importChunk(

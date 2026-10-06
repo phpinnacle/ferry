@@ -1,6 +1,6 @@
 <?php
 
-namespace PHPinnacle\Ferry\Services;
+namespace PHPinnacle\Ferry\Data;
 
 final readonly class ConnectionTestResult
 {

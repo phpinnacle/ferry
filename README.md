@@ -7,7 +7,7 @@ Ferry adds a data source connections section to the admin panel: administrators 
 ## Features
 
 - `Connection` model with an encrypted password that is never returned to the interface.
-- `ConnectionTester` service that opens a temporary connection with the current (possibly unsaved) form values, runs a lightweight query and reports a sanitized result.
+- `SourceConnection` service that opens a temporary connection with the current (possibly unsaved) form values, runs a lightweight query and reports a sanitized result.
 - Queued structure preparation built on `phpinnacle/rosetta`, storing the semantic 1C metadata as `ConnectionMetadata` records.
 - Filament `ConnectionResource` with create/edit/list pages, "Test connection" and "Fetch structure" actions, a structure status badge and driver-based default port suggestion.
 - Reusable `FieldMapping` form field with click-to-connect lines, search, type checks, multiple destinations, and inverse mapping.
@@ -31,7 +31,7 @@ The package publishes a single `create_ferry_tables` migration for connections, 
 
 Register `FerryPlugin::make()` in the target Filament panel. Publish `phpinnacle-ferry-config` when using a non-default database connection, tenant model or timeout. Structure preparation runs on the queue, so a worker must be running.
 
-Connector management talks to Kafka Connect over PSR-18, so the application binds the transport it prefers:
+Connector management talks to Kafka Connect over PSR-18, so the application binds the transport it prefers. Kafka dependencies are resolved when a connector operation begins; constructing observers or opening a synchronization form does not initialize them:
 
 ```php
 use GuzzleHttp\Client;
@@ -81,6 +81,8 @@ Editing the mapping applies the difference to the table: new mappings add nullab
 
 The model owns this lifecycle regardless of the caller: creating a `Sync` creates its destination table, changing its `schema` applies the difference and deleting it drops the table, so a synchronization created from a command, job or seeder behaves exactly like one created from the panel.
 
+`SyncSchema::fromBindings($object, $bindings, $destination)` converts validated form bindings into typed mappings and checks them against the source metadata and optional static destination. `Sync::brokenColumns($object, $destinations)` and `hasValidSchema($object, $destinations)` compare the saved mapping with current declarations; `shouldResume($object, $destinations)` applies the automatic-resume policy. `droppedColumns()` compares the model's original and current typed schemas; both column-loss confirmation and table updates use this comparison. Confirmation fills a copy of the record to preview changes. A single `SyncObserver` coordinates table and connector lifecycle operations.
+
 A pause requested by an administrator and a pause caused by a broken mapping are distinguished by `is_paused`. Saving the edit form resumes only a synchronization that was paused automatically and whose mapping is valid again; a pause requested through the pause action survives editing and requires the activate action. `ConnectorManager::activate()` refuses a synchronization whose mapping no longer matches its source or destination.
 
 ## Static destinations
@@ -117,6 +119,8 @@ FerryPlugin::make()->destinations(new CustomerDestination);
 
 `key()` identifies the destination in the persisted synchronization, `table()`, `primaryKey()` and `connection()` locate the target (a `null` connection means the Ferry connection), `fields()` lists the only columns an administrator may map together with their logical type and whether they are required, and `fixedValues()` holds constants written into every row through `InsertField` transforms.
 
+`StaticDestinationRegistry::get($key)` returns the registered destination or `null`, including when the key is `null` for a dynamic synchronization. Use `getOrFail($key)` when a static destination is required. The `Sync` model initializes its destination table name when created.
+
 Saving a static synchronization accepts only declared fields, only source fields of the same logical `ColumnType` (`Reference` covers 1C references and identifiers), requires every required field, forbids mapping one field twice and rejects the source key field, which always feeds `primaryKey()`. Ferry never creates, alters or drops a static table, and its sink connector upserts rows without propagating source deletions. Removing a destination from the registry while synchronizations still point at it never makes them write elsewhere: the next structure review pauses them automatically, they cannot be activated or saved until the destination is registered again, and their whole mapping is reported as out of date.
 
 The synchronization form selects the destination in a single select. A dynamic synchronization lists every mappable 1C field with its title and technical column and binds it to a column name with `FieldBinding`; a static one connects 1C fields to the fields declared by the destination with `FieldMapping`, which shows the logical types and required marks and refuses incompatible connections.
@@ -127,7 +131,7 @@ Data actually moves through Kafka Connect. A connection owns a single Debezium P
 
 Pausing a synchronization keeps its table in that scope on purpose. The source connector keeps advancing the write-ahead log for the other synchronizations of the connection, so a table dropped from the capture scope would silently lose every change made while the sink was paused.
 
-`ConnectorManager` is the entry point and every operation is idempotent, since configuration is pushed with `PUT /connectors/{name}/config`.
+`ConnectorManager` is the entry point and every operation is idempotent, since configuration is pushed with `PUT /connectors/{name}/config`. `ConnectorConfigBuilder` builds both source and sink configurations, including their shared naming and wire format. `ConnectorManager` applies them, refreshes status and publishes snapshot signals through `SignalProducer`.
 
 ```php
 use PHPinnacle\Ferry\Services\Connectors\ConnectorManager;
@@ -149,7 +153,7 @@ A source connector failure concerns all synchronizations of its connection, whil
 
 Because the target Kafka Connect cluster is shared, the connectors pin their own converters instead of relying on worker defaults, and the sink flattens Debezium envelopes with `ExtractNewRecordState` before applying the field renames taken from the synchronization schema. Each sink also restricts itself to its own mapped columns with `fields.whitelist`, so two synchronizations reading the same source table with different field selections never write each other's columns.
 
-Debezium only snapshots a source connector's tables once, when its replication slot is first created; widening `table.include.list`/`column.include.list` for an already running connector does not back-fill the rows that existed before the change. The source connector therefore always runs with `read.only=true` and `signal.enabled.channels=kafka`, and `ConnectorManager::activate()` compares the connector's `column.include.list` before and after pushing the new configuration. When the diff exposes a table that was not captured yet, it publishes an `execute-snapshot` signal for that table through `SnapshotSignaler`, keyed by the connector's `topic.prefix` as Debezium's Kafka signal channel requires. The very first synchronization of a connection never needs a signal, since Debezium's own initial snapshot already covers it.
+Debezium only snapshots a source connector's tables once, when its replication slot is first created; widening `table.include.list`/`column.include.list` for an already running connector does not back-fill the rows that existed before the change. The source connector therefore always runs with `read.only=true` and `signal.enabled.channels=kafka`, and `ConnectorManager::activate()` compares the connector's `column.include.list` before and after pushing the new configuration. When the diff exposes a table that was not captured yet, it publishes an `execute-snapshot` signal for that table through its `SignalProducer`, keyed by the connector's `topic.prefix` as Debezium's Kafka signal channel requires. The very first synchronization of a connection never needs a signal, since Debezium's own initial snapshot already covers it.
 
 ## Configuration
 
@@ -245,6 +249,10 @@ Choose `simple()` or `schema()` for a field. Both accept closures and use native
 `options()` supports the same string lists, associative identifiers, and object metadata contracts as `FieldMapping`, including enum cases. It also accepts a closure. Source identifiers retain their literal identity, including numeric identifiers and dots. `labels(source: 'Source', dest: 'Binding')` sets the headings and accepts closures. Configuration is trusted developer code; source identifiers and binding shapes are validated on submission, while the child fields define the value validation.
 
 The component uses the package views and the on-demand mapping stylesheet. Include the package views in your custom theme and publish Filament assets as described above. Form state is hydrated into internal child schema state and dehydrated back to the source-keyed map when the parent schema is submitted.
+
+## Runtime responsibilities
+
+Ferry keeps separate services for external boundaries: `SourceConnection` opens and tests source database connections, `StructureImporter` imports Rosetta metadata, `SyncTableManager` creates, drops and updates destination tables directly from a `Sync` model, and `StaticDestinationRegistry` holds application registrations. Kafka Connect configuration, remote lifecycle operations and Kafka transport belong to `ConnectorConfigBuilder`, `ConnectorManager` and `RdKafkaSignalProducer`, respectively. Persisted state and mapping decisions belong to the models; submitted schema validation belongs to `SyncSchema`. `SyncForm` converts validated form state into model attributes. `Sync` saves its state and table changes in a transaction; `SyncObserver` updates eligible connectors after commit, independently of the caller. `ConfirmSchemaChangesAction` only presents column-loss confirmation. Resource pages wire the form into Filament's lifecycle.
 
 ## Testing
 

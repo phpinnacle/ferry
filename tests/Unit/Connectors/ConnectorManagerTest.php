@@ -8,24 +8,20 @@ use PHPinnacle\Ferry\Data\FieldMapping;
 use PHPinnacle\Ferry\Enums\ConnectorStatus;
 use PHPinnacle\Ferry\Enums\StructureStatus;
 use PHPinnacle\Ferry\Enums\SyncStatus;
-use PHPinnacle\Ferry\Models\ConnectionMetadata;
 use PHPinnacle\Ferry\Models\Connector;
+use PHPinnacle\Ferry\Services\Connectors\ConnectorConfigBuilder;
 use PHPinnacle\Ferry\Services\Connectors\ConnectorManager;
-use PHPinnacle\Ferry\Services\Connectors\SinkConnectorConfigBuilder;
-use PHPinnacle\Ferry\Services\Connectors\SnapshotSignaler;
-use PHPinnacle\Ferry\Services\Connectors\SourceConnectorConfigBuilder;
 use PHPinnacle\Ferry\Services\StaticDestinationRegistry;
-use PHPinnacle\Ferry\Services\SyncDestinationResolver;
-use PHPinnacle\Ferry\Services\SyncReviewer;
 use PHPinnacle\Ferry\Tests\TestCase;
 use PHPinnacle\Franz\Client;
 use PHPinnacle\Franz\Exception\ApiException;
 use PHPinnacle\Rosetta\Enums\FieldType;
-use PHPinnacle\Rosetta\Enums\MetadataKind;
 use PHPinnacle\Rosetta\Fields\ScalarField;
 use Psr\Http\Client\ClientInterface;
+use Psr\Http\Message\RequestFactoryInterface;
 use Psr\Http\Message\RequestInterface;
 use Psr\Http\Message\ResponseInterface;
+use Psr\Http\Message\StreamFactoryInterface;
 
 require_once __DIR__ . '/../../TestCase.php';
 
@@ -44,20 +40,7 @@ function ferry_sync(): PHPinnacle\Ferry\Models\Sync
 {
     $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
 
-    ConnectionMetadata::create([
-        'connection_id' => $connection->id,
-        'external_id' => 'object-0',
-        'name' => '_reference0',
-        'code' => 1,
-        'kind' => MetadataKind::Reference,
-        'label' => 'Object 0',
-        'title' => 'Object 0',
-        'system' => ['_idrref' => new ScalarField(FieldType::Id)],
-        'properties' => [],
-        'values' => [],
-        'position' => 0,
-        'revision' => $connection->generation,
-    ]);
+    TestCase::makeMetadata($connection);
 
     return TestCase::makeSync([
         'connection_id' => $connection->id,
@@ -71,15 +54,13 @@ function ferry_connector_manager(
 ): ConnectorManager {
     $factory = new HttpFactory;
     $client = new Client('http://connect.example:8083', $http, $factory, $factory);
-    $source = new SourceConnectorConfigBuilder;
-    $destinations = new SyncDestinationResolver(new StaticDestinationRegistry);
+    $destinations = new StaticDestinationRegistry;
 
     return new ConnectorManager(
         $client,
-        $source,
-        new SinkConnectorConfigBuilder($source, $destinations),
-        new SnapshotSignaler($signals ?? new RecordingSignalProducer, $source),
-        new SyncReviewer($destinations),
+        new ConnectorConfigBuilder($destinations),
+        $signals ?? new RecordingSignalProducer,
+        $destinations,
     );
 }
 
@@ -115,60 +96,21 @@ function ferry_sent_config(RecordingConnectClient $http, int $index): array
     return json_decode((string) $http->requests[$index]->getBody(), true, flags: JSON_THROW_ON_ERROR);
 }
 
-it('rejects unsupported drivers with a translated error on activate', function () {
+it('rejects unsupported connector drivers before making a remote request', function (string $operation) {
     $connection = TestCase::makeConnection([
         'driver' => \PHPinnacle\Ferry\Enums\Driver::Sqlsrv,
     ], ['status' => StructureStatus::Ready, 'generation' => 1]);
-
     $sync = TestCase::makeSync(['connection_id' => $connection->id]);
     $http = new RecordingConnectClient;
+    $owner = $operation === 'refreshSource' ? $connection : $sync;
 
-    expect(fn () => ferry_connector_manager($http)->activate($sync))
+    expect(fn () => ferry_connector_manager($http)->{$operation}($owner))
         ->toThrow(LogicException::class, __('phpinnacle-ferry::resources.connection.errors.unsupported_driver', [
             'driver' => $connection->driver->getLabel(),
-        ]));
-});
-
-it('rejects unsupported drivers with a translated error on refreshSource', function () {
-    $connection = TestCase::makeConnection([
-        'driver' => \PHPinnacle\Ferry\Enums\Driver::Sqlsrv,
-    ], ['status' => StructureStatus::Ready, 'generation' => 1]);
-
-    $http = new RecordingConnectClient;
-
-    expect(fn () => ferry_connector_manager($http)->refreshSource($connection))
-        ->toThrow(LogicException::class, __('phpinnacle-ferry::resources.connection.errors.unsupported_driver', [
-            'driver' => $connection->driver->getLabel(),
-        ]));
-});
-
-it('rejects unsupported drivers with a translated error on pause', function () {
-    $connection = TestCase::makeConnection([
-        'driver' => \PHPinnacle\Ferry\Enums\Driver::Sqlsrv,
-    ], ['status' => StructureStatus::Ready, 'generation' => 1]);
-
-    $sync = TestCase::makeSync(['connection_id' => $connection->id]);
-    $http = new RecordingConnectClient;
-
-    expect(fn () => ferry_connector_manager($http)->pause($sync))
-        ->toThrow(LogicException::class, __('phpinnacle-ferry::resources.connection.errors.unsupported_driver', [
-            'driver' => $connection->driver->getLabel(),
-        ]));
-});
-
-it('rejects unsupported drivers with a translated error on restart', function () {
-    $connection = TestCase::makeConnection([
-        'driver' => \PHPinnacle\Ferry\Enums\Driver::Sqlsrv,
-    ], ['status' => StructureStatus::Ready, 'generation' => 1]);
-
-    $sync = TestCase::makeSync(['connection_id' => $connection->id]);
-    $http = new RecordingConnectClient;
-
-    expect(fn () => ferry_connector_manager($http)->restart($sync))
-        ->toThrow(LogicException::class, __('phpinnacle-ferry::resources.connection.errors.unsupported_driver', [
-            'driver' => $connection->driver->getLabel(),
-        ]));
-});
+        ]))
+        ->and($http->routes())
+        ->toBe([]);
+})->with(['activate', 'refreshSource', 'pause', 'restart']);
 
 it('refuses to activate a synchronization whose mapping no longer matches the source', function () {
     $sync = ferry_sync();
@@ -187,6 +129,7 @@ it('refuses to activate a synchronization whose mapping no longer matches the so
 
 it('activates a synchronization by pushing the connector configs and resuming both', function () {
     $sync = ferry_sync();
+    $sync->pause();
     $signals = new RecordingSignalProducer;
     $http = new RecordingConnectClient(
         missing_connector_response(),
@@ -202,12 +145,16 @@ it('activates a synchronization by pushing the connector configs and resuming bo
 
     expect($sync->fresh()->status)
         ->toBe(SyncStatus::Active)
+        ->and($sync->fresh()->is_paused)
+        ->toBeFalse()
         ->and($sync->fresh()->connector?->status)
         ->toBe(ConnectorStatus::Running)
         ->and($sync->fresh()->connector?->config)
         ->toBe(ferry_sent_config($http, 2))
         ->and($sync->fresh()->connection->connector?->config)
         ->toBe(ferry_sent_config($http, 1))
+        ->and(ferry_sent_config($http, 1)['table.include.list'])
+        ->toBe('public._reference0')
         ->and($sync->fresh()->connector?->checked_at)
         ->not->toBeNull()->and($sync->fresh()->connection->connector?->checked_at)
         ->not->toBeNull()->and(Connector::query()->count())->toBe(2)->and($http->routes())->toBe([
@@ -219,43 +166,6 @@ it('activates a synchronization by pushing the connector configs and resuming bo
             ['GET', '/connectors/ferry-source-test-connection/status'],
             ['GET', '/connectors/ferry-sink-test-sync/status'],
         ])->and($signals->published)->toBe([]);
-});
-
-it('scopes the shared source connector to the synchronization being activated', function () {
-    $sync = ferry_sync();
-    $sync->pause();
-
-    $http = new RecordingConnectClient(
-        missing_connector_response(),
-        connector_response(),
-        connector_response(),
-        new Response(202),
-        new Response(202),
-        status_response(),
-        status_response(),
-    );
-
-    ferry_connector_manager($http)->activate($sync);
-
-    expect(ferry_sent_config($http, 1)['table.include.list'])->toBe('public._reference0');
-});
-
-it('does not request an incremental snapshot for the very first synchronization of a connection', function () {
-    $sync = ferry_sync();
-    $signals = new RecordingSignalProducer;
-    $http = new RecordingConnectClient(
-        missing_connector_response(),
-        connector_response(),
-        connector_response(),
-        new Response(202),
-        new Response(202),
-        status_response(),
-        status_response(),
-    );
-
-    ferry_connector_manager($http, $signals)->activate($sync);
-
-    expect($signals->published)->toBe([]);
 });
 
 it('does not request an incremental snapshot when re-activating without new tables or columns', function () {
@@ -276,37 +186,21 @@ it('does not request an incremental snapshot when re-activating without new tabl
     expect($signals->published)->toBe([]);
 });
 
-it('requests an incremental snapshot when a new synchronization extends the shared source connector', function () {
+it('requests an incremental snapshot when a new synchronization extends the shared source connector', function (
+    string $previousColumns,
+    array $expectedTables,
+) {
     $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
 
-    ConnectionMetadata::create([
-        'connection_id' => $connection->id,
-        'external_id' => 'object-0',
-        'name' => '_reference0',
-        'code' => 1,
-        'kind' => MetadataKind::Reference,
-        'label' => 'Object 0',
-        'title' => 'Object 0',
-        'system' => ['_idrref' => new ScalarField(FieldType::Id)],
-        'properties' => [],
-        'values' => [],
-        'position' => 0,
-        'revision' => $connection->generation,
-    ]);
+    TestCase::makeMetadata($connection);
 
-    ConnectionMetadata::create([
-        'connection_id' => $connection->id,
+    TestCase::makeMetadata($connection, [
         'external_id' => 'object-1',
         'name' => '_reference1',
         'code' => 2,
-        'kind' => MetadataKind::Reference,
         'label' => 'Object 1',
         'title' => 'Object 1',
-        'system' => ['_idrref' => new ScalarField(FieldType::Id)],
-        'properties' => [],
-        'values' => [],
         'position' => 1,
-        'revision' => $connection->generation,
     ]);
 
     TestCase::makeSync([
@@ -323,7 +217,7 @@ it('requests an incremental snapshot when a new synchronization extends the shar
 
     $signals = new RecordingSignalProducer;
     $http = new RecordingConnectClient(
-        config_response(['column.include.list' => 'public._reference0._idrref']),
+        config_response(['column.include.list' => $previousColumns]),
         connector_response(),
         connector_response(),
         new Response(202),
@@ -346,11 +240,14 @@ it('requests an incremental snapshot when a new synchronization extends the shar
         ->toBe([
             'type' => 'execute-snapshot',
             'data' => [
-                'data-collections' => ['public._reference1'],
+                'data-collections' => $expectedTables,
                 'type' => 'INCREMENTAL',
             ],
         ]);
-});
+})->with([
+    'one new table' => ['public._reference0._idrref', ['public._reference1']],
+    'multiple new tables' => ['', ['public._reference0', 'public._reference1']],
+]);
 
 it('keeps capturing the table of a paused synchronization on the shared source connector', function () {
     $sync = ferry_sync();
@@ -379,34 +276,15 @@ it('keeps capturing the table of a paused synchronization on the shared source c
 it('keeps capturing a paused synchronization table while a sibling synchronization stays active', function () {
     $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
 
-    ConnectionMetadata::create([
-        'connection_id' => $connection->id,
-        'external_id' => 'object-0',
-        'name' => '_reference0',
-        'code' => 1,
-        'kind' => MetadataKind::Reference,
-        'label' => 'Object 0',
-        'title' => 'Object 0',
-        'system' => ['_idrref' => new ScalarField(FieldType::Id)],
-        'properties' => [],
-        'values' => [],
-        'position' => 0,
-        'revision' => $connection->generation,
-    ]);
+    TestCase::makeMetadata($connection);
 
-    ConnectionMetadata::create([
-        'connection_id' => $connection->id,
+    TestCase::makeMetadata($connection, [
         'external_id' => 'object-1',
         'name' => '_reference1',
         'code' => 2,
-        'kind' => MetadataKind::Reference,
         'label' => 'Object 1',
         'title' => 'Object 1',
-        'system' => ['_idrref' => new ScalarField(FieldType::Id)],
-        'properties' => [],
-        'values' => [],
         'position' => 1,
-        'revision' => $connection->generation,
     ]);
 
     TestCase::makeSync([
@@ -431,16 +309,6 @@ it('keeps capturing a paused synchronization table while a sibling synchronizati
 
     expect(explode(',', ferry_sent_config($http, 1)['table.include.list']))
         ->toContain('public._reference0', 'public._reference1');
-});
-
-it('never lets an unscoped source connector capture the whole database', function () {
-    $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
-
-    $config = new SourceConnectorConfigBuilder()->build($connection, $connection->trackedSyncs());
-
-    expect($config)
-        ->not->toHaveKey('table.include.list')->and($config)
-        ->not->toHaveKey('message.key.columns');
 });
 
 it('restarts the failed tasks of both connectors', function () {
@@ -707,3 +575,24 @@ final class RecordingConnectClient implements ClientInterface
         ], $this->requests);
     }
 }
+
+it('resolves the injected connector manager for an actual Kafka Connect request', function () {
+    $connection = TestCase::makeConnection();
+    $http = new RecordingConnectClient(new Response(200, [], json_encode([
+        'name' => 'ferry-source-test-connection',
+        'connector' => ['state' => 'RUNNING', 'worker_id' => 'worker:8083'],
+        'tasks' => [],
+    ], JSON_THROW_ON_ERROR)));
+    $factory = new HttpFactory;
+    $this->app->instance(ClientInterface::class, $http);
+    $this->app->instance(RequestFactoryInterface::class, $factory);
+    $this->app->instance(StreamFactoryInterface::class, $factory);
+    $this->app->instance(SignalProducer::class, new RecordingSignalProducer);
+
+    $this->app->make(ConnectorManager::class)->checkStatus($connection);
+
+    expect($connection->fresh()->connector?->status)
+        ->toBe(ConnectorStatus::Running)
+        ->and($http->routes())
+        ->toBe([['GET', '/connectors/ferry-source-test-connection/status']]);
+});

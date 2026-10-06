@@ -4,8 +4,8 @@ use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
+use PHPinnacle\Ferry\Data\ConnectionTestResult;
 use PHPinnacle\Ferry\Models\Connection;
-use PHPinnacle\Ferry\Services\ConnectionTestResult;
 use PHPinnacle\Ferry\Tests\TestCase;
 
 require_once __DIR__ . '/../TestCase.php';

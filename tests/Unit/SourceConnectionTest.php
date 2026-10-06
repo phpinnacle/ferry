@@ -1,12 +1,12 @@
 <?php
 
-use PHPinnacle\Ferry\Services\ConnectionTester;
+use PHPinnacle\Ferry\Services\SourceConnection;
 use Tests\TestCase;
 
 uses(TestCase::class);
 
 it('succeeds when the database can be reached', function () {
-    $result = app(ConnectionTester::class)->test([
+    $result = app(SourceConnection::class)->test([
         'driver' => 'sqlite',
         'database' => ':memory:',
     ]);
@@ -15,7 +15,7 @@ it('succeeds when the database can be reached', function () {
 });
 
 it('fails when the connection cannot be opened', function () {
-    $result = app(ConnectionTester::class)->test([
+    $result = app(SourceConnection::class)->test([
         'driver' => 'pgsql',
         'host' => '127.0.0.1',
         'port' => 1,
