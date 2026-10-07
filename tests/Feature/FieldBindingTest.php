@@ -335,3 +335,38 @@ it('renders source metadata, binding schemas, and controls without ignoring Live
         ->toContain('data.bindings.source_6e616d65.destination')
         ->not->toContain('wire:ignore');
 });
+
+it('keeps the binding toolbar and footer around the empty state', function () {
+    $field = FieldBinding::make('bindings')
+        ->options([])
+        ->labels(source: 'Incoming fields', dest: 'Output fields')
+        ->simple(TextInput::make('destination'));
+    $schema = field_binding_schema($field);
+    view()->share('errors', new ViewErrorBag);
+
+    expect($schema->toHtml())
+        ->toContain('fi-empty-state')
+        ->toContain('No fields available.')
+        ->not->toContain('Incoming fields')
+        ->not->toContain('Output fields')
+        ->not->toContain('type="search"')->toContain('Show unbound')->toContain('0 of 0 sources bound')->toContain(
+            'Bind a source to configure it. Unbind to exclude it.',
+        );
+});
+
+it('highlights warned sources and preserves warnings for missing source identifiers', function () {
+    $field = FieldBinding::make('bindings')
+        ->options(['name', 'email'])
+        ->warnings(fn () => ['name' => 'Review <name>.', '42' => 'Source disappeared.'])
+        ->simple(TextInput::make('destination'));
+    $schema = field_binding_schema($field, ['name' => 'profile.name']);
+    view()->share('errors', new ViewErrorBag);
+
+    $html = $schema->toHtml();
+
+    expect($html)
+        ->toContain('Review &lt;name&gt;.')
+        ->toContain('42: Source disappeared.')
+        ->toContain('data.bindings.source_6e616d65.destination');
+    expect(substr_count($html, 'has-warning'))->toBe(1);
+});

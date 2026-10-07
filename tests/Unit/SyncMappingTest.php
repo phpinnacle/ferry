@@ -1,6 +1,7 @@
 <?php
 
 use PHPinnacle\Ferry\Data\FieldMapping;
+use PHPinnacle\Ferry\Enums\DestinationType;
 use PHPinnacle\Ferry\Enums\SyncStatus;
 use PHPinnacle\Ferry\Models\ConnectionMetadata;
 use PHPinnacle\Ferry\Models\Connector;
@@ -46,7 +47,8 @@ it('resumes a synchronization according to its pause and connector state', funct
 
 it('reports removed and newly required destination fields', function () {
     $sync = new Sync([
-        'static_destination' => 'customers',
+        'type' => DestinationType::Static,
+        'destination' => 'customers',
         'schema' => [
             new FieldMapping('_description', 'name', new StringField(length: 100, fixed: false)),
             new FieldMapping('_marked', 'is_retired', new ScalarField(FieldType::Boolean)),
@@ -58,7 +60,8 @@ it('reports removed and newly required destination fields', function () {
 
 it('reports every mapping as broken and refuses to resume when its destination is gone', function () {
     $sync = new Sync([
-        'static_destination' => 'gone',
+        'type' => DestinationType::Static,
+        'destination' => 'gone',
         'schema' => [new FieldMapping('_description', 'name', new StringField(length: 100, fixed: false))],
     ])->forceFill(['status' => SyncStatus::Pause, 'is_paused' => false]);
     $sync->setRelation('connector', new Connector(['name' => 'ferry-sink-test-sync']));

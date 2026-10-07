@@ -16,6 +16,7 @@ use PHPinnacle\Ferry\Services\DestinationFactory;
 /**
  * @property Sync $record
  * @phpstan-import-type EditState from SyncForm
+ * @phpstan-import-type FillState from SyncForm
  */
 class EditSync extends EditRecord
 {
@@ -46,7 +47,7 @@ class EditSync extends EditRecord
                 ->requiresConfirmation()
                 ->modalHeading(__('phpinnacle-ferry::resources.sync.modals.delete.heading'))
                 ->modalDescription(__(
-                    'phpinnacle-ferry::resources.sync.modals.delete.' . match ($this->record->destinationType()) {
+                    'phpinnacle-ferry::resources.sync.modals.delete.' . match ($this->record->type) {
                         DestinationType::Dynamic => 'description_dynamic',
                         DestinationType::Static => 'description_static',
                     },
@@ -66,6 +67,7 @@ class EditSync extends EditRecord
         return SyncForm::forUpdate($data, $this->record, $this->destinations);
     }
 
+    /** @param FillState $data */
     protected function mutateFormDataBeforeFill(array $data): array
     {
         return SyncForm::fill($data);

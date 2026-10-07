@@ -22,7 +22,7 @@ use PHPinnacle\Ferry\Observers\SyncObserver;
  * @property string $code
  * @property SyncStatus $status
  * @property bool $is_paused
- * @property string|null $static_destination
+ * @property DestinationType $type
  * @property string $source
  * @property string $destination
  * @property list<FieldMapping> $schema
@@ -44,10 +44,12 @@ class Sync extends Model
 
     protected $attributes = [
         'status' => SyncStatus::Pending->value,
+        'type' => DestinationType::Dynamic->value,
     ];
 
     protected $casts = [
         'status' => SyncStatus::class,
+        'type' => DestinationType::class,
         'is_paused' => 'bool',
         'schema' => SchemaCast::class,
     ];
@@ -56,7 +58,8 @@ class Sync extends Model
         'connection_id',
         'name',
         'code',
-        'static_destination',
+        'type',
+        'destination',
         'source',
         'schema',
     ];
@@ -82,11 +85,6 @@ class Sync extends Model
     public function connection(): BelongsTo
     {
         return $this->belongsTo(Connection::class, 'connection_id');
-    }
-
-    public function destinationType(): DestinationType
-    {
-        return $this->static_destination !== null ? DestinationType::Static : DestinationType::Dynamic;
     }
 
     /** @internal */
@@ -121,7 +119,7 @@ class Sync extends Model
      */
     public function brokenColumns(?ConnectionMetadata $object, ?array $destinationFields = null): array
     {
-        if ($object === null || $this->static_destination !== null && $destinationFields === null) {
+        if ($object === null || $this->type === DestinationType::Static && $destinationFields === null) {
             return array_map(static fn (FieldMapping $mapping) => $mapping->column, $this->schema);
         }
 
@@ -162,7 +160,7 @@ class Sync extends Model
     /** @return list<string> */
     public function droppedColumns(): array
     {
-        if ($this->destinationType() === DestinationType::Static) {
+        if ($this->type === DestinationType::Static) {
             return [];
         }
 

@@ -44,6 +44,9 @@ class SyncTable
                     ->label(__('phpinnacle-ferry::resources.sync.fields.status'))
                     ->badge()
                     ->sortable(),
+                TextColumn::make('type')
+                    ->label(__('phpinnacle-ferry::resources.sync.fields.type'))
+                    ->sortable(),
                 TextColumn::make('destination')
                     ->label(__('phpinnacle-ferry::resources.sync.fields.destination'))
                     ->searchable(),
@@ -81,7 +84,7 @@ class SyncTable
                     ->requiresConfirmation()
                     ->modalHeading(__('phpinnacle-ferry::resources.sync.modals.delete.heading'))
                     ->modalDescription(fn (Sync $record) => __(
-                        'phpinnacle-ferry::resources.sync.modals.delete.' . match ($record->destinationType()) {
+                        'phpinnacle-ferry::resources.sync.modals.delete.' . match ($record->type) {
                             DestinationType::Dynamic => 'description_dynamic',
                             DestinationType::Static => 'description_static',
                         },

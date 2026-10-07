@@ -18,12 +18,16 @@ class SyncObserver
 
     public function creating(Sync $sync): void
     {
-        $sync->destination = $this->destinations->resolve($sync)->table;
+        $destination = $this->destinations->resolve($sync);
+
+        if ($sync->type === DestinationType::Dynamic) {
+            $sync->destination = $destination->table;
+        }
     }
 
     public function created(Sync $sync): void
     {
-        if ($sync->destinationType() === DestinationType::Dynamic) {
+        if ($sync->type === DestinationType::Dynamic) {
             $this->tables->create($sync);
         }
     }
@@ -34,14 +38,14 @@ class SyncObserver
             $this->connectors->delete($sync);
         }
 
-        if ($sync->destinationType() === DestinationType::Dynamic) {
+        if ($sync->type === DestinationType::Dynamic) {
             $this->tables->drop($sync);
         }
     }
 
     public function updating(Sync $sync): void
     {
-        if ($sync->destinationType() !== DestinationType::Dynamic) {
+        if ($sync->type !== DestinationType::Dynamic) {
             return;
         }
 
@@ -63,10 +67,7 @@ class SyncObserver
 
             if (
                 $object !== null
-                && $sync->shouldResume(
-                    $object,
-                    $this->destinations->get($sync->static_destination)?->fields,
-                )
+                && $sync->shouldResume($object, $this->destinations->fieldsFor($sync))
             ) {
                 $this->connectors->activate($sync);
             }

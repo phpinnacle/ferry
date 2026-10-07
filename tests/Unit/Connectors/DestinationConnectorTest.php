@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Support\Facades\Queue;
+use PHPinnacle\Ferry\Enums\DestinationType;
 use PHPinnacle\Ferry\Enums\StructureStatus;
 use PHPinnacle\Ferry\Rules\SyncSchema;
 use PHPinnacle\Ferry\Services\DestinationFactory;
@@ -164,7 +165,8 @@ it('builds a static sink with fixed fields and its target connection', function 
 
     $sync = TestCase::makeSync([
         'connection_id' => $connection->id,
-        'static_destination' => 'customers',
+        'type' => DestinationType::Static,
+        'destination' => 'customers',
         'source' => 'object-0',
         'schema' => SyncSchema::fromBindings($object, [
             'title' => 'name',
@@ -228,7 +230,7 @@ it('refuses to build a sink for an unregistered static destination', function ()
         'connection_id' => $connection->id,
         'source' => 'object-0',
     ]);
-    $sync->forceFill(['static_destination' => 'customers'])->saveQuietly();
+    $sync->forceFill(['type' => DestinationType::Static, 'destination' => 'customers'])->saveQuietly();
 
     expect(fn () => new DestinationFactory()->resolve($sync))
         ->toThrow(LogicException::class, __('phpinnacle-ferry::resources.sync.errors.static_destination_missing', [

@@ -34,6 +34,23 @@ class FieldBinding extends Field
     /** @var list<string>|null */
     protected ?array $cachedBoundSourceKeys = null;
 
+    /** @var array<string, string>|Closure(): array<string, string> */
+    protected array|Closure $warnings = [];
+
+    /** @param array<string, string>|Closure(): array<string, string> $warnings */
+    public function warnings(array|Closure $warnings): static
+    {
+        $this->warnings = $warnings;
+
+        return $this;
+    }
+
+    /** @return array<string, string> */
+    public function getWarnings(): array
+    {
+        return $this->evaluate($this->warnings);
+    }
+
     /** @param array<array-key, string|object>|Closure $sources */
     public function options(array|Closure $sources): static
     {

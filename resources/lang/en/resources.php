@@ -94,15 +94,12 @@ return [
             'connection' => 'Connection',
             'source' => 'Object',
             'status' => 'Status',
-            'destination' => 'Destination Table',
-            'static_destination' => 'Destination',
+            'destination' => 'Destination',
+            'type' => 'Type',
             'schema' => 'Field Mapping',
             'source_title' => '1C Field',
             'target_column' => 'Target Field',
             'sink_connector_status' => 'Sink Connector Status',
-        ],
-        'destination_types' => [
-            'dynamic' => 'Dynamic',
         ],
         'system_fields' => [
             '_idrref' => 'Identifier',

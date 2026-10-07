@@ -19,6 +19,10 @@ return [
         'ready' => 'Готово',
         'failed' => 'Ошибка',
     ],
+    'destination_type' => [
+        'dynamic' => 'Динамический',
+        'static' => 'Статический',
+    ],
     'sync_status' => [
         'pending' => 'Ожидает',
         'active' => 'Активна',

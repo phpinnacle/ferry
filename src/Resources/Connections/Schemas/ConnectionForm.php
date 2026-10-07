@@ -35,10 +35,10 @@ class ConnectionForm
                             ->afterStateUpdated(FormSlug::make('code')),
                         TextInput::make('code')
                             ->label(__('phpinnacle-ferry::resources.connection.fields.code'))
-                            ->columnSpan(2)
                             ->maxLength(255)
                             ->scopedUnique(ignoreRecord: true)
                             ->required(),
+                        ActiveSelect::make(),
                         Select::make('driver')
                             ->label(__('phpinnacle-ferry::resources.connection.fields.driver'))
                             ->options(Driver::class)
@@ -49,7 +49,6 @@ class ConnectionForm
                                     $set('port', $state->defaultPort());
                                 }
                             }),
-                        ActiveSelect::make(),
                         TextInput::make('host')
                             ->label(__('phpinnacle-ferry::resources.connection.fields.host'))
                             ->maxLength(255)

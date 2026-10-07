@@ -61,10 +61,7 @@ class ConnectionObserver
 
             if (
                 !$object instanceof ConnectionMetadata
-                || !$sync->hasValidSchema(
-                    $object,
-                    $this->destinations->get($sync->static_destination)?->fields,
-                )
+                || !$sync->hasValidSchema($object, $this->destinations->fieldsFor($sync))
             ) {
                 if ($sync->connector !== null) {
                     $this->connectors->pause($sync, manually: false);

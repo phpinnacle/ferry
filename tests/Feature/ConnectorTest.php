@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Schema;
 use PHPinnacle\Ferry\Enums\ConnectorStatus;
+use PHPinnacle\Ferry\Enums\DestinationType;
 use PHPinnacle\Ferry\Models\Connection;
 use PHPinnacle\Ferry\Models\Connector;
 use PHPinnacle\Ferry\Models\Sync;
@@ -76,6 +77,7 @@ it('uses the configured Ferry database for connectors and their owners', functio
     app(Migrator::class)->usingConnection($migration->getConnection(), $migration->up(...));
 
     $connection = TestCase::makeConnection();
+    $sync = TestCase::makeSync(['connection_id' => $connection->id]);
     $connector = TestCase::makeConnector($connection, ['name' => 'ferry-source-test-connection']);
     $connector->recordStatus(ConnectorStatus::Running);
 
@@ -83,6 +85,10 @@ it('uses the configured Ferry database for connectors and their owners', functio
         ->toBeTrue()
         ->and(Connector::query()->count())
         ->toBe(1)
+        ->and($sync->fresh()->type)
+        ->toBe(DestinationType::Dynamic)
+        ->and(DB::connection('sqlite')->table('syncs')->count())
+        ->toBe(0)
         ->and(DB::connection('sqlite')->table('connectors')->count())
         ->toBe(0);
 });
@@ -99,7 +105,12 @@ it('rolls back and reapplies the package tables together', function () {
     $sync = TestCase::makeSync();
     $connector = TestCase::makeConnector($sync, ['name' => 'ferry-sink-test-sync']);
 
-    expect($sync->fresh()->connector?->is($connector))->toBeTrue();
+    expect($sync->fresh()->connector?->is($connector))
+        ->toBeTrue()
+        ->and($sync->fresh()->type)
+        ->toBe(DestinationType::Dynamic)
+        ->and(Schema::hasColumn('syncs', 'static_destination'))
+        ->toBeFalse();
 });
 
 it('displays and sorts connector statuses through the owner tables', function () {

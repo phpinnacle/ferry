@@ -19,6 +19,10 @@ return [
         'ready' => 'Ready',
         'failed' => 'Error',
     ],
+    'destination_type' => [
+        'dynamic' => 'Dynamic',
+        'static' => 'Static',
+    ],
     'sync_status' => [
         'pending' => 'Pending',
         'active' => 'Active',

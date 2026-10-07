@@ -49,6 +49,36 @@ class FieldMapping extends Field
     /** @var array<array-key, list<string|array{label: string, color?: string}>>|Closure(): array<array-key, list<string|array{label: string, color?: string}>> */
     protected array|Closure $targetBadges = [];
 
+    /** @var array<string, string>|Closure(): array<string, string> */
+    protected array|Closure $sourceWarnings = [];
+
+    /** @var array<string, string>|Closure(): array<string, string> */
+    protected array|Closure $targetWarnings = [];
+
+    /**
+     * @param array<string, string>|Closure(): array<string, string> $source
+     * @param array<string, string>|Closure(): array<string, string> $dest
+     */
+    public function warnings(array|Closure $source = [], array|Closure $dest = []): static
+    {
+        $this->sourceWarnings = $source;
+        $this->targetWarnings = $dest;
+
+        return $this;
+    }
+
+    /** @return array<string, string> */
+    public function getSourceWarnings(): array
+    {
+        return $this->evaluate($this->sourceWarnings);
+    }
+
+    /** @return array<string, string> */
+    public function getTargetWarnings(): array
+    {
+        return $this->evaluate($this->targetWarnings);
+    }
+
     /** @param list<string>|Closure $targets */
     public function requiredTargets(array|Closure $targets): static
     {

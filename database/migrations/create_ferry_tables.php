@@ -3,6 +3,7 @@
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
+use PHPinnacle\Ferry\Enums\DestinationType;
 use PHPinnacle\Ferry\Models\Connection;
 use PHPinnacle\Ferry\Models\ConnectionMetadata;
 use PHPinnacle\Ferry\Models\Connector;
@@ -109,7 +110,7 @@ return new class extends Migration {
             $table->string('code')->unique();
             $table->string('status')->index();
             $table->boolean('is_paused')->default(false);
-            $table->string('static_destination')->nullable();
+            $table->string('type')->default(DestinationType::Dynamic->value);
             $table->string('source');
             $table->string('destination');
             $table->json('schema');

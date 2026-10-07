@@ -94,15 +94,12 @@ return [
             'connection' => 'Подключение',
             'source' => 'Объект',
             'status' => 'Статус',
-            'destination' => 'Таблица назначения',
-            'static_destination' => 'Назначение',
+            'destination' => 'Назначение',
+            'type' => 'Тип',
             'schema' => 'Сопоставление полей',
             'source_title' => 'Поле 1С',
             'target_column' => 'Поле назначения',
             'sink_connector_status' => 'Статус Sink Connector',
-        ],
-        'destination_types' => [
-            'dynamic' => 'Динамическая',
         ],
         'system_fields' => [
             '_idrref' => 'Идентификатор',

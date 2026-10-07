@@ -8,10 +8,13 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Validation\ValidationException;
 use Livewire\Component as LivewireComponent;
+use PHPinnacle\Ferry\Data\FieldMapping as SchemaMapping;
+use PHPinnacle\Ferry\Enums\DestinationType;
 use PHPinnacle\Ferry\Enums\StructureStatus;
 use PHPinnacle\Ferry\Forms\FieldBinding;
 use PHPinnacle\Ferry\Forms\FieldMapping;
 use PHPinnacle\Ferry\Models\ConnectionMetadata;
+use PHPinnacle\Ferry\Models\Sync;
 use PHPinnacle\Ferry\Resources\Syncs\Schemas\SyncForm;
 use PHPinnacle\Ferry\Services\DestinationFactory;
 use PHPinnacle\Ferry\Tests\TestCase;
@@ -100,7 +103,7 @@ it('binds dynamic fields and connects static fields to the declared destination 
         $livewire->data = [
             'connection_id' => $connection->id,
             'source' => 'object-0',
-            'static_destination' => $destination,
+            'destination' => $destination !== '' ? 'static:' . $destination : DestinationType::Dynamic->value,
         ];
 
         return SyncForm::configure(
@@ -111,9 +114,9 @@ it('binds dynamic fields and connects static fields to the declared destination 
     };
 
     /** @var FieldBinding $binding */
-    $binding = $form('')->getComponent('schema');
+    $binding = $form('')->getComponentByStatePath('schema');
     /** @var FieldMapping $mapping */
-    $mapping = $form('customers')->getComponent('static_mapping');
+    $mapping = $form('customers')->getComponentByStatePath('schema');
 
     expect(array_column($binding->getSources(), 'label', 'id'))
         ->toBe([
@@ -127,10 +130,10 @@ it('binds dynamic fields and connects static fields to the declared destination 
         ->toBe(['name' => true, 'tax_number' => true, 'is_active' => false])
         ->and(array_column($mapping->getTargets(), 'type', 'id'))
         ->toBe(['name' => 'string', 'tax_number' => 'string', 'is_active' => 'boolean'])
-        ->and($form('')->getComponent('static_mapping', withHidden: true)?->isHidden())
-        ->toBeTrue()
-        ->and($form('customers')->getComponent('schema', withHidden: true)?->isHidden())
-        ->toBeTrue();
+        ->and($form('')->getComponentByStatePath('schema'))
+        ->toBeInstanceOf(FieldBinding::class)
+        ->and($form('customers')->getComponentByStatePath('schema'))
+        ->toBeInstanceOf(FieldMapping::class);
 });
 
 it('validates the static mapping against the declared destination fields', function (array $mapping, bool $valid) {
@@ -169,8 +172,8 @@ it('validates the static mapping against the declared destination fields', funct
         'code' => 'customers',
         'connection_id' => $connection->id,
         'source' => 'object-0',
-        'static_destination' => 'customers',
-        'static_mapping' => $mapping,
+        'destination' => 'static:customers',
+        'schema' => $mapping,
     ];
 
     $schema = SyncForm::configure(
@@ -180,7 +183,10 @@ it('validates the static mapping against the declared destination fields', funct
     );
 
     if ($valid) {
-        expect($schema->getState()['static_mapping'])->toBe(array_flip($mapping));
+        expect($schema->getState()['schema'])
+            ->toBe(array_flip($mapping))
+            ->and(SyncForm::forCreate($schema->getState(), app(DestinationFactory::class))['type'])
+            ->toBe(DestinationType::Static);
 
         return;
     }
@@ -231,6 +237,7 @@ it('validates the bound column names of a dynamic synchronization', function (st
         'code' => $sync->code,
         'connection_id' => $connection->id,
         'source' => 'object-0',
+        'destination' => DestinationType::Dynamic->value,
         'schema' => ['_idrref' => $column],
     ]);
 
@@ -289,3 +296,142 @@ it('orders source objects with references first, obsolete ones last and titles c
         '(Не используется) Старое',
     ]);
 });
+
+it('offers dynamic and every registered static destination in one select', function () use ($selects) {
+    app(DestinationFactory::class)->register(customers_destination());
+    app(DestinationFactory::class)->register(new \PHPinnacle\Ferry\Destinations\StaticDestination(
+        key: 'dynamic',
+        label: 'Static destination named dynamic',
+        table: 'other_customers',
+        primaryKey: 'id',
+        fields: customers_destination()->fields,
+    ));
+
+    $fields = $selects([]);
+
+    expect($fields->keys()->all())->toBe(['connection_id', 'source', 'destination']);
+    expect($fields->get('destination')->getOptions())->toBe([
+        'dynamic' => DestinationType::Dynamic->getLabel(),
+        'static:customers' => 'Customers',
+        'static:dynamic' => 'Static destination named dynamic',
+    ]);
+});
+
+it('validates the combined destination selection', function (?string $destination) {
+    app(DestinationFactory::class)->register(customers_destination());
+    $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
+    TestCase::makeMetadata($connection);
+    $livewire = new class extends LivewireComponent implements HasSchemas {
+        use InteractsWithSchemas;
+
+        /** @var array<string, mixed> */
+        public array $data = [];
+    };
+    $livewire->setId('sync-form-destination-test');
+    $livewire->setName('sync-form-destination-test');
+    $form = SyncForm::configure(FilamentSchema::make($livewire)->statePath('data')->operation('create'));
+    $form->fill([
+        'name' => 'Customers',
+        'code' => 'customers',
+        'connection_id' => $connection->id,
+        'source' => 'object-0',
+        'schema' => [],
+    ]);
+    $form->getComponent('destination')->state($destination)->callAfterStateUpdated();
+
+    try {
+        $form->getState();
+        test()->fail('A destination from the available options must be selected.');
+    } catch (ValidationException $exception) {
+        expect($exception->errors())->toHaveKey('data.destination');
+    }
+})->with([null, 'static:missing', 'unknown']);
+
+it('resets the shared schema when switching destinations', function (string $from, string $to) {
+    app(DestinationFactory::class)->register(customers_destination());
+    app(DestinationFactory::class)->register(new \PHPinnacle\Ferry\Destinations\StaticDestination(
+        key: 'other_customers',
+        label: 'Other customers',
+        table: 'other_customers',
+        primaryKey: 'id',
+        fields: customers_destination()->fields,
+    ));
+    $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
+    TestCase::makeMetadata($connection);
+    $livewire = new class extends LivewireComponent implements HasSchemas {
+        use InteractsWithSchemas;
+
+        /** @var array<string, mixed> */
+        public array $data = [];
+    };
+    $livewire->setId('sync-form-switch-destination-test');
+    $livewire->setName('sync-form-switch-destination-test');
+    $form = SyncForm::configure(FilamentSchema::make($livewire)->statePath('data')->operation('create'));
+    $form->fill([
+        'connection_id' => $connection->id,
+        'source' => 'object-0',
+        'destination' => $from,
+        'schema' => ['_description' => 'name'],
+    ]);
+
+    $form->getComponent('destination')->state($to)->callAfterStateUpdated();
+
+    expect($livewire->data['destination'])->toBe($to);
+    expect($livewire->data['schema'])->toBe([]);
+    expect($form->getComponentByStatePath('schema'))
+        ->toBeInstanceOf($to === 'dynamic' ? FieldBinding::class : FieldMapping::class);
+})->with([
+    'dynamic to static' => ['dynamic', 'static:customers'],
+    'static to dynamic' => ['static:customers', 'dynamic'],
+    'static to another static' => ['static:customers', 'static:other_customers'],
+]);
+
+it('passes outdated mappings to the field warnings instead of a separate entry', function (DestinationType $type) {
+    app(DestinationFactory::class)->register(customers_destination());
+    $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
+    TestCase::makeMetadata($connection, [
+        'system' => [
+            '_idrref' => new ScalarField(FieldType::Id),
+            '_description' => new ScalarField(FieldType::Boolean),
+        ],
+    ]);
+    $sync = new Sync([
+        'connection_id' => $connection->id,
+        'source' => 'object-0',
+        'type' => $type,
+        'destination' => $type === DestinationType::Static ? 'customers' : null,
+        'schema' => [
+            new SchemaMapping('_description', 'name', new StringField(length: 100, fixed: false)),
+            new SchemaMapping('_missing', 'gone', new StringField(length: 100, fixed: false)),
+        ],
+    ]);
+    $livewire = new class extends LivewireComponent implements HasSchemas {
+        use InteractsWithSchemas;
+
+        /** @var array<string, mixed> */
+        public array $data = [];
+    };
+    $livewire->setId('sync-form-warnings-test');
+    $livewire->setName('sync-form-warnings-test');
+    $schema = SyncForm::configure(
+        FilamentSchema::make($livewire)->statePath('data')->record($sync)->operation('edit'),
+    );
+    $schema->fill([
+        'connection_id' => $connection->id,
+        'source' => 'object-0',
+        'destination' => $type === DestinationType::Static ? 'static:' . $sync->destination : 'dynamic',
+        'schema' => ['_description' => 'name', '_missing' => 'gone'],
+    ]);
+
+    $field = $schema->getComponentByStatePath('schema');
+
+    expect($schema->getComponent('broken_mappings', withHidden: true))->toBeNull();
+
+    if ($field instanceof FieldBinding) {
+        expect(array_keys($field->getWarnings()))->toBe(['_description', '_missing']);
+    } else {
+        expect($field)->toBeInstanceOf(FieldMapping::class);
+        expect(array_keys($field->getSourceWarnings()))->toBe(['_description', '_missing']);
+        expect(array_keys($field->getTargetWarnings()))->toBe(['name', 'gone', 'tax_number']);
+    }
+})->with([DestinationType::Dynamic, DestinationType::Static]);

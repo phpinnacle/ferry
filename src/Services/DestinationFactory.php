@@ -5,8 +5,10 @@ namespace PHPinnacle\Ferry\Services;
 use Illuminate\Container\Attributes\Singleton;
 use LogicException;
 use PHPinnacle\Ferry\Contracts\Destination;
+use PHPinnacle\Ferry\Data\DestinationField;
 use PHPinnacle\Ferry\Destinations\DynamicDestination;
 use PHPinnacle\Ferry\Destinations\StaticDestination;
+use PHPinnacle\Ferry\Enums\DestinationType;
 use PHPinnacle\Ferry\Models\Sync;
 
 #[Singleton]
@@ -39,9 +41,16 @@ class DestinationFactory
 
     public function resolve(Sync $sync): Destination
     {
-        return $sync->static_destination !== null
-            ? $this->getOrFail($sync->static_destination)
-            : new DynamicDestination($sync);
+        return match ($sync->type) {
+            DestinationType::Static => $this->getOrFail($sync->destination),
+            DestinationType::Dynamic => new DynamicDestination($sync),
+        };
+    }
+
+    /** @return list<DestinationField>|null */
+    public function fieldsFor(Sync $sync): ?array
+    {
+        return $sync->type === DestinationType::Static ? $this->get($sync->destination)?->fields : null;
     }
 
     /** @return array<string, StaticDestination> */

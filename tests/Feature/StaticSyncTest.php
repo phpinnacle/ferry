@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
 use Livewire\Component as LivewireComponent;
 use PHPinnacle\Ferry\Data\FieldMapping;
+use PHPinnacle\Ferry\Destinations\StaticDestination;
 use PHPinnacle\Ferry\Enums\DestinationType;
 use PHPinnacle\Ferry\Enums\StructureStatus;
 use PHPinnacle\Ferry\Enums\SyncStatus;
@@ -53,12 +54,11 @@ it('prepares typed synchronization attributes from its form', function (?string 
         'name' => 'Customers',
         'code' => 'customers_sync',
         'source' => 'object-0',
-        'static_destination' => $destination,
-        $destination === null ? 'schema' : 'static_mapping' => ['_description' => 'name', '_code' => 'tax_number'],
+        'destination' => $destination !== null ? 'static:' . $destination : DestinationType::Dynamic->value,
+        'schema' => ['_description' => 'name', '_code' => 'tax_number'],
     ];
 
     $destinations = app(DestinationFactory::class);
-    $sync = Sync::create(SyncForm::forCreate($data, $destinations));
     $livewire = new class extends LivewireComponent implements HasSchemas {
         use InteractsWithSchemas;
 
@@ -67,17 +67,31 @@ it('prepares typed synchronization attributes from its form', function (?string 
     };
     $livewire->setId('sync-mapping-round-trip');
     $livewire->setName('sync-mapping-round-trip');
+
+    $createForm = SyncForm::configure(FormSchema::make($livewire)->statePath('data')->operation('create'));
+    $createForm->fill();
+    expect($createForm->getComponent('destination')->getState())->toBe('dynamic');
+
+    $createForm->fill($data);
+    $createState = $createForm->getState();
+
+    expect($createState['destination'])->toBe($destination === null ? 'dynamic' : 'static:' . $destination);
+    expect($createState)->not->toHaveKey('type');
+
+    $sync = Sync::create(SyncForm::forCreate($createState, $destinations));
     $form = SyncForm::configure(FormSchema::make($livewire)->statePath('data')->record($sync)->operation('edit'));
     $form->fill(SyncForm::fill($sync->toArray()));
+    expect($form->getComponent('destination')->getState())
+        ->toBe($destination === null ? 'dynamic' : 'static:' . $destination);
     $livewire->data['name'] = 'Renamed';
 
     if ($destination !== null) {
-        expect($form->getComponent('static_mapping')->getState())
+        expect($form->getComponentByStatePath('schema')->getState())
             ->toBe(['name' => '_description', 'tax_number' => '_code']);
     }
 
     $dehydrated = $form->getState();
-    expect($dehydrated[$destination === null ? 'schema' : 'static_mapping'])->toEqual([
+    expect($dehydrated['schema'])->toEqual([
         '_description' => 'name',
         '_code' => 'tax_number',
     ]);
@@ -85,8 +99,8 @@ it('prepares typed synchronization attributes from its form', function (?string 
 
     expect($sync->fresh()->name)
         ->toBe('Renamed')
-        ->and($sync->fresh()->static_destination)
-        ->toBe($destination)
+        ->and($sync->fresh()->type)
+        ->toBe($destination === null ? DestinationType::Dynamic : DestinationType::Static)
         ->and(array_column($sync->fresh()->schema, 'column', 'source'))
         ->toEqual(['_description' => 'name', '_code' => 'tax_number'])
         ->and(Schema::hasTable('ferry_sync_customers_sync'))
@@ -103,7 +117,8 @@ it('confirms removed and retyped dynamic columns when saving the form', function
     ]);
     $sync = TestCase::makeSync([
         'connection_id' => $connection->id,
-        'static_destination' => $change === 'static' ? 'customers' : null,
+        'type' => $change === 'static' ? DestinationType::Static : DestinationType::Dynamic,
+        'destination' => $change === 'static' ? 'customers' : null,
         'schema' => [
             new FieldMapping('_description', 'name', $object->field('_description')),
             new FieldMapping('_code', 'tax_number', $object->field('_code')),
@@ -130,12 +145,12 @@ it('confirms removed and retyped dynamic columns when saving the form', function
     $page->form->fill(SyncForm::fill($sync->toArray()));
 
     if ($change === 'removed') {
-        $field = $page->form->getComponent('schema');
+        $field = $page->form->getComponentByStatePath('schema');
         unset($page->data['schema'][$field->getBindingKey('_description')]);
     }
 
     if ($change === 'renamed') {
-        $field = $page->form->getComponent('schema');
+        $field = $page->form->getComponentByStatePath('schema');
         $page->data['schema'][$field->getBindingKey('_description')]['column'] = 'display_name';
     }
 
@@ -162,17 +177,27 @@ it('confirms removed and retyped dynamic columns when saving the form', function
 ]);
 
 it('resolves the destination table from the registered static destination', function () {
+    app(DestinationFactory::class)->register(new StaticDestination(
+        key: 'customer_directory',
+        label: 'Customer directory',
+        table: 'customers',
+        primaryKey: 'customer_id',
+        fields: customers_destination()->fields,
+    ));
     $sync = TestCase::makeSync([
         'code' => 'customers_sync',
-        'static_destination' => 'customers',
+        'type' => DestinationType::Static,
+        'destination' => 'customer_directory',
         'schema' => [
             new FieldMapping('_description', 'name', new StringField(length: 100, fixed: false)),
         ],
     ]);
 
-    expect($sync->destinationType())
+    expect($sync->type)
         ->toBe(DestinationType::Static)
         ->and($sync->destination)
+        ->toBe('customer_directory')
+        ->and(app(DestinationFactory::class)->resolve($sync)->table)
         ->toBe('customers')
         ->and(Schema::hasTable('ferry_sync_customers_sync'))
         ->toBeFalse();
@@ -186,7 +211,8 @@ it('does not affect the destination table when a static synchronization is delet
 
     $sync = TestCase::makeSync([
         'code' => 'customers_sync',
-        'static_destination' => 'customers',
+        'type' => DestinationType::Static,
+        'destination' => 'customers',
         'schema' => [
             new FieldMapping('_description', 'name', new StringField(length: 100, fixed: false)),
         ],
@@ -208,9 +234,10 @@ it('pauses a synchronization and rejects editing when its destination is no long
     $sync = TestCase::makeSync([
         'connection_id' => $connection->id,
         'code' => 'customers_sync',
-        'static_destination' => 'customers',
+        'type' => DestinationType::Static,
+        'destination' => 'customers',
     ]);
-    $sync->forceFill(['static_destination' => 'gone'])->saveQuietly();
+    $sync->forceFill(['type' => DestinationType::Static, 'destination' => 'gone'])->saveQuietly();
     $connection->metadata()->update(['revision' => $connection->draftRevision()]);
     $connection->publishStructure();
 
@@ -228,4 +255,14 @@ it('pauses a synchronization and rejects editing when its destination is no long
             ValidationException::class,
             __('phpinnacle-ferry::resources.sync.errors.static_destination_missing', ['destination' => 'gone']),
         );
+});
+
+it('rejects creating a static synchronization for an unregistered destination', function () {
+    expect(fn () => TestCase::makeSync([
+        'type' => DestinationType::Static,
+        'destination' => 'missing',
+    ]))
+        ->toThrow(LogicException::class);
+
+    expect(Sync::query()->count())->toBe(0);
 });

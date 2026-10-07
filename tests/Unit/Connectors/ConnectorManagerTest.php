@@ -6,6 +6,7 @@ use Illuminate\Support\Facades\Queue;
 use PHPinnacle\Ferry\Contracts\SignalProducer;
 use PHPinnacle\Ferry\Data\FieldMapping;
 use PHPinnacle\Ferry\Enums\ConnectorStatus;
+use PHPinnacle\Ferry\Enums\DestinationType;
 use PHPinnacle\Ferry\Enums\StructureStatus;
 use PHPinnacle\Ferry\Enums\SyncStatus;
 use PHPinnacle\Ferry\Models\Connector;
@@ -152,7 +153,8 @@ it('activates a synchronization by pushing the connector configs and resuming bo
     ]);
     $sync = TestCase::makeSync([
         'connection_id' => $connection->id,
-        'static_destination' => $destination,
+        'type' => $destination ? DestinationType::Static->value : DestinationType::Dynamic->value,
+        'destination' => $destination,
         'schema' => SyncSchema::fromBindings(
             $object,
             ['_description' => 'name', '_code' => 'tax_number'],
