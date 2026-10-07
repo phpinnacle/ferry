@@ -4,10 +4,13 @@ namespace PHPinnacle\Ferry\Services;
 
 use Illuminate\Container\Attributes\Singleton;
 use LogicException;
-use PHPinnacle\Ferry\Contracts\StaticDestination;
+use PHPinnacle\Ferry\Contracts\Destination;
+use PHPinnacle\Ferry\Destinations\DynamicDestination;
+use PHPinnacle\Ferry\Destinations\StaticDestination;
+use PHPinnacle\Ferry\Models\Sync;
 
 #[Singleton]
-class StaticDestinationRegistry
+class DestinationFactory
 {
     /** @var array<string, StaticDestination> */
     private array $items = [];
@@ -15,13 +18,13 @@ class StaticDestinationRegistry
     public function register(StaticDestination ...$destinations): void
     {
         foreach ($destinations as $destination) {
-            $this->items[$destination->key()] = $destination;
+            $this->items[$destination->key] = $destination;
         }
     }
 
     public function get(?string $key): ?StaticDestination
     {
-        return $key === null ? null : $this->items[$key] ?? null;
+        return $key !== null ? $this->items[$key] ?? null : null;
     }
 
     public function getOrFail(string $key): StaticDestination
@@ -32,6 +35,13 @@ class StaticDestinationRegistry
                 ['destination' => $key],
             ))
         );
+    }
+
+    public function resolve(Sync $sync): Destination
+    {
+        return $sync->static_destination !== null
+            ? $this->getOrFail($sync->static_destination)
+            : new DynamicDestination($sync);
     }
 
     /** @return array<string, StaticDestination> */

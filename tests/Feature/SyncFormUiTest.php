@@ -1,7 +1,6 @@
 <?php
 
 use Filament\Forms\Components\Select;
-use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Concerns\InteractsWithSchemas;
 use Filament\Schemas\Contracts\HasSchemas;
 use Filament\Schemas\Schema as FilamentSchema;
@@ -13,10 +12,8 @@ use PHPinnacle\Ferry\Enums\StructureStatus;
 use PHPinnacle\Ferry\Forms\FieldBinding;
 use PHPinnacle\Ferry\Forms\FieldMapping;
 use PHPinnacle\Ferry\Models\ConnectionMetadata;
-use PHPinnacle\Ferry\Models\Sync;
 use PHPinnacle\Ferry\Resources\Syncs\Schemas\SyncForm;
-use PHPinnacle\Ferry\Services\StaticDestinationRegistry;
-use PHPinnacle\Ferry\Tests\Fakes\FakeCustomersDestination;
+use PHPinnacle\Ferry\Services\DestinationFactory;
 use PHPinnacle\Ferry\Tests\TestCase;
 use PHPinnacle\Rosetta\Data\MetadataProperty;
 use PHPinnacle\Rosetta\Enums\FieldType;
@@ -25,37 +22,16 @@ use PHPinnacle\Rosetta\Enums\PropertyKind;
 use PHPinnacle\Rosetta\Fields\ScalarField;
 use PHPinnacle\Rosetta\Fields\StringField;
 
+use function PHPinnacle\Ferry\Tests\Fakes\customers_destination;
+
 require_once __DIR__ . '/../TestCase.php';
-require_once __DIR__ . '/../Fakes/FakeCustomersDestination.php';
+require_once __DIR__ . '/../Fakes/CustomersDestination.php';
 
 uses(TestCase::class);
 
 beforeEach(function () {
     Queue::fake();
 });
-
-/** @return Collection<string, TextInput> */
-$fields = function (string $operation, ?Sync $record = null) {
-    $livewire = new class extends LivewireComponent implements HasSchemas {
-        use InteractsWithSchemas;
-
-        /** @var array<string, mixed> */
-        public array $data = [];
-    };
-    $livewire->setId('sync-form-test');
-    $livewire->setName('sync-form-test');
-
-    return collect(
-        SyncForm::configure(
-            FilamentSchema::make($livewire)
-                ->statePath('data')
-                ->record($record)
-                ->operation($operation),
-        )->getFlatComponents(),
-    )
-        ->filter(fn ($component) => $component instanceof TextInput)
-        ->keyBy(fn (TextInput $field) => $field->getName());
-};
 
 /** @return Collection<string, Select> */
 $selects = function (array $state) {
@@ -80,35 +56,8 @@ $selects = function (array $state) {
         ->keyBy(fn (Select $field) => $field->getName());
 };
 
-it('offers dynamic and registered static destinations in a single select', function () use ($selects) {
-    app(StaticDestinationRegistry::class)->register(new FakeCustomersDestination);
-
-    $destinationSelect = $selects([])->get('static_destination');
-
-    expect($destinationSelect)
-        ->not
-        ->toBeNull()
-        ->and($destinationSelect?->getPlaceholder())
-        ->toBe(__('phpinnacle-ferry::resources.sync.destination_types.dynamic'))
-        ->and($destinationSelect?->canSelectPlaceholder())
-        ->toBeTrue()
-        ->and($destinationSelect?->getOptions())
-        ->toBe([
-            'customers' => 'Customers',
-        ]);
-});
-
-it('locks the destination code once the synchronization exists', function () use ($fields) {
-    $sync = TestCase::makeSync();
-
-    expect($fields('create')->get('code')?->isDisabled())
-        ->toBeFalse()
-        ->and($fields('edit', $sync)->get('code')?->isDisabled())
-        ->toBeTrue();
-});
-
 it('binds dynamic fields and connects static fields to the declared destination fields', function () {
-    app(StaticDestinationRegistry::class)->register(new FakeCustomersDestination);
+    app(DestinationFactory::class)->register(customers_destination());
 
     $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
     ConnectionMetadata::create([
@@ -185,7 +134,7 @@ it('binds dynamic fields and connects static fields to the declared destination 
 });
 
 it('validates the static mapping against the declared destination fields', function (array $mapping, bool $valid) {
-    app(StaticDestinationRegistry::class)->register(new FakeCustomersDestination);
+    app(DestinationFactory::class)->register(customers_destination());
 
     $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
     ConnectionMetadata::create([

@@ -12,7 +12,8 @@ use PHPinnacle\Ferry\Models\Connection;
 use PHPinnacle\Ferry\Models\ConnectionMetadata;
 use PHPinnacle\Ferry\Models\Connector;
 use PHPinnacle\Ferry\Models\Sync;
-use PHPinnacle\Ferry\Services\StaticDestinationRegistry;
+use PHPinnacle\Ferry\Services\DestinationFactory;
+use PHPinnacle\Ferry\Services\SourceFactory;
 use PHPinnacle\Franz\Client;
 use PHPinnacle\Franz\Exception\ApiException;
 use PHPinnacle\Franz\Request\ConnectorConfigRequest;
@@ -21,9 +22,9 @@ class ConnectorManager
 {
     public function __construct(
         private readonly Client $client,
-        private readonly ConnectorConfigBuilder $configs,
+        private readonly SourceFactory $sources,
+        private readonly DestinationFactory $destinations,
         private readonly SignalProducer $signals,
-        private readonly StaticDestinationRegistry $destinations,
     ) {}
 
     public function activate(Sync $sync): void
@@ -31,7 +32,7 @@ class ConnectorManager
         $connection = $sync->connection;
 
         $this->assertPgsqlDriver($connection);
-        $this->assertValidMapping($sync);
+        $object = $this->sourceObject($sync);
 
         $sink = $this->connector($sync);
 
@@ -39,7 +40,11 @@ class ConnectorManager
 
         $config = $this->pushSource($connection, $connection->trackedSyncs()->except([$sync->id])->push($sync));
 
-        $this->pushConfig($sink, $this->configs->sink($sync));
+        $this->pushConfig($sink, $this->destinations->resolve($sync)->connector(
+            $sync,
+            $object,
+            $this->sources->topic($connection, $object),
+        ));
         $sync->recordConnector($sink);
 
         if ($previousColumns !== null) {
@@ -143,15 +148,23 @@ class ConnectorManager
         }
     }
 
-    private function assertValidMapping(Sync $sync): void
+    private function sourceObject(Sync $sync): ConnectionMetadata
     {
         $object = $sync->connection->publishedObject($sync->source);
 
-        if ($object instanceof ConnectionMetadata && !$sync->hasValidSchema($object, $this->destinations)) {
+        if ($object === null) {
+            throw new LogicException(__('phpinnacle-ferry::resources.sync.errors.source_object_missing', [
+                'code' => $sync->code,
+            ]));
+        }
+
+        if (!$sync->hasValidSchema($object, $this->destinations->get($sync->static_destination)?->fields)) {
             throw new LogicException(__('phpinnacle-ferry::resources.sync.errors.invalid_mapping', [
                 'code' => $sync->code,
             ]));
         }
+
+        return $object;
     }
 
     /**
@@ -162,7 +175,7 @@ class ConnectorManager
     private function pushSource(Connection $connection, Collection $syncs): array
     {
         $record = $this->connector($connection);
-        $config = $this->configs->source($connection, $syncs);
+        $config = $this->sources->source($connection, $syncs);
 
         $this->pushConfig($record, $config);
         $connection->recordConnector($record);
@@ -261,7 +274,7 @@ class ConnectorManager
     {
         return (
             $owner->connector ?? new Connector([
-                'name' => $this->configs->name($owner),
+                'name' => $this->sources->name($owner),
             ])
         );
     }

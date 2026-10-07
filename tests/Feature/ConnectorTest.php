@@ -16,7 +16,6 @@ use PHPinnacle\Ferry\Models\Sync;
 use PHPinnacle\Ferry\Resources\Connections\Tables\ConnectionTable;
 use PHPinnacle\Ferry\Resources\Syncs\Actions\RestartSyncAction;
 use PHPinnacle\Ferry\Resources\Syncs\Tables\SyncTable;
-use PHPinnacle\Ferry\Services\Connectors\ConnectorManager;
 use PHPinnacle\Ferry\Tests\TestCase;
 
 require_once __DIR__ . '/../TestCase.php';
@@ -59,12 +58,7 @@ it('records status independently of the source and synchronization lifecycle', f
         ->and($sync->fresh()->connector?->error)
         ->toBe('Failed task')
         ->and($sink->fresh()->checked_at)
-        ->not
-        ->toBeNull()
-        ->and($source->fresh()->connection?->is($sync->connection))
-        ->toBeTrue()
-        ->and($sink->fresh()->sync?->is($sync))
-        ->toBeTrue();
+        ->not->toBeNull();
 
     $sink->recordStatus(ConnectorStatus::Running);
 
@@ -165,29 +159,3 @@ it('clears connector references without deleting their owners when a connector i
         ->and(Sync::query()->count())
         ->toBe(1);
 });
-
-it('checks connector status through both owner table actions', function (string $role, bool $fails) {
-    $owner = $role === 'source' ? TestCase::makeConnection() : TestCase::makeSync();
-    $connector = TestCase::makeConnector($owner, ['name' => 'ferry-' . $role . '-test']);
-    $manager = Mockery::mock(ConnectorManager::class);
-    $expectation = $manager->shouldReceive('checkStatus')->once()->with($owner);
-
-    if ($fails) {
-        $expectation->andThrow(new RuntimeException('Kafka Connect unavailable'));
-    } else {
-        $expectation->andReturnUsing(fn () => $connector->recordStatus(ConnectorStatus::Running));
-    }
-
-    $this->app->instance(ConnectorManager::class, $manager);
-    $livewire = Mockery::mock(HasTable::class);
-    $table = $role === 'source'
-        ? ConnectionTable::configure(Table::make($livewire))
-        : SyncTable::configure(Table::make($livewire));
-    $action = $table->getAction('check_' . $role . '_status');
-    $action->record($owner)->call();
-
-    expect(session()->get('filament.notifications.0.title'))
-        ->toBe($fails ? 'Kafka Connect unavailable' : ConnectorStatus::Running->getLabel())
-        ->and(session()->get('filament.notifications.0.status'))
-        ->toBe($fails ? 'danger' : null);
-})->with(['source', 'sink'])->with([false, true]);

@@ -6,12 +6,12 @@ use PHPinnacle\Ferry\Enums\SyncStatus;
 use PHPinnacle\Ferry\Models\Connection;
 use PHPinnacle\Ferry\Models\ConnectionMetadata;
 use PHPinnacle\Ferry\Services\Connectors\ConnectorManager;
-use PHPinnacle\Ferry\Services\StaticDestinationRegistry;
+use PHPinnacle\Ferry\Services\DestinationFactory;
 
 class ConnectionObserver
 {
     public function __construct(
-        private readonly StaticDestinationRegistry $destinations,
+        private readonly DestinationFactory $destinations,
         private readonly ConnectorManager $connectors,
     ) {}
 
@@ -59,7 +59,13 @@ class ConnectionObserver
 
             $object = $objects->get($sync->source);
 
-            if (!$object instanceof ConnectionMetadata || !$sync->hasValidSchema($object, $this->destinations)) {
+            if (
+                !$object instanceof ConnectionMetadata
+                || !$sync->hasValidSchema(
+                    $object,
+                    $this->destinations->get($sync->static_destination)?->fields,
+                )
+            ) {
                 if ($sync->connector !== null) {
                     $this->connectors->pause($sync, manually: false);
                 } else {

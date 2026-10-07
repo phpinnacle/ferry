@@ -16,22 +16,23 @@ use PHPinnacle\Ferry\Enums\SyncStatus;
 use PHPinnacle\Ferry\Models\Sync;
 use PHPinnacle\Ferry\Resources\Syncs\Pages\EditSync;
 use PHPinnacle\Ferry\Resources\Syncs\Schemas\SyncForm;
-use PHPinnacle\Ferry\Services\StaticDestinationRegistry;
-use PHPinnacle\Ferry\Tests\Fakes\FakeCustomersDestination;
+use PHPinnacle\Ferry\Services\DestinationFactory;
 use PHPinnacle\Ferry\Tests\TestCase;
 use PHPinnacle\Rosetta\Enums\FieldType;
 use PHPinnacle\Rosetta\Fields\ScalarField;
 use PHPinnacle\Rosetta\Fields\StringField;
 
+use function PHPinnacle\Ferry\Tests\Fakes\customers_destination;
+
 require_once __DIR__ . '/../TestCase.php';
-require_once __DIR__ . '/../Fakes/FakeCustomersDestination.php';
+require_once __DIR__ . '/../Fakes/CustomersDestination.php';
 
 uses(TestCase::class);
 
 beforeEach(function () {
     Queue::fake();
 
-    app(StaticDestinationRegistry::class)->register(new FakeCustomersDestination);
+    app(DestinationFactory::class)->register(customers_destination());
 });
 
 it('prepares typed synchronization attributes from its form', function (?string $destination) {
@@ -56,7 +57,7 @@ it('prepares typed synchronization attributes from its form', function (?string 
         $destination === null ? 'schema' : 'static_mapping' => ['_description' => 'name', '_code' => 'tax_number'],
     ];
 
-    $destinations = app(StaticDestinationRegistry::class);
+    $destinations = app(DestinationFactory::class);
     $sync = Sync::create(SyncForm::forCreate($data, $destinations));
     $livewire = new class extends LivewireComponent implements HasSchemas {
         use InteractsWithSchemas;
@@ -221,7 +222,7 @@ it('pauses a synchronization and rejects editing when its destination is no long
     expect(fn () => SyncForm::forUpdate(
         ['name' => 'Renamed', 'schema' => []],
         $sync->fresh(),
-        app(StaticDestinationRegistry::class),
+        app(DestinationFactory::class),
     ))
         ->toThrow(
             ValidationException::class,

@@ -5,9 +5,9 @@ namespace PHPinnacle\Ferry\Rules;
 use Closure;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Validation\ValidationException;
-use PHPinnacle\Ferry\Contracts\StaticDestination;
 use PHPinnacle\Ferry\Data\DestinationField;
 use PHPinnacle\Ferry\Data\FieldMapping;
+use PHPinnacle\Ferry\Destinations\StaticDestination;
 use PHPinnacle\Ferry\Enums\ColumnType;
 use PHPinnacle\Ferry\Models\ConnectionMetadata;
 use PHPinnacle\Ferry\Models\Sync;
@@ -94,7 +94,7 @@ readonly class SyncSchema implements ValidationRule
         ?StaticDestination $destination = null,
     ): array {
         $mappings = [];
-        $fields = array_column($destination?->fields() ?? [], null, 'id');
+        $fields = array_column($destination->fields ?? [], null, 'id');
 
         foreach ($bindings as $source => $column) {
             $source = (string) $source;

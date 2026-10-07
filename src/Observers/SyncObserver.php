@@ -5,20 +5,20 @@ namespace PHPinnacle\Ferry\Observers;
 use PHPinnacle\Ferry\Enums\DestinationType;
 use PHPinnacle\Ferry\Models\Sync;
 use PHPinnacle\Ferry\Services\Connectors\ConnectorManager;
-use PHPinnacle\Ferry\Services\StaticDestinationRegistry;
+use PHPinnacle\Ferry\Services\DestinationFactory;
 use PHPinnacle\Ferry\Services\SyncTableManager;
 
 class SyncObserver
 {
     public function __construct(
         private readonly SyncTableManager $tables,
-        private readonly StaticDestinationRegistry $destinations,
+        private readonly DestinationFactory $destinations,
         private readonly ConnectorManager $connectors,
     ) {}
 
     public function creating(Sync $sync): void
     {
-        $sync->initializeDestination($this->destinations);
+        $sync->destination = $this->destinations->resolve($sync)->table;
     }
 
     public function created(Sync $sync): void
@@ -61,7 +61,13 @@ class SyncObserver
         $sync->getConnection()->afterCommit(function () use ($sync) {
             $object = $sync->connection->publishedObject($sync->source);
 
-            if ($object !== null && $sync->shouldResume($object, $this->destinations)) {
+            if (
+                $object !== null
+                && $sync->shouldResume(
+                    $object,
+                    $this->destinations->get($sync->static_destination)?->fields,
+                )
+            ) {
                 $this->connectors->activate($sync);
             }
         });

@@ -5,7 +5,7 @@ namespace PHPinnacle\Ferry\Resources\Syncs\Actions;
 use Filament\Actions\Action;
 use PHPinnacle\Ferry\Resources\Syncs\Pages\EditSync;
 use PHPinnacle\Ferry\Resources\Syncs\Schemas\SyncForm;
-use PHPinnacle\Ferry\Services\StaticDestinationRegistry;
+use PHPinnacle\Ferry\Services\DestinationFactory;
 
 /** @phpstan-import-type EditState from SyncForm */
 class ConfirmSchemaChangesAction
@@ -13,7 +13,7 @@ class ConfirmSchemaChangesAction
     public static function configure(Action $action): Action
     {
         $columns = null;
-        $droppedColumns = function (EditSync $livewire, StaticDestinationRegistry $destinations) use (&$columns) {
+        $droppedColumns = function (EditSync $livewire, DestinationFactory $destinations) use (&$columns) {
             if ($columns !== null) {
                 return $columns;
             }
@@ -29,20 +29,20 @@ class ConfirmSchemaChangesAction
 
         return $action
             ->mountUsing(
-                fn (EditSync $livewire, StaticDestinationRegistry $destinations) => $droppedColumns(
+                fn (EditSync $livewire, DestinationFactory $destinations) => $droppedColumns(
                     $livewire,
                     $destinations,
                 ),
             )
             ->action(fn (EditSync $livewire) => $livewire->save())
             ->modal(
-                fn (EditSync $livewire, StaticDestinationRegistry $destinations) => (
+                fn (EditSync $livewire, DestinationFactory $destinations) => (
                     $droppedColumns($livewire, $destinations) !== []
                 ),
             )
             ->requiresConfirmation()
             ->modalHeading(__('phpinnacle-ferry::resources.sync.modals.drop_columns.heading'))
-            ->modalDescription(fn (EditSync $livewire, StaticDestinationRegistry $destinations) => __(
+            ->modalDescription(fn (EditSync $livewire, DestinationFactory $destinations) => __(
                 'phpinnacle-ferry::resources.sync.modals.drop_columns.description',
                 ['columns' => implode(', ', $droppedColumns($livewire, $destinations))],
             ));

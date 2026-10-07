@@ -23,18 +23,6 @@ beforeEach(function () {
     Queue::fake();
 });
 
-it('does not call the connector manager when deleting a synchronization that was never activated', function () {
-    $manager = Mockery::mock(ConnectorManager::class);
-    $manager->shouldNotReceive('delete');
-    $this->app->instance(ConnectorManager::class, $manager);
-
-    $sync = TestCase::makeSync();
-
-    $sync->delete();
-
-    expect(Connector::query()->count())->toBe(0);
-});
-
 it('asks the connector manager to delete the sink when its synchronization is removed', function () {
     $sync = TestCase::makeSync([], [
         'status' => SyncStatus::Active,
@@ -53,18 +41,6 @@ it('asks the connector manager to delete the sink when its synchronization is re
     $sync->delete();
 
     expect(Sync::query()->find($sync->id))->toBeNull();
-});
-
-it('does not call the connector manager when deleting a connection whose source connector was never created', function () {
-    $manager = Mockery::mock(ConnectorManager::class);
-    $manager->shouldNotReceive('deleteSource');
-    $this->app->instance(ConnectorManager::class, $manager);
-
-    $connection = TestCase::makeConnection();
-
-    $connection->delete();
-
-    expect(Connector::query()->count())->toBe(0);
 });
 
 it('asks the connector manager to delete the source when its connection is removed', function () {

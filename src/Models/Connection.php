@@ -10,7 +10,6 @@ use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Support\Facades\Config;
 use PHPinnacle\Ferry\Casts\StorageMapCast;
 use PHPinnacle\Ferry\Casts\TypeMapCast;
 use PHPinnacle\Ferry\Data\ConnectionTestResult;
@@ -71,8 +70,6 @@ class Connection extends Model implements HasLabel
         'ssl_mode',
     ];
 
-    public $timestamps = true;
-
     protected $table = 'connections';
 
     protected $attributes = [
@@ -118,9 +115,9 @@ class Connection extends Model implements HasLabel
         return $this->syncs()->whereIn('status', [SyncStatus::Active, SyncStatus::Pause])->get();
     }
 
-    public function canPrepareStructure(): bool
+    public function canPrepareStructure(int $staleAfter): bool
     {
-        return $this->status !== StructureStatus::Preparing || $this->structureIsStale();
+        return $this->status !== StructureStatus::Preparing || $this->structureIsStale($staleAfter);
     }
 
     public function credentialsChanged(): bool
@@ -206,9 +203,9 @@ class Connection extends Model implements HasLabel
         ]);
     }
 
-    public function prepareStructure(): bool
+    public function prepareStructure(int $staleAfter): bool
     {
-        if (!$this->canPrepareStructure()) {
+        if (!$this->canPrepareStructure($staleAfter)) {
             return false;
         }
 
@@ -216,7 +213,9 @@ class Connection extends Model implements HasLabel
             $this->failStructure(ConnectionErrorFormatter::stale());
         }
 
-        $this->startStructure();
+        $this->discardDraftMetadata();
+        $this->beginStructureRun();
+        $this->save();
         $this->dispatchStructurePreparation();
 
         return true;
@@ -355,14 +354,7 @@ class Connection extends Model implements HasLabel
         PrepareStructureJob::dispatch($this->id, $this->run_id)->afterCommit();
     }
 
-    private function startStructure(): void
-    {
-        $this->discardDraftMetadata();
-        $this->beginStructureRun();
-        $this->save();
-    }
-
-    private function structureIsStale(): bool
+    private function structureIsStale(int $staleAfter): bool
     {
         $heartbeat = $this->heartbeat_at;
 
@@ -370,9 +362,7 @@ class Connection extends Model implements HasLabel
             return true;
         }
 
-        return $heartbeat->lte(CarbonImmutable::now()->subSeconds(
-            Config::integer('phpinnacle-ferry.structure.stale_after'),
-        ));
+        return $heartbeat->lte(CarbonImmutable::now()->subSeconds($staleAfter));
     }
 
     /**

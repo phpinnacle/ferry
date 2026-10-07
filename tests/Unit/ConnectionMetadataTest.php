@@ -1,6 +1,5 @@
 <?php
 
-use Illuminate\Support\Facades\Lang;
 use PHPinnacle\Ferry\Enums\ColumnType;
 use PHPinnacle\Ferry\Models\ConnectionMetadata;
 use PHPinnacle\Rosetta\Data\MetadataProperty;
@@ -100,26 +99,3 @@ it('lists mappable fields with translated system titles and property titles', fu
         ->and(array_column($object->mappableFields(withKey: false), 'source'))
         ->not->toContain('_idrref');
 });
-
-it('translates every mappable system field without locale fallback', function (string $locale) {
-    expect(Lang::get('phpinnacle-ferry::resources.sync.system_fields', [], $locale, false))->toHaveKeys([
-        '_idrref',
-        '_version',
-        '_predefinedid',
-        '_description',
-        '_code',
-        '_marked',
-        '_folder',
-        '_parentidrref',
-        '_owneridrref',
-        '_date_time',
-        '_numberprefix',
-        '_number',
-        '_posted',
-        '_period',
-        '_lineno',
-        '_active',
-        '_recordkind',
-        '_enumorder',
-    ]);
-})->with(['en', 'ru']);

@@ -6,14 +6,13 @@ use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Support\Facades\Config;
 use PHPinnacle\Ferry\Casts\SchemaCast;
+use PHPinnacle\Ferry\Data\DestinationField;
 use PHPinnacle\Ferry\Data\FieldMapping;
 use PHPinnacle\Ferry\Enums\ColumnType;
 use PHPinnacle\Ferry\Enums\DestinationType;
 use PHPinnacle\Ferry\Enums\SyncStatus;
 use PHPinnacle\Ferry\Observers\SyncObserver;
-use PHPinnacle\Ferry\Services\StaticDestinationRegistry;
 
 /**
  * @property string $id
@@ -87,14 +86,7 @@ class Sync extends Model
 
     public function destinationType(): DestinationType
     {
-        return $this->static_destination === null ? DestinationType::Dynamic : DestinationType::Static;
-    }
-
-    public function initializeDestination(StaticDestinationRegistry $destinations): void
-    {
-        $this->destination = $this->static_destination === null
-            ? Config::string('phpinnacle-ferry.sync.table_prefix') . $this->code
-            : $destinations->getOrFail($this->static_destination)->table();
+        return $this->static_destination !== null ? DestinationType::Static : DestinationType::Dynamic;
     }
 
     /** @internal */
@@ -123,16 +115,17 @@ class Sync extends Model
         return $this->belongsTo(Connector::class, 'connector_id');
     }
 
-    /** @return list<string> */
-    public function brokenColumns(?ConnectionMetadata $object, StaticDestinationRegistry $destinations): array
+    /**
+     * @param list<DestinationField>|null $destinationFields
+     * @return list<string>
+     */
+    public function brokenColumns(?ConnectionMetadata $object, ?array $destinationFields = null): array
     {
-        $destination = $destinations->get($this->static_destination);
-
-        if ($object === null || $this->static_destination !== null && $destination === null) {
+        if ($object === null || $this->static_destination !== null && $destinationFields === null) {
             return array_map(static fn (FieldMapping $mapping) => $mapping->column, $this->schema);
         }
 
-        $fields = array_column($destination?->fields() ?? [], null, 'id');
+        $fields = array_column($destinationFields ?? [], null, 'id');
         $columns = [];
         $destinationColumns = [];
 
@@ -144,7 +137,7 @@ class Sync extends Model
                 $columns[] = $mapping->column;
             }
 
-            if ($destination !== null && ($fields[$mapping->column] ?? null)?->type !== $type) {
+            if ($destinationFields !== null && ($fields[$mapping->column] ?? null)?->type !== $type) {
                 $destinationColumns[] = $mapping->column;
             }
 
@@ -160,9 +153,10 @@ class Sync extends Model
         return array_values(array_unique([...$columns, ...$destinationColumns]));
     }
 
-    public function hasValidSchema(ConnectionMetadata $object, StaticDestinationRegistry $destinations): bool
+    /** @param list<DestinationField>|null $destinationFields */
+    public function hasValidSchema(ConnectionMetadata $object, ?array $destinationFields = null): bool
     {
-        return $this->brokenColumns($object, $destinations) === [];
+        return $this->brokenColumns($object, $destinationFields) === [];
     }
 
     /** @return list<string> */
@@ -188,7 +182,8 @@ class Sync extends Model
         return $columns;
     }
 
-    public function shouldResume(ConnectionMetadata $object, StaticDestinationRegistry $destinations): bool
+    /** @param list<DestinationField>|null $destinationFields */
+    public function shouldResume(ConnectionMetadata $object, ?array $destinationFields = null): bool
     {
         if ($this->connector === null) {
             return false;
@@ -201,7 +196,7 @@ class Sync extends Model
         return (
             $this->status === SyncStatus::Pause
             && !$this->is_paused
-            && $this->hasValidSchema($object, $destinations)
+            && $this->hasValidSchema($object, $destinationFields)
         );
     }
 

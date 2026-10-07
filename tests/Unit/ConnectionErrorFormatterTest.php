@@ -29,11 +29,13 @@ it('maps a driver code when the sql state is generic', function () use ($excepti
         ->toBe($message('unreachable', 'HY000'));
 });
 
-it('refines an ambiguous connection state by the driver text', function () use ($exception, $message) {
+it('refines an ambiguous connection state without exposing the driver text', function () use ($exception, $message) {
     $driverMessage = 'connection to server at "127.0.0.1", port 5432 failed: FATAL:  password authentication failed for user "secret-user"';
 
     expect(ConnectionErrorFormatter::format($exception('08006', 7, $driverMessage)))
-        ->toBe($message('denied', '08006'));
+        ->toBe($message('denied', '08006'))
+        ->not->toContain('secret-user')
+        ->not->toContain('FATAL');
 });
 
 it('falls back to an unreachable server for an unrecognised connection failure', function () use (
@@ -47,12 +49,4 @@ it('falls back to an unreachable server for an unrecognised connection failure',
 it('falls back to a generic message for unknown failures', function () use ($message) {
     expect(ConnectionErrorFormatter::format(new RuntimeException('boom')))
         ->toBe($message('unknown', 'HY000'));
-});
-
-it('never exposes the underlying driver text', function () use ($exception) {
-    $driverMessage = 'FATAL:  password authentication failed for user "secret-user"';
-
-    expect(ConnectionErrorFormatter::format($exception('08006', 7, $driverMessage)))
-        ->not->toContain('secret-user')
-        ->not->toContain('FATAL');
 });

@@ -5,7 +5,6 @@ namespace PHPinnacle\Ferry\Resources\Syncs;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Tables\Table;
-use Illuminate\Support\Facades\Config;
 use PHPinnacle\Ferry\Models\Sync;
 
 class SyncResource extends Resource
@@ -26,9 +25,8 @@ class SyncResource extends Resource
 
     public static function getNavigationIcon(): ?string
     {
-        return config('phpinnacle-ferry.navigation.sync.icon') === null
-            ? null
-            : Config::string('phpinnacle-ferry.navigation.sync.icon');
+        /** @var string|null */
+        return config('phpinnacle-ferry.navigation.sync.icon');
     }
 
     public static function getNavigationLabel(): string
@@ -38,9 +36,8 @@ class SyncResource extends Resource
 
     public static function getNavigationSort(): ?int
     {
-        return config('phpinnacle-ferry.navigation.sync.sort') === null
-            ? null
-            : Config::integer('phpinnacle-ferry.navigation.sync.sort');
+        /** @var int|null */
+        return config('phpinnacle-ferry.navigation.sync.sort');
     }
 
     public static function getPages(): array

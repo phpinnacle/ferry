@@ -4,15 +4,15 @@ namespace PHPinnacle\Ferry;
 
 use Filament\Contracts\Plugin;
 use Filament\Panel;
-use PHPinnacle\Ferry\Contracts\StaticDestination;
-use PHPinnacle\Ferry\Services\StaticDestinationRegistry;
+use PHPinnacle\Ferry\Destinations\StaticDestination;
+use PHPinnacle\Ferry\Services\DestinationFactory;
 
 class FerryPlugin implements Plugin
 {
     public const string ID = 'phpinnacle/ferry';
 
     public function __construct(
-        private readonly StaticDestinationRegistry $destinations,
+        private readonly DestinationFactory $destinations,
     ) {}
 
     public static function get(): static

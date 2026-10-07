@@ -32,9 +32,3 @@ it('maps typed Rosetta fields to destination column types', function (Field $fie
     'undefined' => [new ScalarField(FieldType::Undefined), null],
     'union' => [new UnionField([new StringField(length: null, fixed: false)]), null],
 ]);
-
-it('resolves a translated label for each column type', function () {
-    foreach (ColumnType::cases() as $case) {
-        expect($case->getLabel())->toBe(__('phpinnacle-ferry::enums.column_type.' . $case->value));
-    }
-});

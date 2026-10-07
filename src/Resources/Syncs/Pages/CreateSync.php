@@ -5,16 +5,16 @@ namespace PHPinnacle\Ferry\Resources\Syncs\Pages;
 use Filament\Resources\Pages\CreateRecord;
 use PHPinnacle\Ferry\Resources\Syncs\Schemas\SyncForm;
 use PHPinnacle\Ferry\Resources\Syncs\SyncResource;
-use PHPinnacle\Ferry\Services\StaticDestinationRegistry;
+use PHPinnacle\Ferry\Services\DestinationFactory;
 
 /** @phpstan-import-type CreateState from SyncForm */
 class CreateSync extends CreateRecord
 {
     protected static string $resource = SyncResource::class;
 
-    private StaticDestinationRegistry $destinations;
+    private DestinationFactory $destinations;
 
-    public function boot(StaticDestinationRegistry $destinations): void
+    public function boot(DestinationFactory $destinations): void
     {
         $this->destinations = $destinations;
     }

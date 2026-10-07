@@ -4,6 +4,7 @@ namespace PHPinnacle\Ferry\Resources\Connections\Actions;
 
 use Filament\Actions\Action;
 use Filament\Notifications\Notification;
+use Illuminate\Support\Facades\Config;
 use PHPinnacle\Ferry\Enums\StructureStatus;
 use PHPinnacle\Ferry\Models\Connection;
 
@@ -21,6 +22,8 @@ class PrepareStructureAction
 
     private static function action(): Action
     {
+        $staleAfter = Config::integer('phpinnacle-ferry.structure.stale_after');
+
         return Action::make('prepare_structure')
             ->label(fn (?Connection $record) => __(
                 'phpinnacle-ferry::resources.connection.actions.structure.'
@@ -28,13 +31,13 @@ class PrepareStructureAction
             ))
             ->icon('phosphor-tree-structure')
             ->color('gray')
-            ->visible(fn (?Connection $record) => $record?->canPrepareStructure() ?? false)
+            ->visible(fn (?Connection $record) => $record?->canPrepareStructure($staleAfter) ?? false)
             ->requiresConfirmation(fn (?Connection $record) => $record?->status === StructureStatus::Ready)
             ->modalIcon('phosphor-tree-structure')
             ->modalHeading(__('phpinnacle-ferry::resources.connection.modals.structure.heading'))
             ->modalDescription(__('phpinnacle-ferry::resources.connection.modals.structure.description'))
             ->modalSubmitActionLabel(__('phpinnacle-ferry::resources.connection.actions.structure.ready'))
-            ->action(fn (Connection $record) => self::notify($record->prepareStructure()));
+            ->action(fn (Connection $record) => self::notify($record->prepareStructure($staleAfter)));
     }
 
     private static function notify(bool $queued): void

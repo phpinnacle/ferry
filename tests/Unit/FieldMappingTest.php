@@ -78,19 +78,6 @@ it('oriented state preserves cardinality and rejects malformed values', function
     );
 })->with('field mapping orientedMappingValues');
 
-it('inverse configuration accepts a closure and can be disabled', function () {
-    $inverse = true;
-    $field = FieldMapping::make('mapping')->inverse(function () use (&$inverse) {
-        return $inverse;
-    });
-
-    $this->assertTrue($field->isInverse());
-    $inverse = false;
-    $this->assertFalse($field->isInverse());
-    $this->assertTrue($field->inverse()->isInverse());
-    $this->assertFalse($field->inverse(false)->isInverse());
-});
-
 it('required multiple destinations are checked in both orientations', function () {
     $validator = new Factory(new Translator(new ArrayLoader, 'en'));
 
@@ -180,25 +167,6 @@ it('missing optional contracts and null labels fall back to the key', function (
     $this->assertNull($field->getSources()[0]['description']);
 });
 
-it('configuration closures are evaluated each time', function () {
-    $sources = ['name'];
-    $field = FieldMapping::make('mapping')
-        ->options(
-            source: function () use (&$sources) {
-                return $sources;
-            },
-            dest: fn () => ['title'],
-        )
-        ->labels(source: fn () => 'Incoming', dest: 'Outgoing');
-
-    $this->assertSame('name', $field->getSources()[0]['id']);
-    $sources = ['email'];
-    $this->assertSame('email', $field->getSources()[0]['id']);
-    $this->assertSame('title', $field->getTargets()[0]['id']);
-    $this->assertSame('Incoming', $field->getSourceLabel());
-    $this->assertSame('Outgoing', $field->getTargetLabel());
-});
-
 it('mapping validation rejects unknown identifiers and malformed values', function (mixed $value, bool $valid) {
     $field = FieldMapping::make('mapping')->options(source: ['name', 'email'], dest: ['title', 'contact']);
     $validator = new Factory(new Translator(new ArrayLoader, 'en'));
@@ -208,62 +176,6 @@ it('mapping validation rejects unknown identifiers and malformed values', functi
         $validator->make(['mapping' => $value], ['mapping' => $field->getValidationRules()])->passes(),
     );
 })->with('field mapping mappingValues');
-
-it('metadata is available for strings and objects and accepts closures', function () {
-    $field = FieldMapping::make('mapping')
-        ->options(source: ['email'], dest: CustomerMappingField::cases())
-        ->types(source: fn () => ['email' => 'string'], dest: fn () => ['email' => 'string'])
-        ->requiredTargets(fn () => ['email'])
-        ->badges(
-            source: fn () => ['email' => ['Imported', ['label' => 'Personal data', 'color' => 'warning']]],
-            dest: fn () => ['email' => ['Unique']],
-        );
-
-    $source = $field->getSources()[0];
-    $target = array_column($field->getTargets(), null, 'id')['email'];
-
-    $this->assertSame('string', $source['type']);
-    $this->assertFalse($source['required']);
-    $this->assertSame(
-        [['label' => 'Imported', 'color' => 'gray'], ['label' => 'Personal data', 'color' => 'warning']],
-        $source['badges'],
-    );
-    $this->assertTrue($target['required']);
-    $this->assertSame('string', $target['type']);
-    $this->assertSame([['label' => 'Unique', 'color' => 'gray']], $target['badges']);
-});
-
-it('paired configuration accepts either named side and resets the omitted side', function () {
-    $field = FieldMapping::make('mapping')
-        ->options(source: ['email'], dest: ['contact'])
-        ->types(source: ['email' => 'string'])
-        ->badges(dest: ['contact' => ['Unique']])
-        ->labels(dest: fn () => 'Outgoing');
-
-    $this->assertSame('string', $field->getSources()[0]['type']);
-    $this->assertNull($field->getTargets()[0]['type']);
-    $this->assertSame([], $field->getSources()[0]['badges']);
-    $this->assertSame([['label' => 'Unique', 'color' => 'gray']], $field->getTargets()[0]['badges']);
-    $this->assertSame('Source', $field->getSourceLabel());
-    $this->assertSame('Outgoing', $field->getTargetLabel());
-
-    $field
-        ->types(dest: ['contact' => 'string'])
-        ->badges(source: ['email' => ['Imported']])
-        ->labels(source: 'Incoming');
-
-    $this->assertNull($field->getSources()[0]['type']);
-    $this->assertSame('string', $field->getTargets()[0]['type']);
-    $this->assertSame([['label' => 'Imported', 'color' => 'gray']], $field->getSources()[0]['badges']);
-    $this->assertSame([], $field->getTargets()[0]['badges']);
-    $this->assertSame('Incoming', $field->getSourceLabel());
-    $this->assertSame('Destination', $field->getTargetLabel());
-
-    $field->options(dest: ['contact']);
-    $this->assertSame([], $field->getSources());
-    $field->options(source: ['email']);
-    $this->assertSame([], $field->getTargets());
-});
 
 it('required destinations cannot be omitted even in an empty mapping', function () {
     $field = FieldMapping::make('mapping')

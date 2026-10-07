@@ -35,8 +35,8 @@ class TypeMapCast implements CastsAttributes, SerializesCastableAttributes
     /** @param TypeMap|null $value */
     public function set(Model $model, string $key, mixed $value, array $attributes): ?string
     {
-        return $value === null
-            ? null
-            : json_encode($value->toArray(), JSON_THROW_ON_ERROR);
+        return $value !== null
+            ? json_encode($value->toArray(), JSON_THROW_ON_ERROR)
+            : null;
     }
 }

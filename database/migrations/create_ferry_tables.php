@@ -132,7 +132,7 @@ return new class extends Migration {
         return config('phpinnacle-ferry.connection');
     }
 
-    private function addTenancy(Blueprint $table): bool
+    private function addTenancy(Blueprint $table): void
     {
         $tenancy = config('phpinnacle-ferry.tenancy');
 
@@ -144,10 +144,6 @@ return new class extends Migration {
                 ->default($tenancy['default'])
                 ->constrained()
                 ->cascadeOnDelete();
-
-            return true;
         }
-
-        return false;
     }
 };

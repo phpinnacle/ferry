@@ -3,17 +3,17 @@
 namespace PHPinnacle\Ferry\Services;
 
 use Illuminate\Database\Connection as DatabaseConnection;
-use Illuminate\Database\Connectors\ConnectionFactory;
+use Illuminate\Database\Connectors\ConnectionFactory as LaravelConnectionFactory;
 use Illuminate\Support\Facades\Config;
 use PDO;
 use PHPinnacle\Ferry\Data\ConnectionTestResult;
 use PHPinnacle\Ferry\Support\ConnectionErrorFormatter;
 use Throwable;
 
-class SourceConnection
+class ConnectionFactory
 {
     public function __construct(
-        private readonly ConnectionFactory $factory,
+        private readonly LaravelConnectionFactory $factory,
     ) {}
 
     /**

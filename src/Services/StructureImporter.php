@@ -2,7 +2,6 @@
 
 namespace PHPinnacle\Ferry\Services;
 
-use Illuminate\Database\Connection as DatabaseConnection;
 use PHPinnacle\Ferry\Enums\StructureStatus;
 use PHPinnacle\Ferry\Models\Connection;
 use PHPinnacle\Ferry\Models\ConnectionMetadata;
@@ -35,7 +34,7 @@ class StructureImporter
     ];
 
     public function __construct(
-        private readonly SourceConnection $factory,
+        private readonly ConnectionFactory $factory,
         private readonly MetadataLoader $loader,
     ) {}
 
@@ -46,7 +45,7 @@ class StructureImporter
         int $offset,
         int $limit,
     ): int {
-        $source = $this->source($connection);
+        $source = $this->factory->make($connection->credentials());
 
         try {
             $metadata = $this->loader->chunk(
@@ -72,7 +71,7 @@ class StructureImporter
      */
     public function prepare(Connection $connection): array
     {
-        $source = $this->source($connection);
+        $source = $this->factory->make($connection->credentials());
 
         try {
             $rosetta = new PdoConnection($source->getPdo());
@@ -200,10 +199,5 @@ class StructureImporter
             'position' => $position,
             'revision' => $connection->draftRevision(),
         ];
-    }
-
-    private function source(Connection $connection): DatabaseConnection
-    {
-        return $this->factory->make($connection->credentials());
     }
 }

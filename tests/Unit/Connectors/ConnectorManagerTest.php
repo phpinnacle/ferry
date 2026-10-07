@@ -9,21 +9,26 @@ use PHPinnacle\Ferry\Enums\ConnectorStatus;
 use PHPinnacle\Ferry\Enums\StructureStatus;
 use PHPinnacle\Ferry\Enums\SyncStatus;
 use PHPinnacle\Ferry\Models\Connector;
-use PHPinnacle\Ferry\Services\Connectors\ConnectorConfigBuilder;
+use PHPinnacle\Ferry\Rules\SyncSchema;
 use PHPinnacle\Ferry\Services\Connectors\ConnectorManager;
-use PHPinnacle\Ferry\Services\StaticDestinationRegistry;
+use PHPinnacle\Ferry\Services\DestinationFactory;
+use PHPinnacle\Ferry\Services\SourceFactory;
 use PHPinnacle\Ferry\Tests\TestCase;
 use PHPinnacle\Franz\Client;
 use PHPinnacle\Franz\Exception\ApiException;
 use PHPinnacle\Rosetta\Enums\FieldType;
 use PHPinnacle\Rosetta\Fields\ScalarField;
+use PHPinnacle\Rosetta\Fields\StringField;
 use Psr\Http\Client\ClientInterface;
 use Psr\Http\Message\RequestFactoryInterface;
 use Psr\Http\Message\RequestInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\StreamFactoryInterface;
 
+use function PHPinnacle\Ferry\Tests\Fakes\customers_destination;
+
 require_once __DIR__ . '/../../TestCase.php';
+require_once __DIR__ . '/../../Fakes/CustomersDestination.php';
 
 uses(TestCase::class);
 
@@ -51,16 +56,17 @@ function ferry_sync(): PHPinnacle\Ferry\Models\Sync
 function ferry_connector_manager(
     RecordingConnectClient $http,
     ?RecordingSignalProducer $signals = null,
+    ?DestinationFactory $destinations = null,
 ): ConnectorManager {
     $factory = new HttpFactory;
     $client = new Client('http://connect.example:8083', $http, $factory, $factory);
-    $destinations = new StaticDestinationRegistry;
+    $destinations ??= new DestinationFactory;
 
     return new ConnectorManager(
         $client,
-        new ConnectorConfigBuilder($destinations),
-        $signals ?? new RecordingSignalProducer,
+        new SourceFactory,
         $destinations,
+        $signals ?? new RecordingSignalProducer,
     );
 }
 
@@ -112,23 +118,47 @@ it('rejects unsupported connector drivers before making a remote request', funct
         ->toBe([]);
 })->with(['activate', 'refreshSource', 'pause', 'restart']);
 
-it('refuses to activate a synchronization whose mapping no longer matches the source', function () {
+it('refuses activation before Kafka requests when the source or mapping is unavailable', function (string $error) {
     $sync = ferry_sync();
-    $sync->forceFill([
-        'schema' => [new FieldMapping('_missing', 'external_id', new ScalarField(FieldType::Id))],
-    ])->saveQuietly();
+
+    if ($error === 'source_object_missing') {
+        $sync->connection->publishedObject($sync->source)->delete();
+    } else {
+        $sync->forceFill([
+            'schema' => [new FieldMapping('_missing', 'external_id', new ScalarField(FieldType::Id))],
+        ])->saveQuietly();
+    }
+
     $http = new RecordingConnectClient;
 
     expect(fn () => ferry_connector_manager($http)->activate($sync->fresh()))
-        ->toThrow(LogicException::class, __('phpinnacle-ferry::resources.sync.errors.invalid_mapping', [
+        ->toThrow(LogicException::class, __('phpinnacle-ferry::resources.sync.errors.' . $error, [
             'code' => $sync->code,
         ]))
         ->and($http->routes())
         ->toBe([]);
-});
+})->with(['invalid_mapping', 'source_object_missing']);
 
-it('activates a synchronization by pushing the connector configs and resuming both', function () {
-    $sync = ferry_sync();
+it('activates a synchronization by pushing the connector configs and resuming both', function (?string $destination) {
+    $destinations = app(DestinationFactory::class);
+    $destinations->register(customers_destination());
+    $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
+    $object = TestCase::makeMetadata($connection, [
+        'system' => [
+            '_idrref' => new ScalarField(FieldType::Id),
+            '_description' => new StringField(length: 100, fixed: false),
+            '_code' => new StringField(length: 11, fixed: true),
+        ],
+    ]);
+    $sync = TestCase::makeSync([
+        'connection_id' => $connection->id,
+        'static_destination' => $destination,
+        'schema' => SyncSchema::fromBindings(
+            $object,
+            ['_description' => 'name', '_code' => 'tax_number'],
+            $destinations->get($destination),
+        ),
+    ], ['status' => SyncStatus::Active]);
     $sync->pause();
     $signals = new RecordingSignalProducer;
     $http = new RecordingConnectClient(
@@ -141,7 +171,7 @@ it('activates a synchronization by pushing the connector configs and resuming bo
         status_response(),
     );
 
-    ferry_connector_manager($http, $signals)->activate($sync);
+    ferry_connector_manager($http, $signals, $destinations)->activate($sync);
 
     expect($sync->fresh()->status)
         ->toBe(SyncStatus::Active)
@@ -155,6 +185,10 @@ it('activates a synchronization by pushing the connector configs and resuming bo
         ->toBe(ferry_sent_config($http, 1))
         ->and(ferry_sent_config($http, 1)['table.include.list'])
         ->toBe('public._reference0')
+        ->and(ferry_sent_config($http, 2)['table.name.format'])
+        ->toBe($destination !== null ? 'customers' : $sync->destination)
+        ->and(ferry_sent_config($http, 2)['delete.enabled'])
+        ->toBe($destination !== null ? 'false' : 'true')
         ->and($sync->fresh()->connector?->checked_at)
         ->not->toBeNull()->and($sync->fresh()->connection->connector?->checked_at)
         ->not->toBeNull()->and(Connector::query()->count())->toBe(2)->and($http->routes())->toBe([
@@ -166,7 +200,7 @@ it('activates a synchronization by pushing the connector configs and resuming bo
             ['GET', '/connectors/ferry-source-test-connection/status'],
             ['GET', '/connectors/ferry-sink-test-sync/status'],
         ])->and($signals->published)->toBe([]);
-});
+})->with(['dynamic' => [null], 'static' => ['customers']]);
 
 it('does not request an incremental snapshot when re-activating without new tables or columns', function () {
     $sync = ferry_sync();

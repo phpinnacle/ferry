@@ -3,13 +3,14 @@
 use Illuminate\Validation\ValidationException;
 use PHPinnacle\Ferry\Models\ConnectionMetadata;
 use PHPinnacle\Ferry\Rules\SyncSchema;
-use PHPinnacle\Ferry\Tests\Fakes\FakeCustomersDestination;
 use PHPinnacle\Rosetta\Enums\FieldType;
 use PHPinnacle\Rosetta\Fields\ScalarField;
 use PHPinnacle\Rosetta\Fields\StringField;
 use Tests\TestCase;
 
-require_once __DIR__ . '/../Fakes/FakeCustomersDestination.php';
+use function PHPinnacle\Ferry\Tests\Fakes\customers_destination;
+
+require_once __DIR__ . '/../Fakes/CustomersDestination.php';
 
 uses(TestCase::class);
 
@@ -40,7 +41,7 @@ it('maps source fields to compatible static destination fields', function () {
     $mappings = SyncSchema::fromBindings(
         $this->object,
         ['_description' => 'name', '_code' => 'tax_number'],
-        new FakeCustomersDestination,
+        customers_destination(),
     );
 
     expect(array_column($mappings, 'column', 'source'))
@@ -56,7 +57,7 @@ it('rejects bindings that do not match source or destination declarations', func
     expect(fn () => SyncSchema::fromBindings(
         $this->object,
         $bindings,
-        $static ? new FakeCustomersDestination : null,
+        $static ? customers_destination() : null,
     ))
         ->toThrow(
             ValidationException::class,

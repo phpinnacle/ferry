@@ -20,7 +20,6 @@ return [
     'kafka_connect' => [
         'base_uri' => env('FERRY_KAFKA_CONNECT_URL'),
         'headers' => [],
-        'timeout' => 5,
         'signal' => [
             'topic' => env('FERRY_KAFKA_SIGNAL_TOPIC'),
             'bootstrap_servers' => env('FERRY_KAFKA_BOOTSTRAP_SERVERS'),

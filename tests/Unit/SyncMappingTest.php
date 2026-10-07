@@ -5,14 +5,14 @@ use PHPinnacle\Ferry\Enums\SyncStatus;
 use PHPinnacle\Ferry\Models\ConnectionMetadata;
 use PHPinnacle\Ferry\Models\Connector;
 use PHPinnacle\Ferry\Models\Sync;
-use PHPinnacle\Ferry\Services\StaticDestinationRegistry;
-use PHPinnacle\Ferry\Tests\Fakes\FakeCustomersDestination;
 use PHPinnacle\Rosetta\Enums\FieldType;
 use PHPinnacle\Rosetta\Fields\ScalarField;
 use PHPinnacle\Rosetta\Fields\StringField;
 use Tests\TestCase;
 
-require_once __DIR__ . '/../Fakes/FakeCustomersDestination.php';
+use function PHPinnacle\Ferry\Tests\Fakes\customers_destination;
+
+require_once __DIR__ . '/../Fakes/CustomersDestination.php';
 
 uses(TestCase::class);
 
@@ -25,8 +25,6 @@ beforeEach(function () {
         ],
         'properties' => [],
     ]);
-    $this->destinations = new StaticDestinationRegistry;
-    $this->destinations->register(new FakeCustomersDestination);
 });
 
 it('resumes a synchronization according to its pause and connector state', function (
@@ -39,7 +37,7 @@ it('resumes a synchronization according to its pause and connector state', funct
     ])->forceFill(['status' => SyncStatus::Pause, 'is_paused' => $manually]);
     $sync->setRelation('connector', $configured ? new Connector(['name' => 'ferry-sink-test-sync']) : null);
 
-    expect($sync->shouldResume($this->object, $this->destinations))->toBe($resume);
+    expect($sync->shouldResume($this->object))->toBe($resume);
 })->with([
     'manual pause' => [true, true, false],
     'automatic pause' => [false, true, true],
@@ -55,7 +53,7 @@ it('reports removed and newly required destination fields', function () {
         ],
     ]);
 
-    expect($sync->brokenColumns($this->object, $this->destinations))->toBe(['is_retired', 'tax_number']);
+    expect($sync->brokenColumns($this->object, customers_destination()->fields))->toBe(['is_retired', 'tax_number']);
 });
 
 it('reports every mapping as broken and refuses to resume when its destination is gone', function () {
@@ -65,10 +63,10 @@ it('reports every mapping as broken and refuses to resume when its destination i
     ])->forceFill(['status' => SyncStatus::Pause, 'is_paused' => false]);
     $sync->setRelation('connector', new Connector(['name' => 'ferry-sink-test-sync']));
 
-    expect($sync->brokenColumns($this->object, $this->destinations))
+    expect($sync->brokenColumns($this->object))
         ->toBe(['name'])
-        ->and($sync->hasValidSchema($this->object, $this->destinations))
+        ->and($sync->hasValidSchema($this->object))
         ->toBeFalse()
-        ->and($sync->shouldResume($this->object, $this->destinations))
+        ->and($sync->shouldResume($this->object))
         ->toBeFalse();
 });

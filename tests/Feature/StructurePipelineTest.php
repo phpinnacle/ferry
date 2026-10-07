@@ -8,7 +8,7 @@ use PHPinnacle\Ferry\Jobs\FinishStructureJob;
 use PHPinnacle\Ferry\Jobs\PrepareStructureJob;
 use PHPinnacle\Ferry\Models\Connection;
 use PHPinnacle\Ferry\Models\ConnectionMetadata;
-use PHPinnacle\Ferry\Services\SourceConnection;
+use PHPinnacle\Ferry\Services\ConnectionFactory;
 use PHPinnacle\Ferry\Services\StructureImporter;
 use PHPinnacle\Ferry\Support\ConnectionErrorFormatter;
 use PHPinnacle\Ferry\Tests\TestCase;
@@ -38,7 +38,7 @@ $makeImporter = function (int $total) {
         public function __construct(
             private readonly int $total,
         ) {
-            parent::__construct(app(SourceConnection::class), app(MetadataLoader::class));
+            parent::__construct(app(ConnectionFactory::class), app(MetadataLoader::class));
         }
 
         public function importChunk(
@@ -364,7 +364,7 @@ it('keeps the published snapshot when a later generation fails', function () use
 
     $connection->refresh();
     $published = $connection->published_at;
-    $connection->prepareStructure();
+    $connection->prepareStructure(config('phpinnacle-ferry.structure.stale_after'));
 
     $chunk = new FetchStructureChunkJob($connection->id, (string) $connection->run_id, 0);
 
@@ -441,7 +441,7 @@ it('retires a stale attempt with a safe reason before starting a new one', funct
         'heartbeat_at' => now()->subSeconds(config('phpinnacle-ferry.structure.stale_after') + 1),
     ]);
 
-    expect($connection->prepareStructure())
+    expect($connection->prepareStructure(config('phpinnacle-ferry.structure.stale_after')))
         ->toBeTrue()
         ->and($connection->fresh()->last_error)
         ->toBe(ConnectionErrorFormatter::stale())

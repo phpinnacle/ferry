@@ -4,7 +4,6 @@ namespace PHPinnacle\Ferry\Models;
 
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
-use Illuminate\Database\Eloquent\Relations\HasOne;
 use PHPinnacle\Ferry\Enums\ConnectorStatus;
 
 /**
@@ -16,8 +15,6 @@ use PHPinnacle\Ferry\Enums\ConnectorStatus;
  * @property CarbonImmutable|null $checked_at
  * @property CarbonImmutable $created_at
  * @property CarbonImmutable $updated_at
- * @property-read Connection|null $connection
- * @property-read Sync|null $sync
  */
 class Connector extends Model
 {
@@ -40,12 +37,6 @@ class Connector extends Model
         'config',
     ];
 
-    /** @return HasOne<Connection, $this> */
-    public function connection(): HasOne
-    {
-        return $this->hasOne(Connection::class, 'connector_id');
-    }
-
     /** @param array<string, string> $config */
     public function recordConfig(array $config): void
     {
@@ -59,11 +50,5 @@ class Connector extends Model
         $this->error = $error;
         $this->checked_at = CarbonImmutable::now();
         $this->save();
-    }
-
-    /** @return HasOne<Sync, $this> */
-    public function sync(): HasOne
-    {
-        return $this->hasOne(Sync::class, 'connector_id');
     }
 }

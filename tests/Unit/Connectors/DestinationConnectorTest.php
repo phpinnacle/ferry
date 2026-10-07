@@ -3,16 +3,17 @@
 use Illuminate\Support\Facades\Queue;
 use PHPinnacle\Ferry\Enums\StructureStatus;
 use PHPinnacle\Ferry\Rules\SyncSchema;
-use PHPinnacle\Ferry\Services\Connectors\ConnectorConfigBuilder;
-use PHPinnacle\Ferry\Services\StaticDestinationRegistry;
-use PHPinnacle\Ferry\Tests\Fakes\FakeCustomersDestination;
+use PHPinnacle\Ferry\Services\DestinationFactory;
+use PHPinnacle\Ferry\Services\SourceFactory;
 use PHPinnacle\Ferry\Tests\TestCase;
 use PHPinnacle\Rosetta\Data\MetadataProperty;
 use PHPinnacle\Rosetta\Enums\PropertyKind;
 use PHPinnacle\Rosetta\Fields\StringField;
 
+use function PHPinnacle\Ferry\Tests\Fakes\customers_destination;
+
 require_once __DIR__ . '/../../TestCase.php';
-require_once __DIR__ . '/../../Fakes/FakeCustomersDestination.php';
+require_once __DIR__ . '/../../Fakes/CustomersDestination.php';
 
 uses(TestCase::class);
 
@@ -54,11 +55,16 @@ it('builds a confluent jdbc sink connector config with field renames', function 
         ]),
     ]);
 
-    $builder = new ConnectorConfigBuilder(
-        new StaticDestinationRegistry,
-    );
+    $builder = new SourceFactory;
+    config(['phpinnacle-ferry.sync.table_prefix' => 'changed_prefix_']);
 
-    $config = $builder->sink($sync->fresh());
+    $config = new DestinationFactory()
+        ->resolve($sync)
+        ->connector(
+            $sync,
+            $object,
+            $builder->topic($connection, $object),
+        );
 
     expect($builder->name($sync))
         ->toBe('ferry-sink-test-sync')
@@ -121,12 +127,22 @@ it('keeps each sink limited to the fields of its own mapping when several syncs 
         ]),
     ]);
 
-    $builder = new ConnectorConfigBuilder(
-        new StaticDestinationRegistry,
-    );
+    $builder = new SourceFactory;
 
-    $firstConfig = $builder->sink($first->fresh());
-    $secondConfig = $builder->sink($second->fresh());
+    $firstConfig = new DestinationFactory()
+        ->resolve($first)
+        ->connector(
+            $first,
+            $object,
+            $builder->topic($connection, $object),
+        );
+    $secondConfig = new DestinationFactory()
+        ->resolve($second)
+        ->connector(
+            $second,
+            $object,
+            $builder->topic($connection, $object),
+        );
 
     expect($firstConfig['fields.whitelist'])
         ->toBe('idrref,title')
@@ -138,8 +154,8 @@ it('builds a static sink with fixed fields and its target connection', function 
     ?string $connectionName,
     array $target,
 ) use ($makeProperty) {
-    $registry = app(StaticDestinationRegistry::class);
-    $registry->register(new FakeCustomersDestination($connectionName));
+    $registry = app(DestinationFactory::class);
+    $registry->register(customers_destination($connectionName));
 
     $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
     $object = TestCase::makeMetadata($connection, [
@@ -155,9 +171,9 @@ it('builds a static sink with fixed fields and its target connection', function 
         ]),
     ]);
 
-    $builder = new ConnectorConfigBuilder($registry);
+    $builder = new SourceFactory;
 
-    $config = $builder->sink($sync->fresh());
+    $config = $registry->resolve($sync)->connector($sync, $object, $builder->topic($connection, $object));
 
     expect($config['table.name.format'])
         ->toBe('customers')
@@ -214,11 +230,7 @@ it('refuses to build a sink for an unregistered static destination', function ()
     ]);
     $sync->forceFill(['static_destination' => 'customers'])->saveQuietly();
 
-    $builder = new ConnectorConfigBuilder(
-        new StaticDestinationRegistry,
-    );
-
-    expect(fn () => $builder->sink($sync->fresh()))
+    expect(fn () => new DestinationFactory()->resolve($sync))
         ->toThrow(LogicException::class, __('phpinnacle-ferry::resources.sync.errors.static_destination_missing', [
             'destination' => 'customers',
         ]));
@@ -231,7 +243,7 @@ it('keeps configured sink hosts and environment ports while applying the default
     int $expectedPort,
 ) {
     $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
-    TestCase::makeMetadata($connection);
+    $object = TestCase::makeMetadata($connection);
     $sync = TestCase::makeSync(['connection_id' => $connection->id]);
     config(['phpinnacle-ferry.target_host' => $host]);
 
@@ -243,11 +255,17 @@ it('keeps configured sink hosts and environment ports while applying the default
         config(['database.connections.sqlite.port' => $port]);
     }
 
-    $builder = new ConnectorConfigBuilder(
-        new StaticDestinationRegistry,
-    );
+    $builder = new SourceFactory;
 
-    expect($builder->sink($sync)['connection.url'])
+    expect(
+        new DestinationFactory()
+            ->resolve($sync)
+            ->connector(
+                $sync,
+                $object,
+                $builder->topic($connection, $object),
+            )['connection.url'],
+    )
         ->toBe(sprintf('jdbc:postgresql://%s:%d/:memory:', $expectedHost, $expectedPort));
 })->with([
     'environment port' => [null, '5544', 'db.internal', 5544],

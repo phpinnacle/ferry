@@ -5,7 +5,6 @@ use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use PHPinnacle\Ferry\Data\ConnectionTestResult;
-use PHPinnacle\Ferry\Models\Connection;
 use PHPinnacle\Ferry\Tests\TestCase;
 
 require_once __DIR__ . '/../TestCase.php';
@@ -34,18 +33,6 @@ it('enforces a unique code', function () {
     TestCase::makeConnection(['code' => 'duplicate']);
 
     expect(fn () => TestCase::makeConnection(['code' => 'duplicate']))->toThrow(QueryException::class);
-});
-
-it('toggles the active state', function () {
-    $connection = TestCase::makeConnection(['is_active' => true]);
-
-    $connection->toggleActive();
-
-    expect($connection->fresh()->is_active)->toBeFalse();
-});
-
-it('is never in use until synchronizations exist', function () {
-    expect(new Connection()->isInUse())->toBeFalse();
 });
 
 it('records the test result on the connection', function () {

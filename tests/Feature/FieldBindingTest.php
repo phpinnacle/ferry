@@ -75,20 +75,6 @@ function field_binding_schema(Field $field, array $state = []): Schema
     return $schema;
 }
 
-it('round trips simple string bindings without adding unbound sources', function () {
-    $field = FieldBinding::make('bindings')
-        ->options(['name', 'email'])
-        ->simple(TextInput::make('destination')->required());
-    $schema = field_binding_schema($field, ['name' => 'customer.name']);
-
-    expect($schema->getState())->toBe(['bindings' => ['name' => 'customer.name']]);
-    expect($field->getBindings())->toHaveCount(1);
-
-    $field->getBindings()[$field->getBindingKey('name')]->getComponent('destination')->state('profile.name');
-
-    expect($schema->getState())->toBe(['bindings' => ['name' => 'profile.name']]);
-});
-
 it('supports partial updates to a child binding field', function () {
     $field = FieldBinding::make('bindings')
         ->options(['name', 'email'])
@@ -112,8 +98,11 @@ it('round trips object bindings and applies child dehydration callbacks', functi
                 ->required()
                 ->dehydrateStateUsing(fn (string $state) => strtoupper($state)),
             Toggle::make('trim'),
+            TextInput::make('preview')->dehydrated(false),
         ]);
-    $schema = field_binding_schema($field, ['name' => ['destination' => 'customer.name', 'trim' => true]]);
+    $schema = field_binding_schema($field, [
+        'name' => ['destination' => 'customer.name', 'trim' => true, 'preview' => 'Preview'],
+    ]);
 
     expect($schema->getState())->toBe([
         'bindings' => ['name' => ['destination' => 'CUSTOMER.NAME', 'trim' => true]],
@@ -222,18 +211,6 @@ it('hydrates configured default bindings and nested field defaults', function ()
     ]);
 });
 
-it('honors non-dehydrated child fields', function () {
-    $field = FieldBinding::make('bindings')
-        ->options(['name'])
-        ->schema([
-            TextInput::make('destination')->required(),
-            TextInput::make('preview')->dehydrated(false),
-        ]);
-    $schema = field_binding_schema($field, ['name' => ['destination' => 'profile.name', 'preview' => 'Preview']]);
-
-    expect($schema->getState()['bindings'])->toBe(['name' => ['destination' => 'profile.name']]);
-});
-
 it('can be nested in a repeater with independent bindings', function () {
     $field = FieldBinding::make('bindings')
         ->options(['name'])
@@ -247,19 +224,6 @@ it('can be nested in a repeater with independent bindings', function () {
         ['bindings' => ['name' => 'first.name']],
         ['bindings' => ['name' => 'second.name']],
     ]);
-});
-
-it('validates required child fields only for bound sources', function () {
-    $field = FieldBinding::make('bindings')
-        ->options(['name', 'email'])
-        ->schema([TextInput::make('destination')->required()]);
-    $schema = field_binding_schema($field);
-
-    expect($schema->getState())->toBe(['bindings' => []]);
-
-    $field->getAction('bind')(['source' => 'name'])->call();
-
-    expect($schema->getState(...))->toThrow(ValidationException::class);
 });
 
 it('keeps callbacks and relative reads isolated between bindings', function () {

@@ -44,7 +44,7 @@ abstract class StructureJob implements ShouldBeEncrypted, ShouldQueue
             ->getConnection()
             ->transaction(function () use ($exception) {
                 $this->lockedConnection()?->failStructure(
-                    $exception === null ? null : ConnectionErrorFormatter::format($exception),
+                    $exception !== null ? ConnectionErrorFormatter::format($exception) : null,
                 );
             });
     }

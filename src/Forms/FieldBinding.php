@@ -81,12 +81,7 @@ class FieldBinding extends Field
 
     public function getSimpleField(): ?Field
     {
-        return $this->simpleField === null ? null : $this->evaluate($this->simpleField);
-    }
-
-    public function isSimple(): bool
-    {
-        return $this->simpleField !== null;
+        return $this->simpleField !== null ? $this->evaluate($this->simpleField) : null;
     }
 
     public function getBindingKey(string $source): string
@@ -266,7 +261,7 @@ class FieldBinding extends Field
                 continue;
             }
 
-            $bindings[$source['id']] = $simple === null ? $state[$key] : data_get($state[$key], $simple->getName());
+            $bindings[$source['id']] = $simple !== null ? data_get($state[$key], $simple->getName()) : $state[$key];
         }
 
         return $bindings;
