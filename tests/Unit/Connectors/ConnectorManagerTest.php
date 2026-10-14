@@ -5,6 +5,7 @@ use GuzzleHttp\Psr7\Response;
 use Illuminate\Support\Facades\Queue;
 use PHPinnacle\Ferry\Contracts\SignalProducer;
 use PHPinnacle\Ferry\Data\FieldMapping;
+use PHPinnacle\Ferry\Data\TransformSetting;
 use PHPinnacle\Ferry\Enums\ConnectorStatus;
 use PHPinnacle\Ferry\Enums\DestinationType;
 use PHPinnacle\Ferry\Enums\StructureStatus;
@@ -14,6 +15,7 @@ use PHPinnacle\Ferry\Rules\SyncSchema;
 use PHPinnacle\Ferry\Services\Connectors\ConnectorManager;
 use PHPinnacle\Ferry\Services\DestinationFactory;
 use PHPinnacle\Ferry\Services\SourceFactory;
+use PHPinnacle\Ferry\Services\TransformFactory;
 use PHPinnacle\Ferry\Tests\TestCase;
 use PHPinnacle\Franz\Client;
 use PHPinnacle\Franz\Exception\ApiException;
@@ -62,11 +64,13 @@ function ferry_connector_manager(
     $factory = new HttpFactory;
     $client = new Client('http://connect.example:8083', $http, $factory, $factory);
     $destinations ??= new DestinationFactory;
+    $transforms = app(TransformFactory::class);
 
     return new ConnectorManager(
         $client,
-        new SourceFactory,
+        new SourceFactory($transforms),
         $destinations,
+        $transforms,
         $signals ?? new RecordingSignalProducer,
     );
 }
@@ -122,13 +126,13 @@ it('rejects unsupported connector drivers before making a remote request', funct
 it('refuses activation before Kafka requests when the source or mapping is unavailable', function (string $error) {
     $sync = ferry_sync();
 
-    if ($error === 'source_object_missing') {
-        $sync->connection->publishedObject($sync->source)->delete();
-    } else {
-        $sync->forceFill([
+    match ($error) {
+        'source_object_missing' => $sync->connection->publishedObject($sync->source)->delete(),
+        'invalid_mapping' => $sync->forceFill([
             'schema' => [new FieldMapping('_missing', 'external_id', new ScalarField(FieldType::Id))],
-        ])->saveQuietly();
-    }
+        ])->saveQuietly(),
+        'invalid_transforms' => $sync->forceFill(['transforms' => [new TransformSetting('missing')]])->saveQuietly(),
+    };
 
     $http = new RecordingConnectClient;
 
@@ -138,7 +142,7 @@ it('refuses activation before Kafka requests when the source or mapping is unava
         ]))
         ->and($http->routes())
         ->toBe([]);
-})->with(['invalid_mapping', 'source_object_missing']);
+})->with(['invalid_mapping', 'invalid_transforms', 'source_object_missing']);
 
 it('activates a synchronization by pushing the connector configs and resuming both', function (?string $destination) {
     $destinations = app(DestinationFactory::class);
@@ -158,6 +162,7 @@ it('activates a synchronization by pushing the connector configs and resuming bo
         'schema' => SyncSchema::fromBindings(
             $object,
             ['_description' => 'name', '_code' => 'tax_number'],
+            app(TransformFactory::class),
             $destinations->get($destination),
         ),
     ], ['status' => SyncStatus::Active]);
@@ -220,6 +225,80 @@ it('does not request an incremental snapshot when re-activating without new tabl
     ferry_connector_manager($http, $signals)->activate($sync);
 
     expect($signals->published)->toBe([]);
+});
+
+it('refreshes only the sink when the source config is unchanged, unless the source is refreshed explicitly', function () {
+    $sync = ferry_sync();
+    $activation = fn () => new RecordingConnectClient(
+        config_response(['column.include.list' => 'public._reference0._idrref']),
+        connector_response(),
+        connector_response(),
+        new Response(202),
+        new Response(202),
+        status_response(),
+        status_response(),
+    );
+
+    ferry_connector_manager($activation())->activate($sync);
+
+    $refresh = new RecordingConnectClient(connector_response(), new Response(202), status_response());
+    ferry_connector_manager($refresh)->activate($sync->fresh(), refreshSource: false);
+
+    $reactivation = $activation();
+    ferry_connector_manager($reactivation)->activate($sync->fresh());
+
+    expect($refresh->routes())
+        ->toBe([
+            ['PUT', '/connectors/ferry-sink-test-sync/config'],
+            ['PUT', '/connectors/ferry-sink-test-sync/resume'],
+            ['GET', '/connectors/ferry-sink-test-sync/status'],
+        ])
+        ->and($reactivation->routes())
+        ->toContain(['PUT', '/connectors/ferry-source-test-connection/config'])
+        ->toContain(['PUT', '/connectors/ferry-source-test-connection/resume']);
+});
+
+it('requests an incremental snapshot when a record filter adds a column to the shared source connector', function () {
+    $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
+    TestCase::makeMetadata($connection, [
+        'system' => ['_idrref' => new ScalarField(FieldType::Id), '_marked' => new ScalarField(FieldType::Boolean)],
+    ]);
+    $sync = TestCase::makeSync([
+        'connection_id' => $connection->id,
+        'transforms' => [
+            new TransformSetting('filter', [
+                'mode' => 'exclude',
+                'column' => '_marked',
+                'type' => 'boolean',
+                'value' => 'true',
+            ]),
+        ],
+    ], ['status' => SyncStatus::Active]);
+    $signals = new RecordingSignalProducer;
+    $http = new RecordingConnectClient(
+        config_response(['column.include.list' => 'public._reference0._idrref']),
+        connector_response(),
+        connector_response(),
+        new Response(202),
+        new Response(202),
+        status_response(),
+        status_response(),
+    );
+
+    ferry_connector_manager($http, $signals)->activate($sync);
+
+    expect(ferry_sent_config($http, 1)['column.include.list'])
+        ->toBe('public._reference0._idrref,public._reference0._marked')
+        ->and($signals->published)
+        ->toHaveCount(1)
+        ->and(
+            json_decode(
+                $signals->published[0]['payload'],
+                true,
+                flags: JSON_THROW_ON_ERROR,
+            )['data']['data-collections'],
+        )
+        ->toBe(['public._reference0']);
 });
 
 it('requests an incremental snapshot when a new synchronization extends the shared source connector', function (

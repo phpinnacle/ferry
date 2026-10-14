@@ -12,6 +12,7 @@ use PHPinnacle\Ferry\Resources\Syncs\Actions\ConfirmSchemaChangesAction;
 use PHPinnacle\Ferry\Resources\Syncs\Schemas\SyncForm;
 use PHPinnacle\Ferry\Resources\Syncs\SyncResource;
 use PHPinnacle\Ferry\Services\DestinationFactory;
+use PHPinnacle\Ferry\Services\TransformFactory;
 
 /**
  * @property Sync $record
@@ -24,9 +25,12 @@ class EditSync extends EditRecord
 
     private DestinationFactory $destinations;
 
-    public function boot(DestinationFactory $destinations): void
+    private TransformFactory $transforms;
+
+    public function boot(DestinationFactory $destinations, TransformFactory $transforms): void
     {
         $this->destinations = $destinations;
+        $this->transforms = $transforms;
     }
 
     public function getTitle(): string|Htmlable
@@ -64,7 +68,7 @@ class EditSync extends EditRecord
     /** @param EditState $data */
     protected function mutateFormDataBeforeSave(array $data): array
     {
-        return SyncForm::forUpdate($data, $this->record, $this->destinations);
+        return SyncForm::forUpdate($data, $this->record, $this->destinations, $this->transforms);
     }
 
     /** @param FillState $data */

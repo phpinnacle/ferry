@@ -7,11 +7,13 @@ use PHPinnacle\Ferry\Models\Connection;
 use PHPinnacle\Ferry\Models\ConnectionMetadata;
 use PHPinnacle\Ferry\Services\Connectors\ConnectorManager;
 use PHPinnacle\Ferry\Services\DestinationFactory;
+use PHPinnacle\Ferry\Services\TransformFactory;
 
 class ConnectionObserver
 {
     public function __construct(
         private readonly DestinationFactory $destinations,
+        private readonly TransformFactory $transforms,
         private readonly ConnectorManager $connectors,
     ) {}
 
@@ -62,6 +64,7 @@ class ConnectionObserver
             if (
                 !$object instanceof ConnectionMetadata
                 || !$sync->hasValidSchema($object, $this->destinations->fieldsFor($sync))
+                || !$this->transforms->appliesTo($sync, $object)
             ) {
                 if ($sync->connector !== null) {
                     $this->connectors->pause($sync, manually: false);

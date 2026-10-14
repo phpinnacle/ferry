@@ -6,12 +6,14 @@ use Closure;
 use Filament\Forms\Components\Field;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Translation\PotentiallyTranslatedString;
+use PHPinnacle\Ferry\Forms\Concerns\HasExtraSourceActions;
 use PHPinnacle\Ferry\Forms\Concerns\HasMappingItems;
 
 /** @phpstan-import-type MappingItem from HasMappingItems */
 // @mago-expect lint:too-many-properties
 class FieldMapping extends Field
 {
+    use HasExtraSourceActions;
     use HasMappingItems;
 
     protected string $view = 'phpinnacle-ferry::forms.field-mapping';
@@ -33,6 +35,9 @@ class FieldMapping extends Field
 
     /** @var list<string>|Closure(): list<string> */
     protected array|Closure $multipleTargets = [];
+
+    /** @var list<string>|Closure(): list<string> */
+    protected array|Closure $constantTargets = [];
 
     /** @var bool|Closure(): bool */
     protected bool|Closure $isInverse = false;
@@ -105,6 +110,20 @@ class FieldMapping extends Field
     public function getMultipleTargets(): array
     {
         return $this->evaluate($this->multipleTargets);
+    }
+
+    /** @param list<string>|Closure(): list<string> $targets */
+    public function constants(array|Closure $targets): static
+    {
+        $this->constantTargets = $targets;
+
+        return $this;
+    }
+
+    /** @return list<string> */
+    public function getConstantTargets(): array
+    {
+        return $this->evaluate($this->constantTargets);
     }
 
     /** @param bool|Closure(): bool $condition */
@@ -221,11 +240,24 @@ class FieldMapping extends Field
         $sources = array_column($this->getSources(), null, 'id');
         $targets = array_column($this->getTargets(), null, 'id');
         $multiple = $this->getMultipleTargets();
+        $constants = $this->getConstantTargets();
         $inverse = $this->isInverse();
         $usedSources = [];
         $usedTargets = [];
 
         foreach ($value as $id => $mapped) {
+            if (is_array($mapped) && !$inverse && in_array((string) $id, $constants, true)) {
+                if (array_keys($mapped) !== ['value'] || !is_string($mapped['value']) || $mapped['value'] === '') {
+                    $fail('The :attribute field contains an invalid mapping value.')->translate();
+
+                    return;
+                }
+
+                $usedTargets[(string) $id] = true;
+
+                continue;
+            }
+
             $expectsList = !$inverse && in_array((string) $id, $multiple, true);
             $hasValidShape = $expectsList
                 ? is_array($mapped) && array_is_list($mapped) && $mapped !== []

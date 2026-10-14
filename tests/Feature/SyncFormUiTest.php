@@ -17,6 +17,7 @@ use PHPinnacle\Ferry\Models\ConnectionMetadata;
 use PHPinnacle\Ferry\Models\Sync;
 use PHPinnacle\Ferry\Resources\Syncs\Schemas\SyncForm;
 use PHPinnacle\Ferry\Services\DestinationFactory;
+use PHPinnacle\Ferry\Services\TransformFactory;
 use PHPinnacle\Ferry\Tests\TestCase;
 use PHPinnacle\Rosetta\Data\MetadataProperty;
 use PHPinnacle\Rosetta\Enums\FieldType;
@@ -185,7 +186,13 @@ it('validates the static mapping against the declared destination fields', funct
     if ($valid) {
         expect($schema->getState()['schema'])
             ->toBe(array_flip($mapping))
-            ->and(SyncForm::forCreate($schema->getState(), app(DestinationFactory::class))['type'])
+            ->and(
+                SyncForm::forCreate(
+                    $schema->getState(),
+                    app(DestinationFactory::class),
+                    app(TransformFactory::class),
+                )['type'],
+            )
             ->toBe(DestinationType::Static);
 
         return;
@@ -253,6 +260,36 @@ it('validates the bound column names of a dynamic synchronization', function (st
     'uppercase column' => ['External', false],
     'reserved column' => ['idrref', false],
 ]);
+
+it('creates every parameter of a chosen transform so that live inputs can bind to them', function () {
+    $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
+    TestCase::makeMetadata($connection);
+    $livewire = new class extends LivewireComponent implements HasSchemas {
+        use InteractsWithSchemas;
+
+        /** @var array<string, mixed> */
+        public array $data = [];
+    };
+    $livewire->setId('sync-form-transform-params-test');
+    $livewire->setName('sync-form-transform-params-test');
+    $schema = SyncForm::configure(FilamentSchema::make($livewire)->statePath('data')->operation('create'));
+    $schema->fill([
+        'connection_id' => $connection->id,
+        'source' => 'object-0',
+        'destination' => DestinationType::Dynamic->value,
+        'schema' => [],
+        'transforms' => ['row' => ['key' => null, 'source' => null, 'params' => []]],
+    ]);
+
+    $key = collect($schema->getFlatComponents())
+        ->first(fn ($component) => str_ends_with($component->getStatePath() ?? '', '.key'));
+    $key->state('filter')->callAfterStateUpdated();
+
+    /** @var array<string, array{params: array<string, mixed>}> $rows */
+    $rows = $livewire->data['transforms'];
+
+    expect($rows[array_key_first($rows)]['params'])->toBe(['mode' => 'exclude', 'column' => null, 'value' => null]);
+});
 
 it('orders source objects with references first, obsolete ones last and titles case-insensitively', function () use (
     $selects,

@@ -294,3 +294,37 @@ it('type compatibility is validated on the server', function (?string $sourceTyp
         }
     }
 })->with('field mapping typePairs');
+
+it('a destination that allows a static value accepts it instead of a source field', function (
+    bool $inverse,
+    mixed $value,
+    bool $valid,
+) {
+    $field = FieldMapping::make('mapping')
+        ->options(source: ['id', 'name'], dest: ['enabled', 'payload', 'email'])
+        ->multiple(['payload'])
+        ->constants(['enabled', 'payload'])
+        ->requiredTargets(['enabled'])
+        ->inverse($inverse);
+    $validator = new Factory(new Translator(new ArrayLoader, 'en'));
+
+    $this->assertSame(
+        $valid,
+        $validator->make(['mapping' => $value], ['mapping' => $field->getValidationRules()])->passes(),
+    );
+})->with([
+    'static value' => [false, ['enabled' => ['value' => 'true']], true],
+    'static value beside a connection' => [false, ['enabled' => ['value' => 'true'], 'email' => 'name'], true],
+    'empty static value' => [false, ['enabled' => ['value' => '']], false],
+    'required destination left empty' => [false, ['email' => 'name'], false],
+    'destination without static values' => [
+        false,
+        ['enabled' => ['value' => 'true'], 'email' => ['value' => 'x']],
+        false,
+    ],
+    'value is not a string' => [false, ['enabled' => ['value' => true]], false],
+    'value is missing' => [false, ['enabled' => []], false],
+    'extra keys' => [false, ['enabled' => ['value' => 'true', 'type' => 'boolean']], false],
+    'inverse state has no static values' => [true, ['id' => 'enabled'], true],
+    'inverse state rejects them' => [true, ['enabled' => ['value' => 'true']], false],
+]);

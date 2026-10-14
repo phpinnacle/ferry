@@ -7,8 +7,10 @@ use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use PHPinnacle\Ferry\Casts\SchemaCast;
+use PHPinnacle\Ferry\Casts\TransformsCast;
 use PHPinnacle\Ferry\Data\DestinationField;
 use PHPinnacle\Ferry\Data\FieldMapping;
+use PHPinnacle\Ferry\Data\TransformSetting;
 use PHPinnacle\Ferry\Enums\ColumnType;
 use PHPinnacle\Ferry\Enums\DestinationType;
 use PHPinnacle\Ferry\Enums\SyncStatus;
@@ -26,6 +28,7 @@ use PHPinnacle\Ferry\Observers\SyncObserver;
  * @property string $source
  * @property string $destination
  * @property list<FieldMapping> $schema
+ * @property list<TransformSetting> $transforms
  * @property CarbonImmutable $created_at
  * @property CarbonImmutable $updated_at
  * @property-read Connection $connection
@@ -45,6 +48,7 @@ class Sync extends Model
     protected $attributes = [
         'status' => SyncStatus::Pending->value,
         'type' => DestinationType::Dynamic->value,
+        'transforms' => '[]',
     ];
 
     protected $casts = [
@@ -52,6 +56,7 @@ class Sync extends Model
         'type' => DestinationType::class,
         'is_paused' => 'bool',
         'schema' => SchemaCast::class,
+        'transforms' => TransformsCast::class,
     ];
 
     protected $fillable = [
@@ -62,6 +67,7 @@ class Sync extends Model
         'destination',
         'source',
         'schema',
+        'transforms',
     ];
 
     /** @param array{touch?: bool|null} $options */
@@ -128,11 +134,14 @@ class Sync extends Model
         $destinationColumns = [];
 
         foreach ($this->schema as $mapping) {
-            $field = $object->field($mapping->source);
             $type = $mapping->type();
 
-            if ($field === null || ColumnType::fromField($field) !== $type) {
-                $columns[] = $mapping->column;
+            if ($mapping->source !== null) {
+                $field = $object->field($mapping->source);
+
+                if ($field === null || ColumnType::fromField($field) !== $mapping->sourceType()) {
+                    $columns[] = $mapping->column;
+                }
             }
 
             if ($destinationFields !== null && ($fields[$mapping->column] ?? null)?->type !== $type) {
@@ -166,11 +175,14 @@ class Sync extends Model
 
         /** @var list<FieldMapping> $previous */
         $previous = $this->getOriginal('schema');
-        $next = array_column($this->schema, null, 'source');
+        $next = array_combine(
+            array_map(static fn (FieldMapping $mapping) => $mapping->identity(), $this->schema),
+            $this->schema,
+        );
         $columns = [];
 
         foreach ($previous as $mapping) {
-            $replacement = $next[$mapping->source] ?? null;
+            $replacement = $next[$mapping->identity()] ?? null;
 
             if ($replacement === null || $replacement->type() !== $mapping->type()) {
                 $columns[] = $mapping->column;
@@ -204,10 +216,24 @@ class Sync extends Model
         $columns = [ConnectionMetadata::KEY_COLUMN => $keyColumn];
 
         foreach ($this->schema as $mapping) {
-            $column = $object->physicalColumn($mapping->source);
+            $column = $mapping->source !== null ? $object->physicalColumn($mapping->source) : null;
 
             if ($column !== null && $column !== ConnectionMetadata::KEY_COLUMN) {
                 $columns[$column] = $mapping->column;
+            }
+        }
+
+        return $columns;
+    }
+
+    /** @return list<string> */
+    public function constantColumns(): array
+    {
+        $columns = [];
+
+        foreach ($this->schema as $mapping) {
+            if ($mapping->source === null) {
+                $columns[] = $mapping->column;
             }
         }
 

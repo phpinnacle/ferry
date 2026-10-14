@@ -14,6 +14,7 @@ use PHPinnacle\Ferry\Models\Connector;
 use PHPinnacle\Ferry\Models\Sync;
 use PHPinnacle\Ferry\Services\DestinationFactory;
 use PHPinnacle\Ferry\Services\SourceFactory;
+use PHPinnacle\Ferry\Services\TransformFactory;
 use PHPinnacle\Franz\Client;
 use PHPinnacle\Franz\Exception\ApiException;
 use PHPinnacle\Franz\Request\ConnectorConfigRequest;
@@ -24,10 +25,11 @@ class ConnectorManager
         private readonly Client $client,
         private readonly SourceFactory $sources,
         private readonly DestinationFactory $destinations,
+        private readonly TransformFactory $transforms,
         private readonly SignalProducer $signals,
     ) {}
 
-    public function activate(Sync $sync): void
+    public function activate(Sync $sync, bool $refreshSource = true): void
     {
         $connection = $sync->connection;
 
@@ -35,28 +37,40 @@ class ConnectorManager
         $object = $this->sourceObject($sync);
 
         $sink = $this->connector($sync);
+        $syncs = $connection->trackedSyncs()->except([$sync->id])->push($sync);
+        $source = $this->sources->source($connection, $syncs);
+        $refreshSource = $refreshSource || $this->connector($connection)->config !== $source;
+        $previousColumns = null;
 
-        $previousColumns = $this->previousColumns($connection);
-
-        $config = $this->pushSource($connection, $connection->trackedSyncs()->except([$sync->id])->push($sync));
+        if ($refreshSource) {
+            $previousColumns = $this->previousColumns($connection);
+            $this->pushSource($connection, $syncs);
+        }
 
         $this->pushConfig($sink, $this->destinations->resolve($sync)->connector(
             $sync,
             $object,
             $this->sources->topic($connection, $object),
+            $this->transforms,
         ));
         $sync->recordConnector($sink);
 
         if ($previousColumns !== null) {
-            $this->requestSnapshot($config['topic.prefix'], $this->newlyScopedTables($previousColumns, $config));
+            $this->requestSnapshot($source['topic.prefix'], $this->newlyScopedTables($previousColumns, $source));
         }
 
-        $this->client->connector($this->connector($connection)->name)->resume();
+        if ($refreshSource) {
+            $this->client->connector($this->connector($connection)->name)->resume();
+        }
+
         $this->client->connector($sink->name)->resume();
 
         $sync->activate();
 
-        $this->checkStatus($connection);
+        if ($refreshSource) {
+            $this->checkStatus($connection);
+        }
+
         $this->checkStatus($sync);
     }
 
@@ -160,6 +174,12 @@ class ConnectorManager
 
         if (!$sync->hasValidSchema($object, $this->destinations->fieldsFor($sync))) {
             throw new LogicException(__('phpinnacle-ferry::resources.sync.errors.invalid_mapping', [
+                'code' => $sync->code,
+            ]));
+        }
+
+        if (!$this->transforms->appliesTo($sync, $object)) {
+            throw new LogicException(__('phpinnacle-ferry::resources.sync.errors.invalid_transforms', [
                 'code' => $sync->code,
             ]));
         }

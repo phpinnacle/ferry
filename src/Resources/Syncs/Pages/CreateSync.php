@@ -6,6 +6,7 @@ use Filament\Resources\Pages\CreateRecord;
 use PHPinnacle\Ferry\Resources\Syncs\Schemas\SyncForm;
 use PHPinnacle\Ferry\Resources\Syncs\SyncResource;
 use PHPinnacle\Ferry\Services\DestinationFactory;
+use PHPinnacle\Ferry\Services\TransformFactory;
 
 /** @phpstan-import-type CreateState from SyncForm */
 class CreateSync extends CreateRecord
@@ -14,9 +15,12 @@ class CreateSync extends CreateRecord
 
     private DestinationFactory $destinations;
 
-    public function boot(DestinationFactory $destinations): void
+    private TransformFactory $transforms;
+
+    public function boot(DestinationFactory $destinations, TransformFactory $transforms): void
     {
         $this->destinations = $destinations;
+        $this->transforms = $transforms;
     }
 
     public function getTitle(): string
@@ -27,6 +31,6 @@ class CreateSync extends CreateRecord
     /** @param CreateState $data */
     protected function mutateFormDataBeforeCreate(array $data): array
     {
-        return SyncForm::forCreate($data, $this->destinations);
+        return SyncForm::forCreate($data, $this->destinations, $this->transforms);
     }
 }

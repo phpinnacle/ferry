@@ -7,12 +7,14 @@ use PHPinnacle\Ferry\Models\Sync;
 use PHPinnacle\Ferry\Services\Connectors\ConnectorManager;
 use PHPinnacle\Ferry\Services\DestinationFactory;
 use PHPinnacle\Ferry\Services\SyncTableManager;
+use PHPinnacle\Ferry\Services\TransformFactory;
 
 class SyncObserver
 {
     public function __construct(
         private readonly SyncTableManager $tables,
         private readonly DestinationFactory $destinations,
+        private readonly TransformFactory $transforms,
         private readonly ConnectorManager $connectors,
     ) {}
 
@@ -68,8 +70,9 @@ class SyncObserver
             if (
                 $object !== null
                 && $sync->shouldResume($object, $this->destinations->fieldsFor($sync))
+                && $this->transforms->appliesTo($sync, $object)
             ) {
-                $this->connectors->activate($sync);
+                $this->connectors->activate($sync, refreshSource: false);
             }
         });
     }

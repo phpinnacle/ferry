@@ -36,7 +36,10 @@ class SyncTableManager
     {
         /** @var list<FieldMapping> $previousMappings */
         $previousMappings = $sync->getOriginal('schema');
-        $previous = array_column($previousMappings, null, 'source');
+        $previous = array_combine(
+            array_map(static fn (FieldMapping $mapping) => $mapping->identity(), $previousMappings),
+            $previousMappings,
+        );
         $dropped = $sync->droppedColumns();
 
         $sync
@@ -48,7 +51,7 @@ class SyncTableManager
                 }
 
                 foreach ($sync->schema as $mapping) {
-                    $existing = $previous[$mapping->source] ?? null;
+                    $existing = $previous[$mapping->identity()] ?? null;
 
                     if ($existing === null || $existing->type() !== $mapping->type()) {
                         $this->column($table, $mapping)->nullable();

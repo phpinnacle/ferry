@@ -8,9 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 use PHPinnacle\Ferry\Data\FieldMapping;
 
 /**
- * @phpstan-import-type FieldData from FieldDecoder
- *
- * @phpstan-type MappingData array{source: string, column: string, field: FieldData}
+ * @phpstan-import-type MappingData from FieldMapping
  *
  * @implements CastsAttributes<list<FieldMapping>, list<FieldMapping>>
  */

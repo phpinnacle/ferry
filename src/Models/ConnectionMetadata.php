@@ -148,6 +148,21 @@ class ConnectionMetadata extends Model
         return $fields;
     }
 
+    public function hasColumn(string $column): bool
+    {
+        if (array_key_exists($column, $this->system)) {
+            return true;
+        }
+
+        foreach ($this->properties as $property) {
+            if ($property->name === $column) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     public function physicalColumn(string $source): ?string
     {
         if (array_key_exists($source, $this->system)) {

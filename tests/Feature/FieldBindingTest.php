@@ -1,5 +1,6 @@
 <?php
 
+use Filament\Actions\Action;
 use Filament\Actions\Testing\TestAction;
 use Filament\Forms\Components\Builder;
 use Filament\Forms\Components\Builder\Block;
@@ -352,6 +353,116 @@ it('keeps the binding toolbar and footer around the empty state', function () {
         ->not->toContain('type="search"')->toContain('Show unbound')->toContain('0 of 0 sources bound')->toContain(
             'Bind a source to configure it. Unbind to exclude it.',
         );
+});
+
+function field_binding_constants(): FieldBinding
+{
+    return FieldBinding::make('bindings')
+        ->options(['name', 'email'])
+        ->simple(TextInput::make('destination')->required())
+        ->constants(fn () => [
+            TextInput::make('column')->required(),
+            TextInput::make('value')->required(),
+        ]);
+}
+
+it('round trips static values beside bindings without treating them as sources', function () {
+    $field = field_binding_constants();
+    $state = ['name' => 'profile.name', 'status' => ['value' => 'active']];
+    $schema = field_binding_schema($field, $state);
+
+    expect($field->getSources())
+        ->toHaveCount(2)
+        ->and(array_keys($field->getBindings()))
+        ->toBe(['source_6e616d65', 'constant_737461747573'])
+        ->and(array_keys($field->getConstants()))
+        ->toBe(['constant_737461747573'])
+        ->and($schema->getState()['bindings'])
+        ->toBe($state);
+});
+
+it('adds, edits and removes a static value', function () {
+    $updates = 0;
+    $field = field_binding_constants()->afterStateUpdated(function () use (&$updates) {
+        $updates++;
+    });
+    $schema = field_binding_schema($field, ['name' => 'profile.name']);
+
+    $field->getAction('addConstant')([])->call();
+
+    $key = array_key_first($field->getConstants());
+    $field->getConstants()[$key]->getComponent('column')->state('status');
+    $field->getConstants()[$key]->getComponent('value')->state('active');
+
+    expect($key)
+        ->toStartWith('constant_')
+        ->and($schema->getState()['bindings'])
+        ->toBe(['name' => 'profile.name', 'status' => ['value' => 'active']]);
+
+    $field->getAction('removeConstant')(['constant' => $key])->call();
+
+    expect($schema->getState()['bindings'])->toBe(['name' => 'profile.name'])->and($updates)->toBe(2);
+});
+
+it('validates every static value field', function () {
+    $field = field_binding_constants();
+    $schema = field_binding_schema($field, ['status' => ['value' => 'active']]);
+    $field->getConstants()['constant_737461747573']->getComponent('value')->state('');
+
+    expect($schema->getState(...))->toThrow(ValidationException::class);
+});
+
+it('rejects static values unless the component enables them', function () {
+    $field = FieldBinding::make('bindings')->options(['name'])->simple(TextInput::make('destination'));
+    $schema = field_binding_schema($field);
+    $field->rawState(['constant_737461747573' => ['column' => 'status', 'value' => 'active']]);
+
+    expect($schema->getState(...))->toThrow(ValidationException::class);
+});
+
+it('rejects forged static value actions and disabled changes', function () {
+    $field = field_binding_constants();
+    field_binding_schema($field, ['status' => ['value' => 'active']]);
+    $state = $field->getRawState();
+
+    expect(fn () => $field->getAction('removeConstant')(['constant' => 'source_6e616d65'])->call())
+        ->toThrow(
+            ValidationException::class,
+        );
+
+    $field->disabled();
+    $field->getAction('addConstant')([])->call();
+    $field->getAction('removeConstant')(['constant' => 'constant_737461747573'])->call();
+
+    expect($field->getRawState())->toBe($state);
+});
+
+it('renders the static value controls and counts only bound sources', function () {
+    $schema = field_binding_schema(field_binding_constants(), ['name' => 'profile.name', 'status' => ['value' => 'x']]);
+    view()->share('errors', new ViewErrorBag);
+
+    expect($schema->toHtml())
+        ->toContain('1 of 2 sources bound')
+        ->toContain('Static values')
+        ->toContain('Add static value')
+        ->toContain('data.bindings.constant_737461747573.column');
+
+    $plain = field_binding_schema(FieldBinding::make('bindings')->options(['name'])->simple(TextInput::make('d')));
+
+    expect($plain->toHtml())->not->toContain('Static values');
+});
+
+it('renders extra source actions on bound sources only', function () {
+    $field = FieldBinding::make('bindings')
+        ->options(['name', 'email'])
+        ->simple(TextInput::make('destination'))
+        ->extraSourceActions([Action::make('inspect')->label(
+            fn (array $arguments) => 'Inspect ' . $arguments['source'],
+        )]);
+    $schema = field_binding_schema($field, ['name' => 'profile.name']);
+    view()->share('errors', new ViewErrorBag);
+
+    expect($schema->toHtml())->toContain('Inspect name')->not->toContain('Inspect email');
 });
 
 it('highlights warned sources and preserves warnings for missing source identifiers', function () {

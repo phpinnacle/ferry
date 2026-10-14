@@ -5,6 +5,7 @@ use PHPinnacle\Ferry\Enums\StructureStatus;
 use PHPinnacle\Ferry\Enums\SyncStatus;
 use PHPinnacle\Ferry\Rules\SyncSchema;
 use PHPinnacle\Ferry\Services\SourceFactory;
+use PHPinnacle\Ferry\Services\TransformFactory;
 use PHPinnacle\Ferry\Tests\TestCase;
 use PHPinnacle\Rosetta\Data\MetadataProperty;
 use PHPinnacle\Rosetta\Enums\PropertyKind;
@@ -16,6 +17,8 @@ uses(TestCase::class);
 
 beforeEach(function () {
     Queue::fake();
+
+    $this->registry = $this->app->make(TransformFactory::class);
 });
 
 $makeProperty = fn (string $id, string $name, object $field) => new MetadataProperty(
@@ -39,13 +42,17 @@ it('builds a debezium postgres connector config scoped to the tracked synchroniz
     $sync = TestCase::makeSync([
         'connection_id' => $connection->id,
         'source' => 'object-0',
-        'schema' => SyncSchema::fromBindings($object, [
-            'title' => 'title',
-        ]),
+        'schema' => SyncSchema::fromBindings(
+            $object,
+            [
+                'title' => 'title',
+            ],
+            $this->registry,
+        ),
     ], ['status' => SyncStatus::Active]);
 
     $connection = $connection->fresh();
-    $builder = new SourceFactory;
+    $builder = new SourceFactory($this->registry);
     $config = $builder->source($connection, $connection->trackedSyncs());
 
     expect($builder->name($connection))
@@ -99,18 +106,18 @@ it('unions tables and columns across the tracked synchronizations of one connect
         'connection_id' => $connection->id,
         'code' => 'sync-a',
         'source' => 'object-0',
-        'schema' => SyncSchema::fromBindings($first, ['title' => 'title']),
+        'schema' => SyncSchema::fromBindings($first, ['title' => 'title'], $this->registry),
     ], ['status' => SyncStatus::Active]);
 
     TestCase::makeSync([
         'connection_id' => $connection->id,
         'code' => 'sync-b',
         'source' => 'object-1',
-        'schema' => SyncSchema::fromBindings($second, ['name' => 'name']),
+        'schema' => SyncSchema::fromBindings($second, ['name' => 'name'], $this->registry),
     ], ['status' => SyncStatus::Pause]);
 
     $connection = $connection->fresh();
-    $config = new SourceFactory()->source(
+    $config = new SourceFactory($this->registry)->source(
         $connection,
         $connection->trackedSyncs(),
     );
@@ -124,7 +131,7 @@ it('unions tables and columns across the tracked synchronizations of one connect
 it('never lets an unscoped source connector capture the whole database', function () {
     $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
 
-    $config = new SourceFactory()->source(
+    $config = new SourceFactory($this->registry)->source(
         $connection,
         $connection->trackedSyncs(),
     );

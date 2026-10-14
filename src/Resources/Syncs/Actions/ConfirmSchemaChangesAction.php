@@ -6,45 +6,37 @@ use Filament\Actions\Action;
 use PHPinnacle\Ferry\Resources\Syncs\Pages\EditSync;
 use PHPinnacle\Ferry\Resources\Syncs\Schemas\SyncForm;
 use PHPinnacle\Ferry\Services\DestinationFactory;
+use PHPinnacle\Ferry\Services\TransformFactory;
 
 /** @phpstan-import-type EditState from SyncForm */
 class ConfirmSchemaChangesAction
 {
     public static function configure(Action $action): Action
     {
-        $columns = null;
-        $droppedColumns = function (EditSync $livewire, DestinationFactory $destinations) use (&$columns) {
-            if ($columns !== null) {
-                return $columns;
-            }
-
-            /** @var EditState $data */
-            $data = $livewire->form->getState();
-            $attributes = SyncForm::forUpdate($data, $livewire->record, $destinations);
-            $preview = clone $livewire->record;
-            $preview->fill($attributes);
-
-            return $columns = $preview->droppedColumns();
-        };
+        $columns = [];
 
         return $action
-            ->mountUsing(
-                fn (EditSync $livewire, DestinationFactory $destinations) => $droppedColumns(
-                    $livewire,
-                    $destinations,
-                ),
-            )
+            ->mountUsing(function (
+                EditSync $livewire,
+                DestinationFactory $destinations,
+                TransformFactory $transforms,
+            ) use (&$columns) {
+                /** @var EditState $data */
+                $data = $livewire->form->getState();
+                $preview = clone $livewire->record;
+                $preview->fill(SyncForm::forUpdate($data, $livewire->record, $destinations, $transforms));
+                $columns = $preview->droppedColumns();
+            })
             ->action(fn (EditSync $livewire) => $livewire->save())
-            ->modal(
-                fn (EditSync $livewire, DestinationFactory $destinations) => (
-                    $droppedColumns($livewire, $destinations) !== []
-                ),
-            )
+            ->modal(function () use (&$columns) {
+                return $columns !== [];
+            })
             ->requiresConfirmation()
             ->modalHeading(__('phpinnacle-ferry::resources.sync.modals.drop_columns.heading'))
-            ->modalDescription(fn (EditSync $livewire, DestinationFactory $destinations) => __(
-                'phpinnacle-ferry::resources.sync.modals.drop_columns.description',
-                ['columns' => implode(', ', $droppedColumns($livewire, $destinations))],
-            ));
+            ->modalDescription(function () use (&$columns) {
+                return __('phpinnacle-ferry::resources.sync.modals.drop_columns.description', [
+                    'columns' => implode(', ', $columns),
+                ]);
+            });
     }
 }

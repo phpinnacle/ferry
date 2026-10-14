@@ -378,3 +378,42 @@ test('empty Livewire state can be connected in either orientation', () => {
         }
     }
 });
+
+test('a static value occupies a destination without drawing a line or locking a source', () => {
+    const component = editor({ name: { value: 'Customer' }, contact: 'email' }, false, { requiredTargets: ['name'] });
+    component.refresh();
+
+    assert.equal(component.isConstant('name'), true);
+    assert.equal(component.isConstant('contact'), false);
+    assert.equal(component.constantValue('name'), 'Customer');
+    assert.equal(component.isMapped('target', 'name'), true);
+    assert.equal(component.mappedTargetCount(), 2);
+    assert.deepEqual(component.missingRequired(), []);
+    assert.deepEqual(component.connections.map((connection) => connection.target), ['contact']);
+    assert.equal(component.isSourceLocked('title'), false);
+});
+
+test('a static value is set, edited and replaced by a connection', () => {
+    const component = editor({ contact: 'email' });
+    component.setConstant('name');
+    assert.deepEqual(component.state, { contact: 'email', name: { value: '' } });
+    component.setConstant('name', 'Customer');
+    assert.deepEqual(component.state, { contact: 'email', name: { value: 'Customer' } });
+    component.setConstant('contact', 'x');
+    assert.deepEqual(component.state, { name: { value: 'Customer' }, contact: { value: 'x' } });
+
+    component.connect('title', 'name');
+    assert.deepEqual(component.state, { contact: { value: 'x' }, name: 'title' });
+    component.remove('contact');
+    assert.deepEqual(component.state, { name: 'title' });
+});
+
+test('read-only fields and inverse state do not accept static values', () => {
+    const readOnly = editor({ name: 'title' }, true);
+    readOnly.setConstant('contact', 'x');
+    assert.deepEqual(readOnly.state, { name: 'title' });
+
+    const inverse = editor({ title: 'name' }, false, { inverse: true });
+    assert.equal(inverse.isConstant('title'), false);
+    assert.equal(inverse.pairs().length, 1);
+});

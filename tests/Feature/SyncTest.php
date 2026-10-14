@@ -5,11 +5,13 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Schema;
 use PHPinnacle\Ferry\Data\FieldMapping;
+use PHPinnacle\Ferry\Data\TransformSetting;
 use PHPinnacle\Ferry\Enums\StructureStatus;
 use PHPinnacle\Ferry\Enums\SyncStatus;
 use PHPinnacle\Ferry\Models\Sync;
 use PHPinnacle\Ferry\Rules\SyncSchema;
 use PHPinnacle\Ferry\Services\SyncTableManager;
+use PHPinnacle\Ferry\Services\TransformFactory;
 use PHPinnacle\Ferry\Tests\TestCase;
 use PHPinnacle\Rosetta\Data\MetadataProperty;
 use PHPinnacle\Rosetta\Enums\FieldType;
@@ -24,6 +26,8 @@ uses(TestCase::class);
 
 beforeEach(function () {
     Queue::fake();
+
+    $this->registry = $this->app->make(TransformFactory::class);
 });
 
 it('rolls back a synchronization and its table when creation fails', function () {
@@ -98,12 +102,16 @@ it('owns the persisted schema and destination table throughout its lifecycle', f
 
     $sync = TestCase::makeSync([
         'connection_id' => $connection->id,
-        'schema' => SyncSchema::fromBindings($object, [
-            '_idrref' => 'external_id',
-            'title' => 'title',
-            'price' => 'price',
-            'posted' => 'posted',
-        ]),
+        'schema' => SyncSchema::fromBindings(
+            $object,
+            [
+                '_idrref' => 'external_id',
+                'title' => 'title',
+                'price' => 'price',
+                'posted' => 'posted',
+            ],
+            $this->registry,
+        ),
     ]);
 
     expect($sync->status)
@@ -139,16 +147,24 @@ it('adds, renames and drops columns when the mapping changes', function () use (
 
     $sync = TestCase::makeSync([
         'connection_id' => $connection->id,
-        'schema' => SyncSchema::fromBindings($object, [
-            '_idrref' => 'external_id',
-            'title' => 'title',
-        ]),
+        'schema' => SyncSchema::fromBindings(
+            $object,
+            [
+                '_idrref' => 'external_id',
+                'title' => 'title',
+            ],
+            $this->registry,
+        ),
     ]);
 
-    $updated = SyncSchema::fromBindings($object, [
-        '_idrref' => 'row_id',
-        'price' => 'price',
-    ]);
+    $updated = SyncSchema::fromBindings(
+        $object,
+        [
+            '_idrref' => 'row_id',
+            'price' => 'price',
+        ],
+        $this->registry,
+    );
 
     $sync->update(['schema' => $updated]);
 
@@ -166,10 +182,14 @@ it('changes the column type when a mapped field changes type', function () use (
     $sync = TestCase::makeSync([
         'connection_id' => $connection->id,
         'code' => 'type_change',
-        'schema' => SyncSchema::fromBindings($object, [
-            '_idrref' => 'external_id',
-            'flag' => 'flag',
-        ]),
+        'schema' => SyncSchema::fromBindings(
+            $object,
+            [
+                '_idrref' => 'external_id',
+                'flag' => 'flag',
+            ],
+            $this->registry,
+        ),
     ]);
 
     $updated = [
@@ -230,6 +250,51 @@ it('pauses synchronizations when a mapped field changes its type', function () u
 
     expect($sync->fresh()->status)->toBe(SyncStatus::Pause);
 });
+
+it('pauses synchronizations whose transforms no longer apply to the published structure', function (
+    string $key,
+    array $system,
+    SyncStatus $status,
+) {
+    $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
+    TestCase::makeMetadata($connection, [
+        'system' => ['_idrref' => new ScalarField(FieldType::Id), '_marked' => new ScalarField(FieldType::Boolean)],
+    ]);
+
+    $sync = TestCase::makeSync([
+        'connection_id' => $connection->id,
+        'transforms' => [
+            new TransformSetting($key, [
+                'mode' => 'exclude',
+                'column' => '_marked',
+                'type' => 'boolean',
+                'value' => 'true',
+            ]),
+        ],
+    ], ['status' => SyncStatus::Active]);
+
+    TestCase::makeMetadata($connection, ['revision' => $connection->draftRevision(), 'system' => $system]);
+    $connection->publishStructure();
+
+    expect($sync->fresh()->status)->toBe($status);
+})->with([
+    'unchanged' => [
+        'filter',
+        ['_idrref' => new ScalarField(FieldType::Id), '_marked' => new ScalarField(FieldType::Boolean)],
+        SyncStatus::Active,
+    ],
+    'filter column removed' => ['filter', ['_idrref' => new ScalarField(FieldType::Id)], SyncStatus::Pause],
+    'filter column type changed' => [
+        'filter',
+        ['_idrref' => new ScalarField(FieldType::Id), '_marked' => new StringField(length: 10, fixed: false)],
+        SyncStatus::Pause,
+    ],
+    'transform no longer registered' => [
+        'missing',
+        ['_idrref' => new ScalarField(FieldType::Id), '_marked' => new ScalarField(FieldType::Boolean)],
+        SyncStatus::Pause,
+    ],
+]);
 
 it('keeps synchronizations active when the structure is republished unchanged', function () use ($makeProperty) {
     $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);

@@ -39,8 +39,26 @@ export default function fieldMapping({ state, disabled, inverse = false, require
             return this.state ?? {};
         },
 
+        isConstant(target) {
+            const mapped = this.mappings()[target];
+
+            return !this.inverse && typeof mapped === 'object' && mapped !== null && !Array.isArray(mapped);
+        },
+
+        constantValue(target) {
+            return this.mappings()[target]?.value ?? '';
+        },
+
+        setConstant(target, value = '') {
+            if (this.disabled) return;
+
+            this.state = { ...this.withoutConnection(target), [target]: { value } };
+            this.announcement = 'Static value set.';
+        },
+
         pairs() {
             return Object.entries(this.mappings()).flatMap(([id, mapped]) => {
+                if (this.isConstant(id)) return [];
                 if (this.inverse) return [{ source: id, target: mapped }];
 
                 const sources = this.multipleTargets.includes(id) ? mapped : [mapped];
@@ -49,10 +67,14 @@ export default function fieldMapping({ state, disabled, inverse = false, require
         },
 
         mappedTargetCount() {
-            return new Set(this.pairs().map(({ target }) => target)).size;
+            const constants = Object.keys(this.mappings()).filter((id) => this.isConstant(id));
+
+            return new Set([...this.pairs().map(({ target }) => target), ...constants]).size;
         },
 
         isMapped(side, id) {
+            if (side === 'target' && this.isConstant(id)) return true;
+
             return this.pairs().some((pair) => pair[side] === id);
         },
 

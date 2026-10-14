@@ -1,5 +1,6 @@
 <?php
 
+use Filament\Actions\Action;
 use Filament\Schemas\Concerns\InteractsWithSchemas;
 use Filament\Schemas\Contracts\HasSchemas;
 use Filament\Schemas\Schema;
@@ -115,4 +116,80 @@ it('highlights warnings on either side and preserves missing identifiers in both
         ->toContain('42: Source disappeared.')
         ->toContain('42: Destination disappeared.');
     expect(substr_count($html, 'has-warning'))->toBe(2);
+})->with([false, true]);
+
+it('renders extra source actions on connected sources only and never in inverse mode', function (bool $inverse) {
+    $livewire = new class extends Component implements HasSchemas {
+        use InteractsWithSchemas;
+
+        /** @var array<string, mixed> */
+        public array $data = [];
+    };
+    $livewire->setId('source-actions-field-mapping-test');
+    $livewire->setName('source-actions-field-mapping-test');
+
+    $schema = Schema::make($livewire)
+        ->statePath('data')
+        ->components([
+            FieldMapping::make('mapping')
+                ->options(source: ['title', 'email'], dest: ['name'])
+                ->extraSourceActions([
+                    Action::make('inspect')->label(fn (array $arguments) => 'Inspect ' . $arguments['source']),
+                ])
+                ->inverse($inverse),
+        ]);
+    $schema->fill(['mapping' => []]);
+    view()->share('errors', new ViewErrorBag);
+
+    $html = $schema->toHtml();
+
+    if ($inverse) {
+        expect($html)->not->toContain('Inspect');
+
+        return;
+    }
+
+    expect($html)
+        ->toContain('Inspect title')
+        ->toContain('Inspect email')
+        ->toContain('x-show="isMapped(\'source\', ' . Js::from('title')->toHtml() . ')"');
+})->with([false, true]);
+
+it('renders the static value control only for destinations that allow one', function (bool $inverse) {
+    $livewire = new class extends Component implements HasSchemas {
+        use InteractsWithSchemas;
+
+        /** @var array<string, mixed> */
+        public array $data = [];
+    };
+    $livewire->setId('constant-field-mapping-test');
+    $livewire->setName('constant-field-mapping-test');
+
+    $schema = Schema::make($livewire)
+        ->statePath('data')
+        ->components([
+            FieldMapping::make('mapping')
+                ->options(source: ['title'], dest: ['name', 'contact'])
+                ->constants(['name'])
+                ->inverse($inverse),
+        ]);
+    $schema->fill(['mapping' => []]);
+    view()->share('errors', new ViewErrorBag);
+
+    $html = $schema->toHtml();
+
+    expect($html)->not->toContain('@js(');
+    expect(substr_count($html, 'x-on:input="setConstant('))->toBe($inverse ? 0 : 1);
+
+    if (!$inverse) {
+        $id = Js::from('name')->toHtml();
+
+        expect($html)
+            ->toContain('aria-label="Static value: name"')
+            ->not
+            ->toContain('Static value: contact')
+            ->toContain('x-bind:checked="isConstant(' . $id . ')"')
+            ->toContain('x-bind:value="constantValue(' . $id . ')"')
+            ->toContain('x-on:input="setConstant(' . $id . ', $event.target.value)"');
+    }
 })->with([false, true]);

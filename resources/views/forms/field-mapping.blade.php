@@ -11,10 +11,20 @@
     $targetWarnings = $getTargetWarnings();
     $requiredTargets = array_column(array_filter($targets, fn (array $target) => $target['required']), 'id');
     $multipleTargets = $getMultipleTargets();
+    $constantTargets = $getConstantTargets();
     $inverse = $isInverse();
     $disabled = $isDisabled();
     $statePath = $getStatePath();
-    $configurationKey = md5(serialize([$sources, $targets, $multipleTargets, $inverse, $disabled, $sourceLabel, $targetLabel, $sourceWarnings, $targetWarnings]));
+    $sourceActions = $inverse ? [] : $getExtraSourceActions();
+    $sourceActionLabels = [];
+
+    foreach ($sourceActions as $sourceAction) {
+        foreach ($sources as $source) {
+            $sourceActionLabels[] = $sourceAction(['source' => $source['id']])->getLabel();
+        }
+    }
+
+    $configurationKey = md5(serialize([$sources, $targets, $multipleTargets, $constantTargets, $inverse, $disabled, $sourceLabel, $targetLabel, $sourceWarnings, $targetWarnings, $sourceActionLabels]));
     $panels = ['source' => ['label' => $sourceLabel, 'items' => $sources, 'warnings' => $sourceWarnings], 'target' => ['label' => $targetLabel, 'items' => $targets, 'warnings' => $targetWarnings]];
 
     if ($inverse) {
@@ -97,10 +107,11 @@
                                         $searchText = $plainLabel.' '.strip_tags($descriptionText).' '.$item['id'].' '.($item['type'] ?? '').' '.implode(' ', array_column($item['badges'], 'label'));
                                         $warning = $panel['warnings'][$item['id']] ?? null;
                                         $isMultiple = $side === 'target' && in_array($item['id'], $multipleTargets, true);
+                                        $acceptsConstant = $side === 'target' && ! $inverse && in_array($item['id'], $constantTargets, true);
                                     @endphp
                                     <div
                                         @class([
-                                            'field-mapping-row relative flex min-h-20 items-center gap-2 rounded-lg border border-gray-200 bg-white dark:border-white/10 dark:bg-gray-900',
+                                            'field-mapping-row relative flex min-h-20 flex-wrap items-center gap-2 rounded-lg border border-gray-200 bg-white dark:border-white/10 dark:bg-gray-900',
                                             'has-warning' => $warning !== null,
                                         ])
                                         data-mapping-row
@@ -180,6 +191,43 @@
                                             >
                                                 <x-filament::icon icon="heroicon-m-x-mark" />
                                             </button>
+                                        @endif
+                                        @if ($side === 'source' && $sourceActions !== [])
+                                            <div class="flex w-full flex-wrap items-center gap-2 px-4 pb-3" x-show="isMapped('source', @js($item['id']))" x-cloak>
+                                                @foreach ($sourceActions as $sourceAction)
+                                                    {{ $sourceAction(['source' => $item['id']]) }}
+                                                @endforeach
+                                            </div>
+                                        @endif
+                                        @if ($acceptsConstant)
+                                            @php
+                                                $jsId = \Illuminate\Support\Js::from($item['id']);
+                                            @endphp
+                                            <div class="flex w-full items-center gap-3 px-4 pb-3">
+                                                <label class="flex shrink-0 items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+                                                    <x-filament::input.checkbox
+                                                        :disabled="$disabled"
+                                                        x-bind:checked="isConstant({{ $jsId }})"
+                                                        x-on:change="$event.target.checked ? setConstant({{ $jsId }}) : remove({{ $jsId }})"
+                                                    />
+                                                    {{ __('phpinnacle-ferry::resources.mapping.static_value') }}
+                                                </label>
+                                                <x-filament::input.wrapper
+                                                    class="min-w-0 flex-1"
+                                                    :disabled="$disabled"
+                                                    x-show="isConstant({{ $jsId }})"
+                                                    x-cloak
+                                                >
+                                                    <x-filament::input
+                                                        type="text"
+                                                        :disabled="$disabled"
+                                                        placeholder="{{ __('phpinnacle-ferry::resources.mapping.static_value_placeholder') }}"
+                                                        aria-label="{{ __('phpinnacle-ferry::resources.mapping.static_value') . ': ' . $plainLabel }}"
+                                                        x-bind:value="constantValue({{ $jsId }})"
+                                                        x-on:input="setConstant({{ $jsId }}, $event.target.value)"
+                                                    />
+                                                </x-filament::input.wrapper>
+                                            </div>
                                         @endif
                                     </div>
                                 @endforeach

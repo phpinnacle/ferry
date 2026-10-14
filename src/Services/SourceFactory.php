@@ -21,6 +21,10 @@ class SourceFactory
 
     private const int IDENTIFIER_LENGTH = 63;
 
+    public function __construct(
+        private readonly TransformFactory $transforms,
+    ) {}
+
     /**
      * @param Collection<int, Sync> $syncs
      *
@@ -52,6 +56,12 @@ class SourceFactory
 
             foreach (array_keys($sync->columnMap($object)) as $column) {
                 $columns[sprintf('%s.%s', $table, $column)] = true;
+            }
+
+            foreach ($sync->transforms as $setting) {
+                foreach ($this->transforms->get($setting->key)?->sourceColumns($setting->params) ?? [] as $column) {
+                    $columns[sprintf('%s.%s', $table, $column)] = true;
+                }
             }
         }
 

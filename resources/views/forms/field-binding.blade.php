@@ -4,6 +4,8 @@
 
     $sources = $getSources();
     $bindings = $getBindings();
+    $constants = $getConstants();
+    $sourceActions = $getExtraSourceActions();
     $sourceLabel = $getSourceLabel();
     $targetLabel = $getTargetLabel();
     $hasFields = $sources !== [];
@@ -22,7 +24,7 @@
                 <input type="checkbox" x-model="unboundOnly" class="rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-800" />
                 {{ __('phpinnacle-ferry::resources.binding.show_unbound') }}
             </label>
-            <span class="text-sm text-gray-500 dark:text-gray-400">{{ __('phpinnacle-ferry::resources.binding.bound_count', ['bound' => count($bindings), 'total' => count($sources)]) }}</span>
+            <span class="text-sm text-gray-500 dark:text-gray-400">{{ __('phpinnacle-ferry::resources.binding.bound_count', ['bound' => count($bindings) - count($constants), 'total' => count($sources)]) }}</span>
         </div>
 
         @foreach ($unavailableWarnings as $id => $warning)
@@ -92,6 +94,9 @@
                         <div class="flex min-h-20 min-w-0 items-start gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3 dark:border-white/10 dark:bg-gray-900">
                             @if ($binding !== null)
                                 <div class="min-w-0 flex-1">{{ $binding }}</div>
+                                @foreach ($sourceActions as $sourceAction)
+                                    {{ $sourceAction(['source' => $source['id']]) }}
+                                @endforeach
                                 {{ ($getAction('unbind'))(['source' => $source['id']]) }}
                             @else
                                 {{ ($getAction('bind'))(['source' => $source['id']]) }}
@@ -99,6 +104,22 @@
                         </div>
                     </div>
                 @endforeach
+            @endif
+
+            @if ($hasConstants())
+                <div class="space-y-3" data-binding-constants>
+                    <h3 class="text-sm font-semibold text-gray-950 dark:text-white">{{ __('phpinnacle-ferry::resources.binding.constants') }}</h3>
+                    @foreach ($constants as $key => $constant)
+                        <div
+                            class="flex items-start gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3 dark:border-white/10 dark:bg-gray-900"
+                            wire:key="{{ $getId() }}-{{ $key }}"
+                        >
+                            <div class="min-w-0 flex-1">{{ $constant }}</div>
+                            {{ ($getAction('removeConstant'))(['constant' => $key]) }}
+                        </div>
+                    @endforeach
+                    <div>{{ $getAction('addConstant') }}</div>
+                </div>
             @endif
         </div>
 

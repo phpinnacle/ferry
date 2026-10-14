@@ -5,17 +5,22 @@ namespace PHPinnacle\Ferry\Forms;
 use Closure;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Field;
+use Filament\Schemas\Components\Component;
 use Filament\Schemas\Schema;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Translation\PotentiallyTranslatedString;
 use Illuminate\Validation\Rule;
+use PHPinnacle\Ferry\Forms\Concerns\HasExtraSourceActions;
 use PHPinnacle\Ferry\Forms\Concerns\HasMappingItems;
 
 /** @phpstan-import-type MappingItem from HasMappingItems */
 class FieldBinding extends Field
 {
+    use HasExtraSourceActions;
     use HasMappingItems;
+
+    private const string CONSTANT_PREFIX = 'constant_';
 
     protected string $view = 'phpinnacle-ferry::forms.field-binding';
 
@@ -31,8 +36,11 @@ class FieldBinding extends Field
     /** @var Field|Closure(): Field|null */
     protected Field|Closure|null $simpleField = null;
 
+    /** @var array<Component>|Closure(): array<Component>|null */
+    protected array|Closure|null $constantFields = null;
+
     /** @var list<string>|null */
-    protected ?array $cachedBoundSourceKeys = null;
+    protected ?array $cachedBoundKeys = null;
 
     /** @var array<string, string>|Closure(): array<string, string> */
     protected array|Closure $warnings = [];
@@ -101,6 +109,21 @@ class FieldBinding extends Field
         return $this->simpleField !== null ? $this->evaluate($this->simpleField) : null;
     }
 
+    /**
+     * @param array<Component>|Closure(): array<Component> $fields
+     */
+    public function constants(array|Closure $fields): static
+    {
+        $this->constantFields = $fields;
+
+        return $this;
+    }
+
+    public function hasConstants(): bool
+    {
+        return $this->constantFields !== null;
+    }
+
     public function getBindingKey(string $source): string
     {
         return 'source_' . bin2hex($source);
@@ -110,6 +133,12 @@ class FieldBinding extends Field
     public function getBindings(): array
     {
         return $this->getCachedDefaultChildSchemas();
+    }
+
+    /** @return array<Schema> */
+    public function getConstants(): array
+    {
+        return array_filter($this->getBindings(), self::isConstantKey(...), ARRAY_FILTER_USE_KEY);
     }
 
     /**
@@ -146,12 +175,12 @@ class FieldBinding extends Field
     /** @return array<Schema> */
     public function getDefaultChildSchemas(): array
     {
-        $this->cachedBoundSourceKeys = $this->getBoundSourceKeys();
+        $this->cachedBoundKeys = $this->getBoundKeys();
         $bindings = [];
 
-        foreach ($this->cachedBoundSourceKeys as $key) {
+        foreach ($this->cachedBoundKeys as $key) {
             /** @var Schema $schema The default child schema always exists. */
-            $schema = $this->getChildSchema();
+            $schema = self::isConstantKey($key) ? $this->getConstantSchema() : $this->getChildSchema();
             $bindings[$key] = $schema
                 ->statePath($key)
                 ->inlineLabel(false)
@@ -163,7 +192,15 @@ class FieldBinding extends Field
 
     protected function areCachedDefaultChildSchemasFresh(): bool
     {
-        return $this->cachedBoundSourceKeys === $this->getBoundSourceKeys();
+        return $this->cachedBoundKeys === $this->getBoundKeys();
+    }
+
+    private function getConstantSchema(): Schema
+    {
+        /** @var array<Component> $fields */
+        $fields = $this->evaluate($this->constantFields ?? []);
+
+        return $this->makeChildSchema('constants')->components($fields);
     }
 
     public function getBindAction(): Action
@@ -187,6 +224,28 @@ class FieldBinding extends Field
             ->action(fn (array $arguments, self $component) => $component->unbindSource($arguments));
     }
 
+    public function getAddConstantAction(): Action
+    {
+        return Action::make('addConstant')
+            ->label(__('phpinnacle-ferry::resources.binding.add_constant'))
+            ->icon('heroicon-m-plus')
+            ->color('gray')
+            ->button()
+            ->disabled(fn (self $component) => $component->isDisabled())
+            ->action(fn (self $component) => $component->addConstant());
+    }
+
+    public function getRemoveConstantAction(): Action
+    {
+        return Action::make('removeConstant')
+            ->label(__('phpinnacle-ferry::resources.binding.remove_constant'))
+            ->icon('heroicon-m-x-mark')
+            ->color('gray')
+            ->iconButton()
+            ->disabled(fn (self $component) => $component->isDisabled())
+            ->action(fn (array $arguments, self $component) => $component->removeConstant($arguments));
+    }
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -196,6 +255,8 @@ class FieldBinding extends Field
         $this->registerActions([
             fn (self $component) => $component->getBindAction(),
             fn (self $component) => $component->getUnbindAction(),
+            fn (self $component) => $component->getAddConstantAction(),
+            fn (self $component) => $component->getRemoveConstantAction(),
         ]);
         $this->mutateDehydratedStateUsing(fn (self $component, ?array $state) => $component->getDehydratedBindings(
             $state ?? [],
@@ -238,6 +299,39 @@ class FieldBinding extends Field
         $this->callAfterStateUpdated();
     }
 
+    private function addConstant(): void
+    {
+        if ($this->isDisabled()) {
+            return;
+        }
+
+        $key = self::CONSTANT_PREFIX . bin2hex(random_bytes(6));
+        /** @var array<array-key, mixed> $bindings */
+        $bindings = $this->getRawState() ?? [];
+        $bindings[$key] = [];
+        $this->rawState($bindings);
+        $this->getBindings()[$key]->fill();
+        $this->callAfterStateUpdated();
+    }
+
+    /** @param array<array-key, mixed> $arguments */
+    private function removeConstant(array $arguments): void
+    {
+        if ($this->isDisabled()) {
+            return;
+        }
+
+        /** @var array{constant: string} $validated */
+        $validated = Validator::make($arguments, [
+            'constant' => ['required', 'string', 'starts_with:' . self::CONSTANT_PREFIX],
+        ])->validate();
+        /** @var array<array-key, mixed> $bindings */
+        $bindings = $this->getRawState() ?? [];
+        unset($bindings[$validated['constant']]);
+        $this->rawState($bindings);
+        $this->callAfterStateUpdated();
+    }
+
     /** @return array<string, mixed> */
     private function getHydratedBindings(): array
     {
@@ -249,6 +343,15 @@ class FieldBinding extends Field
 
         foreach ($state as $source => $binding) {
             $data = [];
+
+            if ($this->hasConstants() && is_array($binding)) {
+                $bindings[self::CONSTANT_PREFIX . bin2hex((string) $source)] = [
+                    'column' => (string) $source,
+                    ...$binding,
+                ];
+
+                continue;
+            }
 
             if ($simple !== null) {
                 data_set($data, $simple->getName(), $binding);
@@ -281,11 +384,18 @@ class FieldBinding extends Field
             $bindings[$source['id']] = $simple !== null ? data_get($state[$key], $simple->getName()) : $state[$key];
         }
 
+        foreach ($state as $key => $data) {
+            if (self::isConstantKey((string) $key)) {
+                /** @var array{column: string} $data */
+                $bindings[$data['column']] = Arr::except($data, 'column');
+            }
+        }
+
         return $bindings;
     }
 
     /** @return list<string> */
-    private function getBoundSourceKeys(): array
+    private function getBoundKeys(): array
     {
         $state = $this->getRawState();
 
@@ -303,7 +413,20 @@ class FieldBinding extends Field
             }
         }
 
+        if ($this->hasConstants()) {
+            foreach ($state as $key => $data) {
+                if (self::isConstantKey((string) $key) && is_array($data)) {
+                    $keys[] = (string) $key;
+                }
+            }
+        }
+
         return $keys;
+    }
+
+    private static function isConstantKey(string $key): bool
+    {
+        return str_starts_with($key, self::CONSTANT_PREFIX);
     }
 
     /** @param array<array-key, mixed> $arguments */
@@ -328,6 +451,16 @@ class FieldBinding extends Field
         $simple = $this->getSimpleField();
 
         foreach ($value as $key => $binding) {
+            if ($this->hasConstants() && self::isConstantKey((string) $key)) {
+                if (!is_array($binding)) {
+                    $fail('The :attribute field contains an invalid binding value.')->translate();
+
+                    return;
+                }
+
+                continue;
+            }
+
             if (!in_array($key, $keys, true)) {
                 $fail('The :attribute field contains an unknown source.')->translate();
 

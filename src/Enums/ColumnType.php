@@ -35,6 +35,45 @@ enum ColumnType: string implements HasLabel
         };
     }
 
+    /** @return list<self> */
+    public static function castable(): array
+    {
+        return array_values(array_filter(self::cases(), static fn (self $type) => $type->castType() !== null));
+    }
+
+    /** @return array<string, string> */
+    public static function castableOptions(): array
+    {
+        $options = [];
+
+        foreach (self::castable() as $type) {
+            $options[$type->value] = $type->getLabel();
+        }
+
+        return $options;
+    }
+
+    public function valueRule(): string
+    {
+        return match ($this) {
+            self::Integer => 'integer',
+            self::Decimal => 'numeric',
+            self::Boolean => 'in:true,false',
+            default => 'string',
+        };
+    }
+
+    public function castType(): ?string
+    {
+        return match ($this) {
+            self::String => 'string',
+            self::Integer => 'int64',
+            self::Decimal => 'float64',
+            self::Boolean => 'boolean',
+            self::Reference, self::DateTime => null,
+        };
+    }
+
     public function getLabel(): string
     {
         return __('phpinnacle-ferry::enums.column_type.' . $this->value);
