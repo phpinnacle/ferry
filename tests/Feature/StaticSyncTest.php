@@ -21,6 +21,7 @@ use PHPinnacle\Ferry\Enums\TransformScope;
 use PHPinnacle\Ferry\Models\Sync;
 use PHPinnacle\Ferry\Resources\Syncs\Pages\EditSync;
 use PHPinnacle\Ferry\Resources\Syncs\Schemas\SyncForm;
+use PHPinnacle\Ferry\Resources\Syncs\Schemas\TransformsRepeater;
 use PHPinnacle\Ferry\Services\DestinationFactory;
 use PHPinnacle\Ferry\Services\TransformFactory;
 use PHPinnacle\Ferry\Tests\TestCase;
@@ -397,12 +398,7 @@ it('rejects transforms that cannot be applied to the synchronization', function 
 ]);
 
 it('allows each field transform once per field but any number of record transforms', function () {
-    $repeater = fn (TransformScope $scope) => new ReflectionMethod(SyncForm::class, 'transformsRepeater')->invoke(
-        null,
-        $scope,
-        null,
-        app(TransformFactory::class),
-    );
+    $repeater = fn (TransformScope $scope) => TransformsRepeater::make($scope, null, app(TransformFactory::class));
 
     expect($repeater(TransformScope::Field)->getMaxItems())
         ->toBe(count(app(TransformFactory::class)->forScope(TransformScope::Field)))

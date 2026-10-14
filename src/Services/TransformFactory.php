@@ -3,12 +3,17 @@
 namespace PHPinnacle\Ferry\Services;
 
 use Illuminate\Container\Attributes\Singleton;
+use Illuminate\Support\Facades\Validator;
 use LogicException;
 use PHPinnacle\Ferry\Contracts\Transform;
+use PHPinnacle\Ferry\Enums\ColumnType;
 use PHPinnacle\Ferry\Enums\TransformScope;
 use PHPinnacle\Ferry\Models\ConnectionMetadata;
 use PHPinnacle\Ferry\Models\Sync;
 
+/**
+ * @phpstan-type TransformInput array{key?: string|null, params?: array<string, string>}
+ */
 #[Singleton]
 class TransformFactory
 {
@@ -93,6 +98,41 @@ class TransformFactory
         }
 
         return true;
+    }
+
+    /**
+     * @param array<string, string> $types
+     * @param array<string, array<array-key, TransformInput>> $fieldTransforms
+     * @return array<string, string>
+     */
+    public function resultTypes(array $types, array $fieldTransforms): array
+    {
+        foreach ($fieldTransforms as $source => $rows) {
+            foreach ($rows as $row) {
+                $params = $row['params'] ?? [];
+                $transform = $this->get($row['key'] ?? '');
+
+                if (
+                    !array_key_exists($source, $types)
+                    || $transform === null
+                    || Validator::make($params, $transform->rules($params))->fails()
+                ) {
+                    continue;
+                }
+
+                $type = $transform->resultType(ColumnType::from($types[$source]), $params);
+
+                if ($type === null) {
+                    unset($types[$source]);
+
+                    continue;
+                }
+
+                $types[$source] = $type->value;
+            }
+        }
+
+        return $types;
     }
 
     /** @return array<string, Transform> */
