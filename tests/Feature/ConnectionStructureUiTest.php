@@ -1,6 +1,7 @@
 <?php
 
 use Carbon\CarbonImmutable;
+use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\Queue;
 use PHPinnacle\Ferry\Enums\StructureStatus;
 use PHPinnacle\Ferry\Jobs\PrepareStructureJob;
@@ -54,12 +55,13 @@ it('queues the preparation and notifies the operator', function () {
         ->and($connection->status)
         ->toBe(StructureStatus::Preparing)
         ->and($connection->run_id)
-        ->not
-        ->toBeNull()
-        ->and(session()->get('filament.notifications'))
-        ->toHaveCount(1)
-        ->and(session()->get('filament.notifications.0.title'))
-        ->toBe(__('phpinnacle-ferry::resources.connection.messages.structure_queued'));
+        ->not->toBeNull();
+
+    Notification::assertNotified(
+        Notification::make()
+            ->title(__('phpinnacle-ferry::resources.connection.messages.structure_queued'))
+            ->success(),
+    );
 
     Queue::assertPushed(PrepareStructureJob::class, 2);
 });
@@ -69,8 +71,11 @@ it('warns instead of queueing a second preparation', function () {
 
     PrepareStructureAction::table()->record($connection)->call();
 
-    expect(session()->get('filament.notifications.0.title'))
-        ->toBe(__('phpinnacle-ferry::resources.connection.messages.structure_active'));
+    Notification::assertNotified(
+        Notification::make()
+            ->title(__('phpinnacle-ferry::resources.connection.messages.structure_active'))
+            ->warning(),
+    );
 
     Queue::assertPushed(PrepareStructureJob::class, 1);
 });
