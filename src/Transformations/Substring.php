@@ -3,7 +3,7 @@
 namespace PHPinnacle\Ferry\Transformations;
 
 use Filament\Forms\Components\TextInput;
-use Filament\Schemas\Components\Grid;
+use Filament\Schemas\Components\Group;
 use Filament\Support\Icons\Heroicon;
 use PHPinnacle\Ferry\Enums\TransformScope;
 use PHPinnacle\Ferry\Forms\JsonSchema;
@@ -14,19 +14,10 @@ final class Substring
     public static function make(): Transformation
     {
         return Transformation::make('substring', TransformScope::Field)
-            ->inputSchema(
-                fn (JsonSchema $input) => (
-                    array_values(array_diff($input->types(), ['null'])) === ['string']
-                    && !in_array($input->annotation('format'), ['date-time', 'ferry-reference'], true)
-                ),
-            )
-            ->outputSchema(fn (JsonSchema $input) => [
-                'type' => in_array('null', $input->types(), true) ? ['string', 'null'] : 'string',
-            ])
             ->label(fn () => __('phpinnacle-ferry::resources.transform.substring'))
             ->icon(Heroicon::Scissors)
             ->schema(fn () => [
-                Grid::make(2)
+                Group::make()
                     ->schema([
                         TextInput::make('start')
                             ->label(__('phpinnacle-ferry::resources.transform.substring_start'))
@@ -48,6 +39,15 @@ final class Substring
                             ->dehydrateStateUsing(fn (int|string $state) => (string) $state),
                     ])
                     ->columnSpanFull(),
+            ])
+            ->inputSchema(
+                fn (JsonSchema $input) => (
+                    array_values(array_diff($input->types(), ['null'])) === ['string']
+                    && !in_array($input->annotation('format'), ['date-time', 'ferry-reference'], true)
+                ),
+            )
+            ->outputSchema(fn (JsonSchema $input) => [
+                'type' => in_array('null', $input->types(), true) ? ['string', 'null'] : 'string',
             ]);
     }
 }

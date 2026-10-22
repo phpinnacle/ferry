@@ -6,6 +6,17 @@ namespace PHPinnacle\Ferry\Forms;
  * Type and presentation projections for inline JSON Schema field definitions.
  *
  * @phpstan-type Badge array{label: string, color: string}
+ * @phpstan-type MappingItem array{
+ *     id: string,
+ *     label: string,
+ *     icon: string|null,
+ *     color: string|null,
+ *     description: string|null,
+ *     type: string,
+ *     required: bool,
+ *     badges: list<Badge>,
+ *     presentation: Presentation
+ * }
  * @phpstan-type Definition array{
  *     type?: string|list<string>, properties?: array<string, array<string, mixed>>,
  *     required?: list<string>, items?: array<string, mixed>,
@@ -51,6 +62,28 @@ final readonly class JsonSchema
             array_map(self::fromArray(...), $definition['anyOf'] ?? []),
             array_map(self::fromArray(...), $definition['oneOf'] ?? []),
         );
+    }
+
+    /** @return list<MappingItem> */
+    public function toMappingItems(): array
+    {
+        $items = [];
+        $required = $this->required();
+        foreach ($this->properties() as $name => $property) {
+            $items[] = [
+                'id' => (string) $name,
+                'label' => $property->annotation('title') ?? (string) $name,
+                'icon' => $property->annotation('x-icon'),
+                'color' => $property->annotation('x-color'),
+                'description' => $property->annotation('description'),
+                'type' => $property->label(),
+                'required' => in_array((string) $name, $required, true),
+                'badges' => $property->badges(),
+                'presentation' => $property->presentation(),
+            ];
+        }
+
+        return $items;
     }
 
     /** @return array<string, self> */

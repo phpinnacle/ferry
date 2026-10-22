@@ -13,21 +13,19 @@ use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Translation\PotentiallyTranslatedString;
 use Illuminate\Validation\Rule;
-use PHPinnacle\Ferry\Forms\Concerns\HasExtraSourceActions;
-use PHPinnacle\Ferry\Forms\Concerns\HasMappingItems;
 use PHPinnacle\Ferry\Forms\Concerns\HasSourceSettings;
+use PHPinnacle\Ferry\Forms\Concerns\Searchable;
 
 /**
- * @phpstan-import-type MappingItem from HasMappingItems
+ * @phpstan-import-type MappingItem from JsonSchema
  * @phpstan-import-type Definition from JsonSchema
  */
 class FieldBinding extends Field
 {
     use CanBeCompact;
     use CanBeContained;
-    use HasExtraSourceActions;
-    use HasMappingItems;
     use HasSourceSettings;
+    use Searchable;
 
     private const string CONSTANT_PREFIX = 'constant_';
 
@@ -101,7 +99,7 @@ class FieldBinding extends Field
     /** @return list<MappingItem> */
     public function getSources(): array
     {
-        return $this->schemaItems($this->evaluate($this->jsonSchema));
+        return JsonSchema::fromArray($this->evaluate($this->jsonSchema))->toMappingItems();
     }
 
     /** @param Field|Closure(): Field|null $field */

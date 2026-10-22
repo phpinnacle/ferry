@@ -12,6 +12,8 @@ final class Trim
     public static function make(): Transformation
     {
         return Transformation::make('trim', TransformScope::Field)
+            ->label(fn () => __('phpinnacle-ferry::resources.transform.trim'))
+            ->icon(Heroicon::ArrowsPointingIn)
             ->inputSchema(
                 fn (JsonSchema $input) => (
                     array_values(array_diff($input->types(), ['null'])) === ['string']
@@ -20,8 +22,6 @@ final class Trim
             )
             ->outputSchema(fn (JsonSchema $input) => [
                 'type' => in_array('null', $input->types(), true) ? ['string', 'null'] : 'string',
-            ])
-            ->label(fn () => __('phpinnacle-ferry::resources.transform.trim'))
-            ->icon(Heroicon::ArrowsPointingIn);
+            ]);
     }
 }

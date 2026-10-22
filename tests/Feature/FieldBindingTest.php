@@ -7,6 +7,7 @@ use Filament\Forms\Components\Builder\Block;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
+use Filament\Schemas\Components\Actions;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Illuminate\Support\ViewErrorBag;
@@ -532,13 +533,13 @@ it('renders the static value controls and counts only bound sources', function (
     expect($plain->toHtml())->not->toContain('Static values');
 });
 
-it('renders extra source actions on bound and unbound sources', function () {
+it('renders native source actions on bound and unbound sources', function () {
     $field = FieldBinding::make('bindings')
         ->jsonSchema(['type' => 'object', 'properties' => array_fill_keys(['name', 'email'], [])])
         ->simple(TextInput::make('destination'))
-        ->extraSourceActions([Action::make('inspect')->label(
-            fn (array $arguments) => 'Inspect ' . $arguments['source'],
-        )]);
+        ->sourceSettings(fn (string $source) => [
+            Actions::make([Action::make('inspect')->label('Inspect ' . $source)]),
+        ]);
     $schema = field_binding_schema($field, ['name' => 'profile.name']);
     view()->share('errors', new ViewErrorBag);
 

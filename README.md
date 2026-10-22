@@ -411,7 +411,23 @@ Property `title`, `description`, `x-icon`, and `x-color` provide presentation me
 
 Array chevrons expand item schemas and their scoped constraints, one row per nested level. Field constraints remain in the heading. Details start collapsed and work on connected or disabled cards without changing selection; lines follow card resizing. Source actions appear below the metadata. Colors use Filament's `primary` palette for connections, `warning` for required destinations and `danger` for conflicts, in light and dark themes.
 
-`extraSourceActions([...])` renders native Filament actions on each source, including disconnected sources and inverse mode. Each receives the literal source name in its `source` argument and respects action visibility. Use `iconButton()` and `tooltip()` for compact controls.
+Add source actions through `sourceSettings()` with Filament's native `Actions` component. The callback receives the source identifier, including for disconnected sources and inverse mode:
+
+```php
+use Filament\Actions\Action;
+use Filament\Notifications\Notification;
+use Filament\Schemas\Components\Actions;
+
+->sourceSettings(fn (string $source) => [
+    Actions::make([
+        Action::make('inspect')
+            ->label('Inspect ' . $source)
+            ->action(fn () => Notification::make()->title($source)->send()),
+    ]),
+])
+```
+
+Capture `$source` in your callback or pass it through `arguments()`. Native action visibility, icons and tooltips remain available. Use the same schema for source settings fields and actions; there is no separate source-action registry.
 
 During selection, compatible candidates highlight with a check; incompatible cards and their editors dim with a cross, and existing lines fade. Compatible destinations can replace an existing connection or static value. Unavailable clicks preserve the selection and mappings without an error. Outside selection, connected cards retain full contrast and existing incompatible connections remain visible for correction.
 
@@ -494,7 +510,7 @@ Without `constants()` the component rejects such rows on submission, and the bou
 
 Source bindings and static values share one serialized map. Static `column` names must be unique and must not match a bound source identifier; the component rejects collisions before serialization so no entry is overwritten. Uniqueness of the actual destinations entered in source binding fields remains the consumer's responsibility.
 
-Use `extraSourceActions([...])` to render Filament actions in every source card, including unbound sources; each action receives the source identifier as its `source` argument.
+Use `sourceSettings(fn (string $source) => [Actions::make([...])])` for native source actions, as with `FieldMapping`. They remain available on unbound sources.
 
 `jsonSchema(array|Closure)` supplies the source object schema and the same property metadata as `FieldMapping`. Its `required` annotations describe source properties; they do not require the user to bind them. The native `schema()` method continues to describe the per-binding Filament editor. Source identifiers retain their literal identity, including numeric identifiers and dots. `labels(source: 'Source', dest: 'Binding')` sets the headings and accepts closures. Configuration is trusted developer code; source identifiers and binding shapes are validated on submission, while the child fields define the value validation.
 

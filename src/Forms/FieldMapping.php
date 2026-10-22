@@ -12,12 +12,11 @@ use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Translation\PotentiallyTranslatedString;
 use Illuminate\Validation\Rule;
-use PHPinnacle\Ferry\Forms\Concerns\HasExtraSourceActions;
-use PHPinnacle\Ferry\Forms\Concerns\HasMappingItems;
 use PHPinnacle\Ferry\Forms\Concerns\HasSourceSettings;
+use PHPinnacle\Ferry\Forms\Concerns\Searchable;
 
 /**
- * @phpstan-import-type MappingItem from HasMappingItems
+ * @phpstan-import-type MappingItem from JsonSchema
  * @phpstan-import-type Definition from JsonSchema
  * @phpstan-type SourceEntry array{kind: 'source', source: string}
  * @phpstan-type ValueEntry array{kind: 'value', value: mixed}
@@ -30,9 +29,8 @@ class FieldMapping extends Field
 {
     use CanBeCompact;
     use CanBeContained;
-    use HasExtraSourceActions;
-    use HasMappingItems;
     use HasSourceSettings;
+    use Searchable;
 
     protected string $view = 'phpinnacle-ferry::forms.field-mapping';
 
@@ -371,13 +369,13 @@ class FieldMapping extends Field
     /** @return list<MappingItem> */
     public function getSources(): array
     {
-        return $this->schemaItems($this->getSourceSchema());
+        return JsonSchema::fromArray($this->getSourceSchema())->toMappingItems();
     }
 
     /** @return list<MappingItem> */
     public function getTargets(): array
     {
-        return $this->schemaItems($this->getTargetSchema());
+        return JsonSchema::fromArray($this->getTargetSchema())->toMappingItems();
     }
 
     protected function setUp(): void

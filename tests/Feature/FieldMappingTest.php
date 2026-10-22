@@ -7,6 +7,7 @@ use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\TagsInput;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
+use Filament\Schemas\Components\Actions;
 use Filament\Schemas\Schema;
 use Filament\Support\Facades\FilamentAsset;
 use Illuminate\Support\ViewErrorBag;
@@ -263,7 +264,7 @@ it('highlights warnings on either side and preserves missing identifiers in both
         ->toContain('42: Destination disappeared.');
 })->with([false, true]);
 
-it('renders actions on every source before mapping in both orientations', function (bool $inverse) {
+it('renders native actions on every source before mapping in both orientations', function (bool $inverse) {
     $livewire = SchemaHost::make();
 
     $schema = Schema::make($livewire)
@@ -273,11 +274,15 @@ it('renders actions on every source before mapping in both orientations', functi
                 ->jsonSchema(source: ['properties' => ['title' => [], 'email' => []]], dest: [
                     'properties' => ['name' => [], 'contact' => []],
                 ])
-                ->extraSourceActions([
-                    Action::make('inspect')->label(fn (array $arguments) => 'Inspect ' . $arguments['source']),
-                    Action::make('hidden')
-                        ->hidden()
-                        ->label(fn () => throw new LogicException('Hidden actions must not evaluate presentation.')),
+                ->sourceSettings(fn (string $source) => [
+                    Actions::make([
+                        Action::make('inspect')->label('Inspect ' . $source),
+                        Action::make('hidden')
+                            ->hidden()
+                            ->label(
+                                fn () => throw new LogicException('Hidden actions must not evaluate presentation.'),
+                            ),
+                    ]),
                 ])
                 ->inverse($inverse),
         ]);

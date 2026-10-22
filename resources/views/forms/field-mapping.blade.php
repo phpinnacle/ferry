@@ -24,19 +24,7 @@
     $contained = $isContained();
     $compact = $isCompact();
     $statePath = $getStatePath();
-    $sourceActions = $getExtraSourceActions();
-    $sourceActionLabels = [];
-
-    foreach ($sourceActions as $sourceAction) {
-        foreach ($sources as $source) {
-            $action = $sourceAction(['source' => $source['id']]);
-            if ($action->isVisible()) {
-                $sourceActionLabels[] = $action->getLabel();
-            }
-        }
-    }
-
-    $configurationKey = md5(serialize([$sources, $targets, $outputPresentation, $connectionModes, $multipleTargets, $stateKeys, $staticDefaults, $inverse, $disabled, $searchable, $contained, $compact, $sourceLabel, $targetLabel, $sourceWarnings, $targetWarnings, $sourceActionLabels]));
+    $configurationKey = md5(serialize([$sources, $targets, $outputPresentation, $connectionModes, $multipleTargets, $stateKeys, $staticDefaults, $inverse, $disabled, $searchable, $contained, $compact, $sourceLabel, $targetLabel, $sourceWarnings, $targetWarnings]));
     $panels = ['source' => ['label' => $sourceLabel, 'items' => $sources, 'warnings' => $sourceWarnings], 'target' => ['label' => $targetLabel, 'items' => $targets, 'warnings' => $targetWarnings]];
 
     if ($inverse) {
@@ -192,18 +180,6 @@
                                         @if ($side === 'source' && isset($staticSchemas['settings_'.$sourceStateKeys[$item['id']]]))
                                             <div @class(['w-full', 'px-3 pb-2' => $compact, 'px-4 pb-3' => ! $compact]) data-mapping-source-settings="{{ $item['id'] }}">
                                                 {{ $staticSchemas['settings_'.$sourceStateKeys[$item['id']]] }}
-                                            </div>
-                                        @endif
-                                        @if ($side === 'source' && $sourceActions !== [])
-                                            <div @class(['flex w-full flex-wrap items-center gap-2', 'px-3 pb-2' => $compact, 'px-4 pb-3' => ! $compact]) data-mapping-source-actions="{{ $item['id'] }}">
-                                                @foreach ($sourceActions as $sourceAction)
-                                                    @php
-                                                        $action = $sourceAction(['source' => $item['id']]);
-                                                    @endphp
-                                                    @if ($action->isVisible())
-                                                        {{ $action }}
-                                                    @endif
-                                                @endforeach
                                             </div>
                                         @endif
                                         @if ($staticSchema !== null)

@@ -14,6 +14,15 @@ final class Cast
     public static function make(): Transformation
     {
         return Transformation::make('cast', TransformScope::Field)
+            ->label(fn () => __('phpinnacle-ferry::resources.transform.cast'))
+            ->description(fn () => __('phpinnacle-ferry::resources.transform.cast_description'))
+            ->icon(Heroicon::ArrowPath)
+            ->schema(fn () => [
+                Select::make('type')
+                    ->label(__('phpinnacle-ferry::resources.sync.fields.constant_type'))
+                    ->options(ColumnType::castableOptions())
+                    ->required(),
+            ])
             ->inputSchema(['type' => ['string', 'integer', 'number', 'boolean', 'null']])
             ->outputSchema(function (JsonSchema $input, array $params) {
                 $schema = ColumnType::tryFrom($params['type'] ?? '')?->jsonSchema();
@@ -26,15 +35,6 @@ final class Cast
                 }
 
                 return $schema;
-            })
-            ->label(fn () => __('phpinnacle-ferry::resources.transform.cast'))
-            ->description(fn () => __('phpinnacle-ferry::resources.transform.cast_description'))
-            ->icon(Heroicon::ArrowPath)
-            ->schema(fn () => [
-                Select::make('type')
-                    ->label(__('phpinnacle-ferry::resources.sync.fields.constant_type'))
-                    ->options(ColumnType::castableOptions())
-                    ->required(),
-            ]);
+            });
     }
 }

@@ -6,10 +6,11 @@ use Closure;
 use Filament\Forms\Components\Field;
 use Filament\Schemas\Components\Component;
 use Filament\Schemas\Schema;
+use PHPinnacle\Ferry\Forms\JsonSchema;
 
 /**
  * @phpstan-require-extends Field
- * @phpstan-import-type MappingItem from HasMappingItems
+ * @phpstan-import-type MappingItem from JsonSchema
  */
 trait HasSourceSettings
 {

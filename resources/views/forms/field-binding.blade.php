@@ -4,7 +4,6 @@
     $childSchemas = $getChildSchemas();
     $sourceStateKeys = $getSourceStateKeys();
     $constants = $getConstants();
-    $sourceActions = $getExtraSourceActions();
     $sourceLabel = $getSourceLabel();
     $targetLabel = $getTargetLabel();
     $hasFields = $sources !== [];
@@ -94,18 +93,6 @@
                             @if (isset($childSchemas['settings_'.$sourceStateKeys[$source['id']]]))
                                 <div class="w-full" data-binding-source-settings="{{ $source['id'] }}">
                                     {{ $childSchemas['settings_'.$sourceStateKeys[$source['id']]] }}
-                                </div>
-                            @endif
-                            @if ($sourceActions !== [])
-                                <div class="flex w-full flex-wrap items-center gap-2" data-binding-source-actions="{{ $source['id'] }}">
-                                    @foreach ($sourceActions as $sourceAction)
-                                        @php
-                                            $action = $sourceAction(['source' => $source['id']]);
-                                        @endphp
-                                        @if ($action->isVisible())
-                                            {{ $action }}
-                                        @endif
-                                    @endforeach
                                 </div>
                             @endif
                         </div>

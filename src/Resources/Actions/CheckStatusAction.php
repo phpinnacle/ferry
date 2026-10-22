@@ -9,7 +9,7 @@ use PHPinnacle\Ferry\Models\Sync;
 use PHPinnacle\Ferry\Services\Connectors\ConnectorManager;
 use Throwable;
 
-class CheckConnectorStatusAction
+class CheckStatusAction
 {
     public static function table(string $name, string $label): Action
     {

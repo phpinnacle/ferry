@@ -13,7 +13,7 @@ use PHPinnacle\Common\Tables\ActiveColumn;
 use PHPinnacle\Common\Tables\CreatedColumn;
 use PHPinnacle\Common\Tables\UpdatedColumn;
 use PHPinnacle\Ferry\Models\Connection;
-use PHPinnacle\Ferry\Resources\Actions\CheckConnectorStatusAction;
+use PHPinnacle\Ferry\Resources\Actions\CheckStatusAction;
 use PHPinnacle\Ferry\Resources\Connections\Actions\PrepareStructureAction;
 use PHPinnacle\Ferry\Resources\Connections\Actions\TestConnectionAction;
 use PHPinnacle\Ferry\Resources\Connections\ConnectionResource;
@@ -72,7 +72,7 @@ class ConnectionTable
             ->recordActions([
                 TestConnectionAction::table(),
                 PrepareStructureAction::table(),
-                CheckConnectorStatusAction::table(
+                CheckStatusAction::table(
                     'check_source_status',
                     __('phpinnacle-ferry::resources.connection.actions.check_source_status'),
                 ),
