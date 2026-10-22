@@ -12,10 +12,10 @@ final readonly class TransformSetting implements JsonSerializable
         public array $params = [],
     ) {}
 
-    /** @param array{key: string, params: array<string, string>} $data */
+    /** @param array{key: string, params?: array<string, string>} $data */
     public static function fromArray(array $data): self
     {
-        return new self($data['key'], $data['params']);
+        return new self($data['key'], $data['params'] ?? []);
     }
 
     /** @return array{key: string, params: array<string, string>} */

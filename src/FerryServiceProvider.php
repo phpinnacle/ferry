@@ -11,10 +11,6 @@ use Illuminate\Support\Facades\Config;
 use PHPinnacle\Ferry\Contracts\SignalProducer;
 use PHPinnacle\Ferry\Services\Connectors\ConnectorManager;
 use PHPinnacle\Ferry\Services\Connectors\RdKafkaSignalProducer;
-use PHPinnacle\Ferry\Services\TransformFactory;
-use PHPinnacle\Ferry\Transforms\CastTransform;
-use PHPinnacle\Ferry\Transforms\FilterTransform;
-use PHPinnacle\Ferry\Transforms\StaticValueTransform;
 use PHPinnacle\Franz\Client as ConnectClient;
 use Psr\Http\Client\ClientInterface;
 use Psr\Http\Message\RequestFactoryInterface;
@@ -55,12 +51,6 @@ class FerryServiceProvider extends PackageServiceProvider
             );
         });
 
-        $this->app->afterResolving(TransformFactory::class, fn (TransformFactory $factory) => $factory->register(
-            new CastTransform,
-            new StaticValueTransform,
-            new FilterTransform,
-        ));
-
         $this->app->singleton(SignalProducer::class, function () {
             $bootstrapServers = Config::get('phpinnacle-ferry.kafka_connect.signal.bootstrap_servers');
 
@@ -98,8 +88,8 @@ class FerryServiceProvider extends PackageServiceProvider
         FilamentAsset::register(
             assets: [
                 AlpineComponent::make('field-mapping', __DIR__ . '/../resources/js/field-mapping.js'),
-                Css::make('field-mapping', __DIR__ . '/../resources/css/field-mapping.css')
-                    ->loadedOnRequest(),
+                AlpineComponent::make('field-transforms', __DIR__ . '/../resources/js/field-transforms.js'),
+                Css::make('field-mapping', __DIR__ . '/../resources/css/field-mapping.css'),
             ],
             package: self::PACKAGE,
         );

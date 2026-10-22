@@ -1,13 +1,10 @@
 <?php
 
 use Filament\Forms\Components\Select;
-use Filament\Schemas\Concerns\InteractsWithSchemas;
-use Filament\Schemas\Contracts\HasSchemas;
 use Filament\Schemas\Schema as FilamentSchema;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Validation\ValidationException;
-use Livewire\Component as LivewireComponent;
 use PHPinnacle\Ferry\Data\FieldMapping as SchemaMapping;
 use PHPinnacle\Ferry\Enums\DestinationType;
 use PHPinnacle\Ferry\Enums\StructureStatus;
@@ -18,6 +15,8 @@ use PHPinnacle\Ferry\Models\Sync;
 use PHPinnacle\Ferry\Resources\Syncs\Schemas\SyncForm;
 use PHPinnacle\Ferry\Services\DestinationFactory;
 use PHPinnacle\Ferry\Services\TransformFactory;
+use PHPinnacle\Ferry\Tests\Fixtures\MappingState;
+use PHPinnacle\Ferry\Tests\Fixtures\SchemaHost;
 use PHPinnacle\Ferry\Tests\TestCase;
 use PHPinnacle\Rosetta\Data\MetadataProperty;
 use PHPinnacle\Rosetta\Enums\FieldType;
@@ -29,7 +28,10 @@ use PHPinnacle\Rosetta\Fields\StringField;
 use function PHPinnacle\Ferry\Tests\Fakes\customers_destination;
 
 require_once __DIR__ . '/../TestCase.php';
+require_once __DIR__ . '/../Fixtures/MappingState.php';
 require_once __DIR__ . '/../Fakes/CustomersDestination.php';
+
+require_once __DIR__ . '/../Fixtures/SchemaHost.php';
 
 uses(TestCase::class);
 
@@ -39,14 +41,7 @@ beforeEach(function () {
 
 /** @return Collection<string, Select> */
 $selects = function (array $state) {
-    $livewire = new class extends LivewireComponent implements HasSchemas {
-        use InteractsWithSchemas;
-
-        /** @var array<string, mixed> */
-        public array $data = [];
-    };
-    $livewire->setId('sync-form-test');
-    $livewire->setName('sync-form-test');
+    $livewire = SchemaHost::make();
     $livewire->data = $state;
 
     return collect(
@@ -84,7 +79,7 @@ it('binds dynamic fields and connects static fields to the declared destination 
                 kind: PropertyKind::Field,
                 label: 'Label 1',
                 title: 'Title 1',
-                field: new StringField(length: 10, fixed: false),
+                field: new ScalarField(FieldType::Uuid),
             ),
         ],
         'values' => [],
@@ -93,14 +88,7 @@ it('binds dynamic fields and connects static fields to the declared destination 
     ]);
 
     $form = function (string $destination) use ($connection) {
-        $livewire = new class extends LivewireComponent implements HasSchemas {
-            use InteractsWithSchemas;
-
-            /** @var array<string, mixed> */
-            public array $data = [];
-        };
-        $livewire->setId('sync-form-sources-test');
-        $livewire->setName('sync-form-sources-test');
+        $livewire = SchemaHost::make();
         $livewire->data = [
             'connection_id' => $connection->id,
             'source' => 'object-0',
@@ -135,6 +123,20 @@ it('binds dynamic fields and connects static fields to the declared destination 
         ->toBeInstanceOf(FieldBinding::class)
         ->and($form('customers')->getComponentByStatePath('schema'))
         ->toBeInstanceOf(FieldMapping::class);
+
+    expect($mapping->getConnectionModes()['property-1'] ?? [])->toBe([]);
+
+    $schema = $form('customers');
+    $schema->fill([
+        'connection_id' => $connection->id,
+        'source' => 'object-0',
+        'destination' => 'static:customers',
+        'schema' => MappingState::mapping([], [
+            'property-1' => ['transforms' => [['key' => 'cast', 'params' => ['type' => 'string']]]],
+        ]),
+    ]);
+    expect($schema->getComponentByStatePath('schema')->getConnectionModes()['property-1'])
+        ->toBe(['name' => 'whole', 'tax_number' => 'whole']);
 });
 
 it('validates the static mapping against the declared destination fields', function (array $mapping, bool $valid) {
@@ -160,21 +162,14 @@ it('validates the static mapping against the declared destination fields', funct
         'revision' => $connection->generation,
     ]);
 
-    $livewire = new class extends LivewireComponent implements HasSchemas {
-        use InteractsWithSchemas;
-
-        /** @var array<string, mixed> */
-        public array $data = [];
-    };
-    $livewire->setId('sync-form-static-mapping-test');
-    $livewire->setName('sync-form-static-mapping-test');
+    $livewire = SchemaHost::make();
     $livewire->data = [
         'name' => 'Customers',
         'code' => 'customers',
         'connection_id' => $connection->id,
         'source' => 'object-0',
         'destination' => 'static:customers',
-        'schema' => $mapping,
+        'schema' => MappingState::mapping($mapping),
     ];
 
     $schema = SyncForm::configure(
@@ -183,9 +178,11 @@ it('validates the static mapping against the declared destination fields', funct
             ->operation('create'),
     );
 
+    $schema->fill($livewire->data);
+
     if ($valid) {
-        expect($schema->getState()['schema'])
-            ->toBe(array_flip($mapping))
+        expect($schema->getState()['schema']['targets'])
+            ->toBe($mapping)
             ->and(
                 SyncForm::forCreate(
                     $schema->getState(),
@@ -200,9 +197,19 @@ it('validates the static mapping against the declared destination fields', funct
 
     expect($schema->getState(...))->toThrow(ValidationException::class);
 })->with([
-    'valid mapping' => [['name' => '_description', 'tax_number' => '_code'], true],
-    'missing required field' => [['name' => '_description'], false],
-    'incompatible types' => [['name' => '_description', 'tax_number' => '_code', 'is_active' => '_code'], false],
+    'valid mapping' => [
+        ['name' => MappingState::source('_description'), 'tax_number' => MappingState::source('_code')],
+        true,
+    ],
+    'missing required field' => [['name' => MappingState::source('_description')], false],
+    'incompatible types' => [
+        [
+            'name' => MappingState::source('_description'),
+            'tax_number' => MappingState::source('_code'),
+            'is_active' => MappingState::source('_code'),
+        ],
+        false,
+    ],
     'empty mapping' => [[], false],
 ]);
 
@@ -224,14 +231,7 @@ it('validates the bound column names of a dynamic synchronization', function (st
     ]);
     $sync = TestCase::makeSync(['connection_id' => $connection->id]);
 
-    $livewire = new class extends LivewireComponent implements HasSchemas {
-        use InteractsWithSchemas;
-
-        /** @var array<string, mixed> */
-        public array $data = [];
-    };
-    $livewire->setId('sync-form-mapping-test');
-    $livewire->setName('sync-form-mapping-test');
+    $livewire = SchemaHost::make();
 
     $schema = SyncForm::configure(
         FilamentSchema::make($livewire)
@@ -245,11 +245,11 @@ it('validates the bound column names of a dynamic synchronization', function (st
         'connection_id' => $connection->id,
         'source' => 'object-0',
         'destination' => DestinationType::Dynamic->value,
-        'schema' => ['_idrref' => $column],
+        'schema' => MappingState::binding(['_idrref' => $column]),
     ]);
 
     if ($valid) {
-        expect($schema->getState()['schema'])->toBe(['_idrref' => $column]);
+        expect($schema->getState()['schema']['bindings'])->toBe(['_idrref' => $column]);
 
         return;
     }
@@ -263,32 +263,35 @@ it('validates the bound column names of a dynamic synchronization', function (st
 
 it('creates every parameter of a chosen transform so that live inputs can bind to them', function () {
     $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
-    TestCase::makeMetadata($connection);
-    $livewire = new class extends LivewireComponent implements HasSchemas {
-        use InteractsWithSchemas;
-
-        /** @var array<string, mixed> */
-        public array $data = [];
-    };
-    $livewire->setId('sync-form-transform-params-test');
-    $livewire->setName('sync-form-transform-params-test');
+    TestCase::makeMetadata($connection, ['system' => ['_folder' => new ScalarField(FieldType::Boolean)]]);
+    $livewire = SchemaHost::make();
     $schema = SyncForm::configure(FilamentSchema::make($livewire)->statePath('data')->operation('create'));
     $schema->fill([
         'connection_id' => $connection->id,
         'source' => 'object-0',
         'destination' => DestinationType::Dynamic->value,
         'schema' => [],
-        'transforms' => ['row' => ['key' => null, 'source' => null, 'params' => []]],
+        'transforms' => [],
     ]);
 
-    $key = collect($schema->getFlatComponents())
-        ->first(fn ($component) => str_ends_with($component->getStatePath() ?? '', '.key'));
-    $key->state('filter')->callAfterStateUpdated();
+    $schema->getComponentByStatePath('transforms')->getAction('add')->arguments(['block' => 'filter'])->call();
 
-    /** @var array<string, array{params: array<string, mixed>}> $rows */
+    /** @var array<string, array{type: string, data: array<string, mixed>}> $rows */
     $rows = $livewire->data['transforms'];
 
-    expect($rows[array_key_first($rows)]['params'])->toBe(['mode' => 'exclude', 'column' => null, 'value' => null]);
+    expect($rows[array_key_first($rows)]['data'])->toBe(['mode' => 'exclude', 'column' => null, 'value' => null]);
+
+    $column = collect($schema->getFlatComponents())
+        ->first(fn ($component) => str_ends_with($component->getStatePath() ?? '', '.data.column'));
+    $column->state('_folder')->callAfterStateUpdated();
+
+    $value = collect($schema->getFlatComponents(withHidden: true))
+        ->first(
+            fn ($component) => $component instanceof Select
+            && str_ends_with($component->getStatePath() ?? '', '.data.value'),
+        );
+
+    expect($value->isVisible())->toBeTrue()->and($value->getOptions())->toBe(['true' => 'Yes', 'false' => 'No']);
 });
 
 it('orders source objects with references first, obsolete ones last and titles case-insensitively', function () use (
@@ -358,14 +361,7 @@ it('validates the combined destination selection', function (?string $destinatio
     app(DestinationFactory::class)->register(customers_destination());
     $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
     TestCase::makeMetadata($connection);
-    $livewire = new class extends LivewireComponent implements HasSchemas {
-        use InteractsWithSchemas;
-
-        /** @var array<string, mixed> */
-        public array $data = [];
-    };
-    $livewire->setId('sync-form-destination-test');
-    $livewire->setName('sync-form-destination-test');
+    $livewire = SchemaHost::make();
     $form = SyncForm::configure(FilamentSchema::make($livewire)->statePath('data')->operation('create'));
     $form->fill([
         'name' => 'Customers',
@@ -395,20 +391,15 @@ it('resets the shared schema when switching destinations', function (string $fro
     ));
     $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
     TestCase::makeMetadata($connection);
-    $livewire = new class extends LivewireComponent implements HasSchemas {
-        use InteractsWithSchemas;
-
-        /** @var array<string, mixed> */
-        public array $data = [];
-    };
-    $livewire->setId('sync-form-switch-destination-test');
-    $livewire->setName('sync-form-switch-destination-test');
+    $livewire = SchemaHost::make();
     $form = SyncForm::configure(FilamentSchema::make($livewire)->statePath('data')->operation('create'));
     $form->fill([
         'connection_id' => $connection->id,
         'source' => 'object-0',
         'destination' => $from,
-        'schema' => ['_description' => 'name'],
+        'schema' => $from === 'dynamic'
+            ? MappingState::binding(['_description' => 'name'])
+            : MappingState::mapping(['name' => MappingState::source('_description')]),
     ]);
 
     $form->getComponent('destination')->state($to)->callAfterStateUpdated();
@@ -442,14 +433,7 @@ it('passes outdated mappings to the field warnings instead of a separate entry',
             new SchemaMapping('_missing', 'gone', new StringField(length: 100, fixed: false)),
         ],
     ]);
-    $livewire = new class extends LivewireComponent implements HasSchemas {
-        use InteractsWithSchemas;
-
-        /** @var array<string, mixed> */
-        public array $data = [];
-    };
-    $livewire->setId('sync-form-warnings-test');
-    $livewire->setName('sync-form-warnings-test');
+    $livewire = SchemaHost::make();
     $schema = SyncForm::configure(
         FilamentSchema::make($livewire)->statePath('data')->record($sync)->operation('edit'),
     );
@@ -457,7 +441,12 @@ it('passes outdated mappings to the field warnings instead of a separate entry',
         'connection_id' => $connection->id,
         'source' => 'object-0',
         'destination' => $type === DestinationType::Static ? 'static:' . $sync->destination : 'dynamic',
-        'schema' => ['_description' => 'name', '_missing' => 'gone'],
+        'schema' => $type === DestinationType::Dynamic
+            ? MappingState::binding(['_description' => 'name', '_missing' => 'gone'])
+            : MappingState::mapping([
+                'name' => MappingState::source('_description'),
+                'gone' => MappingState::source('_missing'),
+            ]),
     ]);
 
     $field = $schema->getComponentByStatePath('schema');

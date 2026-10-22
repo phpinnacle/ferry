@@ -2,55 +2,43 @@
 
 namespace PHPinnacle\Ferry\Tests\Fakes;
 
-use PHPinnacle\Ferry\Contracts\Transform;
+use PHPinnacle\Ferry\Contracts\TransformHandler;
 use PHPinnacle\Ferry\Enums\ColumnType;
 use PHPinnacle\Ferry\Enums\TransformScope;
 use PHPinnacle\Ferry\Models\ConnectionMetadata;
+use PHPinnacle\Ferry\Transformation;
 
-function exclude_folders_transform(): Transform
+function exclude_folders_transform(): Transformation
 {
-    return new class implements Transform {
-        public string $key {
-            get => 'exclude_folders';
-        }
+    config(['phpinnacle-ferry.transforms.exclude_folders' => ExcludeFoldersHandler::class]);
 
-        public TransformScope $scope {
-            get => TransformScope::Record;
-        }
+    return Transformation::make('exclude_folders', TransformScope::Record)->label('Exclude folders');
+}
 
-        public function getLabel(): string
-        {
-            return 'Exclude folders';
-        }
+final class ExcludeFoldersHandler implements TransformHandler
+{
+    public function normalize(array $params, ConnectionMetadata $object): array
+    {
+        return $params;
+    }
 
-        public function schema(?ConnectionMetadata $object): array
-        {
-            return [];
-        }
+    public function rules(array $params): array
+    {
+        return [];
+    }
 
-        public function normalize(array $params, ConnectionMetadata $object): array
-        {
-            return $params;
-        }
+    public function sourceColumns(array $params): array
+    {
+        return ['_folder'];
+    }
 
-        public function rules(array $params): array
-        {
-            return [];
-        }
+    public function resultType(?ColumnType $input, array $params): ?ColumnType
+    {
+        return $input;
+    }
 
-        public function sourceColumns(array $params): array
-        {
-            return ['_folder'];
-        }
-
-        public function resultType(?ColumnType $input, array $params): ?ColumnType
-        {
-            return $input;
-        }
-
-        public function connector(string $name, ?string $field, array $params): array
-        {
-            return [$name => ['type' => 'io.confluent.connect.transforms.Filter$Value']];
-        }
-    };
+    public function connector(string $name, ?string $field, array $params): array
+    {
+        return [$name => ['type' => 'io.confluent.connect.transforms.Filter$Value']];
+    }
 }

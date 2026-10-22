@@ -10,7 +10,7 @@ use PHPinnacle\Rosetta\Contracts\Field;
 /**
  * @phpstan-import-type FieldData from FieldDecoder
  *
- * @phpstan-type MappingData array{source: string|null, column: string, field: FieldData|null, result?: value-of<ColumnType>, transforms?: list<array{key: string, params: array<string, string>}>}
+ * @phpstan-type MappingData array{source: string|null, column: string, field: FieldData|null, result?: value-of<ColumnType>, transforms?: list<array{key: string, params: array<string, string>}>, constant?: array{type: value-of<ColumnType>, value: string}}
  */
 final readonly class FieldMapping implements JsonSerializable
 {
@@ -21,6 +21,7 @@ final readonly class FieldMapping implements JsonSerializable
         public ?Field $field,
         public ?ColumnType $result = null,
         public array $transforms = [],
+        public ?StaticValue $constant = null,
     ) {}
 
     /** @param MappingData $data */
@@ -32,6 +33,7 @@ final readonly class FieldMapping implements JsonSerializable
             field: $data['field'] !== null ? FieldDecoder::decode($data['field']) : null,
             result: ($data['result'] ?? null) !== null ? ColumnType::from($data['result']) : null,
             transforms: array_map(TransformSetting::fromArray(...), $data['transforms'] ?? []),
+            constant: ($data['constant'] ?? null) !== null ? StaticValue::fromArray($data['constant']) : null,
         );
     }
 
@@ -44,6 +46,7 @@ final readonly class FieldMapping implements JsonSerializable
             'field' => $this->field?->jsonSerialize(),
             ...($this->result !== null ? ['result' => $this->result->value] : []),
             ...($this->transforms !== [] ? ['transforms' => $this->transforms] : []),
+            ...($this->constant !== null ? ['constant' => $this->constant] : []),
         ];
     }
 
@@ -59,6 +62,6 @@ final readonly class FieldMapping implements JsonSerializable
 
     public function type(): ?ColumnType
     {
-        return $this->result ?? $this->sourceType();
+        return $this->constant->type ?? $this->result ?? $this->sourceType();
     }
 }

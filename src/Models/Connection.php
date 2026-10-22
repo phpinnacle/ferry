@@ -8,7 +8,6 @@ use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use PHPinnacle\Ferry\Casts\StorageMapCast;
 use PHPinnacle\Ferry\Casts\TypeMapCast;
@@ -17,6 +16,7 @@ use PHPinnacle\Ferry\Enums\Driver;
 use PHPinnacle\Ferry\Enums\StructureStatus;
 use PHPinnacle\Ferry\Enums\SyncStatus;
 use PHPinnacle\Ferry\Jobs\PrepareStructureJob;
+use PHPinnacle\Ferry\Models\Concerns\HasConnector;
 use PHPinnacle\Ferry\Observers\ConnectionObserver;
 use PHPinnacle\Ferry\Support\ConnectionErrorFormatter;
 use PHPinnacle\Rosetta\StorageMap;
@@ -57,6 +57,7 @@ use PHPinnacle\Rosetta\TypeMap;
 #[ObservedBy(ConnectionObserver::class)]
 class Connection extends Model implements HasLabel
 {
+    use HasConnector;
     use HasUuids;
 
     private const array CREDENTIAL_ATTRIBUTES = [
@@ -150,6 +151,15 @@ class Connection extends Model implements HasLabel
     public function draftRevision(): int
     {
         return $this->generation + 1;
+    }
+
+    /** @return Builder<self> */
+    public static function structureRun(string $connectionId, ?string $runId): Builder
+    {
+        return self::query()
+            ->whereKey($connectionId)
+            ->where('status', StructureStatus::Preparing)
+            ->where('run_id', $runId);
     }
 
     public function failStructure(?string $error = null): bool
@@ -277,21 +287,6 @@ class Connection extends Model implements HasLabel
         return $this->hasMany(Sync::class, 'connection_id');
     }
 
-    public function recordConnector(Connector $connector): void
-    {
-        $this->connector()->associate($connector);
-
-        if ($this->isDirty('connector_id')) {
-            $this->saveQuietly();
-        }
-    }
-
-    /** @return BelongsTo<Connector, $this> */
-    public function connector(): BelongsTo
-    {
-        return $this->belongsTo(Connector::class, 'connector_id');
-    }
-
     public function toggleActive(): void
     {
         $this->is_active = !$this->is_active;
@@ -326,15 +321,6 @@ class Connection extends Model implements HasLabel
         $this->storage_map = null;
         $this->type_map = null;
         $this->heartbeat_at = CarbonImmutable::now();
-    }
-
-    /** @return Builder<self> */
-    private function currentRun(): Builder
-    {
-        return self::query()
-            ->whereKey($this->getKey())
-            ->where('status', StructureStatus::Preparing)
-            ->where('run_id', $this->run_id);
     }
 
     private function discardDraftMetadata(): void
@@ -373,7 +359,7 @@ class Connection extends Model implements HasLabel
     {
         $attributes['heartbeat_at'] = CarbonImmutable::now();
 
-        $currentRun = $this->currentRun();
+        $currentRun = self::structureRun($this->id, $this->run_id);
 
         $this->forceFill($attributes);
 

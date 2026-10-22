@@ -1,5 +1,6 @@
 <?php
 
+use Illuminate\Database\SQLiteConnection;
 use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Queue;
 use PHPinnacle\Ferry\Enums\StructureStatus;
@@ -12,7 +13,6 @@ use PHPinnacle\Ferry\Services\ConnectionFactory;
 use PHPinnacle\Ferry\Services\StructureImporter;
 use PHPinnacle\Ferry\Support\ConnectionErrorFormatter;
 use PHPinnacle\Ferry\Tests\TestCase;
-use PHPinnacle\Rosetta\Data\MetadataDefinition;
 use PHPinnacle\Rosetta\Data\MetadataProperty;
 use PHPinnacle\Rosetta\Enums\MetadataKind;
 use PHPinnacle\Rosetta\Enums\PropertyKind;
@@ -299,39 +299,34 @@ it('ignores every job of a superseded generation', function () use ($makeImporte
     Queue::assertNotPushed(FinishStructureJob::class);
 });
 
-it('persists chunks only for the current run', function () {
+it('imports repeated chunks once and refuses to restore a superseded draft', function () {
     Queue::fake();
 
     $staleConnection = TestCase::makeConnection()->fresh();
     $connection = Connection::query()->findOrFail($staleConnection->id);
-    $metadata = [
-        new MetadataDefinition(
-            id: 'stale-object',
-            name: '_reference1',
-            code: 1,
-            kind: MetadataKind::Reference,
-            label: 'Stale object',
-            title: 'Stale object',
-            system: [],
-            properties: [],
-        ),
-    ];
-    $persist = new ReflectionMethod(StructureImporter::class, 'persist');
+    $storageMap = StorageMap::fromArray(['stale-object' => ['Reference' => 1]]);
+    $typeMap = TypeMap::empty();
+    $source = app(ConnectionFactory::class)->make(['driver' => 'sqlite', 'database' => ':memory:']);
+    $pdo = $source->getPdo();
+    $source->statement('CREATE TABLE Config (filename TEXT, binarydata BLOB)');
+    $source->insert('INSERT INTO Config VALUES (?, ?)', [
+        'stale-object',
+        gzdeflate('{,{,,,,,,,,,{,{,{,,stale-object},"Stale object",{1,en,"Stale object"}}}}}'),
+    ]);
+    $factory = Mockery::mock(ConnectionFactory::class);
+    $factory->shouldReceive('make')->andReturnUsing(fn () => new SQLiteConnection($pdo));
+    $importer = new StructureImporter($factory, app(MetadataLoader::class));
 
-    $persist->invoke(
-        app(StructureImporter::class),
-        $metadata,
-        $staleConnection,
-        0,
-    );
+    $importer->importChunk($staleConnection, $storageMap, $typeMap, 0, 1);
+    $first = $connection->metadata()->sole();
+    $importer->importChunk($staleConnection, $storageMap, $typeMap, 0, 1);
 
-    expect($connection->metadata()->count())->toBe(1);
+    expect($connection->metadata()->sole()->id)->toBe($first->id);
+    expect($first->name)->toBe('_reference1');
+    expect($first->displayTitle())->toBe('Stale object');
 
     $connection->update(['host' => 'replica']);
-
-    expect($connection->metadata()->count())->toBe(0);
-
-    $persist->invoke(app(StructureImporter::class), $metadata, $staleConnection, 0);
+    $importer->importChunk($staleConnection, $storageMap, $typeMap, 0, 1);
 
     expect($connection->metadata()->count())->toBe(0);
 });

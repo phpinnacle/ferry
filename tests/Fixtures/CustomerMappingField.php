@@ -5,6 +5,7 @@ namespace PHPinnacle\Ferry\Tests\Fixtures;
 use Filament\Support\Contracts\HasDescription;
 use Filament\Support\Contracts\HasIcon;
 use Filament\Support\Contracts\HasLabel;
+use Filament\Support\Enums\IconSize;
 use Filament\Support\Icons\Heroicon;
 
 enum CustomerMappingField: string implements HasDescription, HasIcon, HasLabel
@@ -15,6 +16,24 @@ enum CustomerMappingField: string implements HasDescription, HasIcon, HasLabel
     case Phone = 'phone';
     case Active = 'is_active';
     case ExternalId = 'external_id';
+
+    /** @return array<string, mixed> */
+    public static function jsonSchema(): array
+    {
+        $properties = [];
+        foreach (self::cases() as $field) {
+            $properties[$field->value] = [
+                'title' => $field->getLabel(),
+                'description' => $field->getDescription(),
+                'x-icon' => $field->getIcon()->getIconForSize(IconSize::Small),
+                'type' => $field === self::Active ? 'boolean' : 'string',
+            ];
+        }
+        $properties['phone'] = [...$properties['phone'], 'type' => 'array', 'items' => ['type' => 'string']];
+        $properties['external_id']['x-badges'] = [['label' => 'Unique', 'color' => 'success']];
+
+        return ['type' => 'object', 'properties' => $properties, 'required' => ['name', 'email', 'external_id']];
+    }
 
     public function getLabel(): string
     {

@@ -14,6 +14,7 @@ use PHPinnacle\Ferry\Data\TransformSetting;
 use PHPinnacle\Ferry\Enums\ColumnType;
 use PHPinnacle\Ferry\Enums\DestinationType;
 use PHPinnacle\Ferry\Enums\SyncStatus;
+use PHPinnacle\Ferry\Models\Concerns\HasConnector;
 use PHPinnacle\Ferry\Observers\SyncObserver;
 
 /**
@@ -37,6 +38,7 @@ use PHPinnacle\Ferry\Observers\SyncObserver;
 #[ObservedBy(SyncObserver::class)]
 class Sync extends Model
 {
+    use HasConnector;
     use HasUuids;
 
     public const string ID_COLUMN = 'idrref';
@@ -104,21 +106,6 @@ class Sync extends Model
         }
     }
 
-    public function recordConnector(Connector $connector): void
-    {
-        $this->connector()->associate($connector);
-
-        if ($this->isDirty('connector_id')) {
-            $this->saveQuietly();
-        }
-    }
-
-    /** @return BelongsTo<Connector, $this> */
-    public function connector(): BelongsTo
-    {
-        return $this->belongsTo(Connector::class, 'connector_id');
-    }
-
     /**
      * @param list<DestinationField>|null $destinationFields
      * @return list<string>
@@ -169,8 +156,16 @@ class Sync extends Model
     /** @return list<string> */
     public function droppedColumns(): array
     {
+        return $this->schemaChanges()['drop'];
+    }
+
+    /** @return array{drop: list<string>, columns: list<array{mapping: FieldMapping, from: string|null}>} */
+    public function schemaChanges(): array
+    {
+        $changes = ['drop' => [], 'columns' => []];
+
         if ($this->type === DestinationType::Static) {
-            return [];
+            return $changes;
         }
 
         /** @var list<FieldMapping> $previous */
@@ -179,17 +174,30 @@ class Sync extends Model
             array_map(static fn (FieldMapping $mapping) => $mapping->identity(), $this->schema),
             $this->schema,
         );
-        $columns = [];
-
         foreach ($previous as $mapping) {
             $replacement = $next[$mapping->identity()] ?? null;
 
             if ($replacement === null || $replacement->type() !== $mapping->type()) {
-                $columns[] = $mapping->column;
+                $changes['drop'][] = $mapping->column;
             }
         }
 
-        return $columns;
+        $previous = array_combine(
+            array_map(static fn (FieldMapping $mapping) => $mapping->identity(), $previous),
+            $previous,
+        );
+
+        foreach ($this->schema as $mapping) {
+            $existing = $previous[$mapping->identity()] ?? null;
+
+            if ($existing === null || $existing->type() !== $mapping->type()) {
+                $changes['columns'][] = ['mapping' => $mapping, 'from' => null];
+            } elseif ($existing->column !== $mapping->column) {
+                $changes['columns'][] = ['mapping' => $mapping, 'from' => $existing->column];
+            }
+        }
+
+        return $changes;
     }
 
     /** @param list<DestinationField>|null $destinationFields */

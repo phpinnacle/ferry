@@ -34,7 +34,6 @@ class SourceFactory
     {
         $tables = [];
         $columns = [];
-        $keys = [];
 
         $objects = $connection
             ->publishedMetadata()
@@ -51,15 +50,14 @@ class SourceFactory
 
             $table = $this->table($connection, $object);
 
-            $tables[$table] = true;
-            $keys[$table] = sprintf('%s:%s', $table, ConnectionMetadata::KEY_COLUMN);
+            $tables[$table] = sprintf('%s:%s', $table, ConnectionMetadata::KEY_COLUMN);
 
             foreach (array_keys($sync->columnMap($object)) as $column) {
                 $columns[sprintf('%s.%s', $table, $column)] = true;
             }
 
             foreach ($sync->transforms as $setting) {
-                foreach ($this->transforms->get($setting->key)?->sourceColumns($setting->params) ?? [] as $column) {
+                foreach ($this->transforms->handler($setting->key)?->sourceColumns($setting->params) ?? [] as $column) {
                     $columns[sprintf('%s.%s', $table, $column)] = true;
                 }
             }
@@ -69,7 +67,7 @@ class SourceFactory
             ? [
                 'table.include.list' => implode(',', array_keys($tables)),
                 'column.include.list' => implode(',', array_keys($columns)),
-                'message.key.columns' => implode(';', array_values($keys)),
+                'message.key.columns' => implode(';', $tables),
             ]
             : [];
 

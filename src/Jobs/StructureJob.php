@@ -51,24 +51,11 @@ abstract class StructureJob implements ShouldBeEncrypted, ShouldQueue
 
     protected function connection(): ?Connection
     {
-        return $this->current(Connection::query()->find($this->connectionId));
+        return Connection::structureRun($this->connectionId, $this->runId)->first();
     }
 
     protected function lockedConnection(): ?Connection
     {
-        return $this->current(Connection::query()->lockForUpdate()->find($this->connectionId));
-    }
-
-    private function current(?Connection $connection): ?Connection
-    {
-        if ($connection === null) {
-            return null;
-        }
-
-        if ($connection->run_id !== $this->runId) {
-            return null;
-        }
-
-        return $connection;
+        return Connection::structureRun($this->connectionId, $this->runId)->lockForUpdate()->first();
     }
 }

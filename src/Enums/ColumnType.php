@@ -53,6 +53,12 @@ enum ColumnType: string implements HasLabel
         return $options;
     }
 
+    /** @return list<self> */
+    public static function filterable(): array
+    {
+        return [self::String, self::Reference, self::Boolean];
+    }
+
     public function valueRule(): string
     {
         return match ($this) {
@@ -71,6 +77,17 @@ enum ColumnType: string implements HasLabel
             self::Decimal => 'float64',
             self::Boolean => 'boolean',
             self::Reference, self::DateTime => null,
+        };
+    }
+
+    /** @return array{type: string, format?: string} */
+    public function jsonSchema(): array
+    {
+        return match ($this) {
+            self::Reference => ['type' => 'string', 'format' => 'ferry-reference'],
+            self::DateTime => ['type' => 'string', 'format' => 'date-time'],
+            self::Decimal => ['type' => 'number'],
+            default => ['type' => $this->value],
         };
     }
 

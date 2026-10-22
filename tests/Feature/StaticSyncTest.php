@@ -1,15 +1,12 @@
 <?php
 
 use Filament\Actions\Action;
-use Filament\Schemas\Concerns\InteractsWithSchemas;
-use Filament\Schemas\Contracts\HasSchemas;
 use Filament\Schemas\Schema as FormSchema;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\ViewErrorBag;
 use Illuminate\Validation\ValidationException;
-use Livewire\Component as LivewireComponent;
 use PHPinnacle\Ferry\Data\FieldMapping;
 use PHPinnacle\Ferry\Data\TransformSetting;
 use PHPinnacle\Ferry\Destinations\StaticDestination;
@@ -18,12 +15,15 @@ use PHPinnacle\Ferry\Enums\DestinationType;
 use PHPinnacle\Ferry\Enums\StructureStatus;
 use PHPinnacle\Ferry\Enums\SyncStatus;
 use PHPinnacle\Ferry\Enums\TransformScope;
+use PHPinnacle\Ferry\Models\ConnectionMetadata;
 use PHPinnacle\Ferry\Models\Sync;
 use PHPinnacle\Ferry\Resources\Syncs\Pages\EditSync;
 use PHPinnacle\Ferry\Resources\Syncs\Schemas\SyncForm;
-use PHPinnacle\Ferry\Resources\Syncs\Schemas\TransformsRepeater;
+use PHPinnacle\Ferry\Resources\Syncs\Schemas\TransformsBuilder;
 use PHPinnacle\Ferry\Services\DestinationFactory;
 use PHPinnacle\Ferry\Services\TransformFactory;
+use PHPinnacle\Ferry\Tests\Fixtures\MappingState;
+use PHPinnacle\Ferry\Tests\Fixtures\SchemaHost;
 use PHPinnacle\Ferry\Tests\TestCase;
 use PHPinnacle\Rosetta\Enums\FieldType;
 use PHPinnacle\Rosetta\Fields\ScalarField;
@@ -33,8 +33,11 @@ use function PHPinnacle\Ferry\Tests\Fakes\customers_destination;
 use function PHPinnacle\Ferry\Tests\Fakes\exclude_folders_transform;
 
 require_once __DIR__ . '/../TestCase.php';
+require_once __DIR__ . '/../Fixtures/MappingState.php';
 require_once __DIR__ . '/../Fakes/CustomersDestination.php';
 require_once __DIR__ . '/../Fakes/ExcludeFoldersTransform.php';
+
+require_once __DIR__ . '/../Fixtures/SchemaHost.php';
 
 uses(TestCase::class);
 
@@ -63,18 +66,16 @@ it('prepares typed synchronization attributes from its form', function (?string 
         'code' => 'customers_sync',
         'source' => 'object-0',
         'destination' => $destination !== null ? 'static:' . $destination : DestinationType::Dynamic->value,
-        'schema' => ['_description' => 'name', '_code' => 'tax_number'],
+        'schema' => $destination === null
+            ? MappingState::binding(['_description' => 'name', '_code' => 'tax_number'])
+            : MappingState::mapping([
+                'name' => MappingState::source('_description'),
+                'tax_number' => MappingState::source('_code'),
+            ]),
     ];
 
     $destinations = app(DestinationFactory::class);
-    $livewire = new class extends LivewireComponent implements HasSchemas {
-        use InteractsWithSchemas;
-
-        /** @var array<string, mixed> */
-        public array $data = [];
-    };
-    $livewire->setId('sync-mapping-round-trip');
-    $livewire->setName('sync-mapping-round-trip');
+    $livewire = SchemaHost::make();
 
     $createForm = SyncForm::configure(FormSchema::make($livewire)->statePath('data')->operation('create'));
     $createForm->fill();
@@ -93,16 +94,9 @@ it('prepares typed synchronization attributes from its form', function (?string 
         ->toBe($destination === null ? 'dynamic' : 'static:' . $destination);
     $livewire->data['name'] = 'Renamed';
 
-    if ($destination !== null) {
-        expect($form->getComponentByStatePath('schema')->getState())
-            ->toBe(['name' => '_description', 'tax_number' => '_code']);
-    }
-
     $dehydrated = $form->getState();
-    expect($dehydrated['schema'])->toEqual([
-        '_description' => 'name',
-        '_code' => 'tax_number',
-    ]);
+    expect($dehydrated['schema'][$destination === null ? 'bindings' : 'targets'])
+        ->toEqual($data['schema'][$destination === null ? 'bindings' : 'targets']);
     $sync->update(SyncForm::forUpdate($dehydrated, $sync, $destinations, app(TransformFactory::class)));
 
     expect($sync->fresh()->name)
@@ -125,15 +119,12 @@ it('keeps a static value through creating, filling and updating a static synchro
     ]);
     $destinations = app(DestinationFactory::class);
     $transforms = app(TransformFactory::class);
-    $livewire = new class extends LivewireComponent implements HasSchemas {
-        use InteractsWithSchemas;
-
-        /** @var array<string, mixed> */
-        public array $data = [];
-    };
-    $livewire->setId('sync-static-value-round-trip');
-    $livewire->setName('sync-static-value-round-trip');
-    $state = ['_description' => 'name', 'is_active' => ['value' => 'true'], 'tax_number' => ['value' => 'none']];
+    $livewire = SchemaHost::make();
+    $state = MappingState::mapping([
+        'name' => MappingState::source('_description'),
+        'is_active' => MappingState::value('true'),
+        'tax_number' => MappingState::value('none'),
+    ]);
 
     $createForm = SyncForm::configure(FormSchema::make($livewire)->statePath('data')->operation('create'));
     $createForm->fill([
@@ -146,7 +137,8 @@ it('keeps a static value through creating, filling and updating a static synchro
     ]);
     $createState = $createForm->getState();
 
-    expect($createState['schema'])->toEqual($state);
+    expect($createState['schema']['targets'] ?? $createState['schema']['bindings'])
+        ->toEqual($state['targets'] ?? $state['bindings']);
 
     $sync = Sync::create(SyncForm::forCreate($createState, $destinations, $transforms));
 
@@ -160,13 +152,16 @@ it('keeps a static value through creating, filling and updating a static synchro
     $form = SyncForm::configure(FormSchema::make($livewire)->statePath('data')->record($sync)->operation('edit'));
     $form->fill(SyncForm::fill($sync->fresh()->toArray()));
 
-    expect($form->getComponentByStatePath('schema')->getState())
-        ->toBe(['name' => '_description', 'is_active' => ['value' => 'true'], 'tax_number' => ['value' => 'none']]);
+    expect($form->getState()['schema']['targets'])->toBe($state['targets']);
 
-    $livewire->data['schema']['is_active'] = ['value' => 'false'];
+    $key = $form->getComponentByStatePath('schema')->getStateKeys()['is_active'];
+    $livewire->data['schema']['targets'][$key] = MappingState::value('false');
     $sync->update(SyncForm::forUpdate($form->getState(), $sync, $destinations, $transforms));
 
-    expect($sync->fresh()->schema[1]->transforms[0]->params)->toBe(['type' => 'boolean', 'value' => 'false']);
+    expect($sync->fresh()->schema[1]->constant->jsonSerialize())
+        ->toBe(['type' => 'boolean', 'value' => 'false'])
+        ->and($sync->fresh()->schema[1]->transforms)
+        ->toBe([]);
 });
 
 it('keeps a typed static value through creating and filling a dynamic synchronization', function () {
@@ -176,15 +171,8 @@ it('keeps a typed static value through creating and filling a dynamic synchroniz
     ]);
     $destinations = app(DestinationFactory::class);
     $transforms = app(TransformFactory::class);
-    $livewire = new class extends LivewireComponent implements HasSchemas {
-        use InteractsWithSchemas;
-
-        /** @var array<string, mixed> */
-        public array $data = [];
-    };
-    $livewire->setId('sync-dynamic-static-value');
-    $livewire->setName('sync-dynamic-static-value');
-    $state = ['_description' => 'title', 'priority' => ['type' => 'integer', 'value' => '5']];
+    $livewire = SchemaHost::make();
+    $state = MappingState::binding(['_description' => 'title', 'priority' => ['type' => 'integer', 'value' => '5']]);
 
     $createForm = SyncForm::configure(FormSchema::make($livewire)->statePath('data')->operation('create'));
     $createForm->fill([
@@ -197,7 +185,8 @@ it('keeps a typed static value through creating and filling a dynamic synchroniz
     ]);
     $createState = $createForm->getState();
 
-    expect($createState['schema'])->toEqual($state);
+    expect($createState['schema']['targets'] ?? $createState['schema']['bindings'])
+        ->toEqual($state['targets'] ?? $state['bindings']);
 
     $sync = Sync::create(SyncForm::forCreate($createState, $destinations, $transforms));
 
@@ -209,7 +198,7 @@ it('keeps a typed static value through creating and filling a dynamic synchroniz
     $form = SyncForm::configure(FormSchema::make($livewire)->statePath('data')->record($sync)->operation('edit'));
     $form->fill(SyncForm::fill($sync->fresh()->toArray()));
 
-    expect($form->getState()['schema'])->toEqual($state);
+    expect($form->getState()['schema']['bindings'])->toEqual($state['bindings']);
 });
 
 it('keeps field and record transforms through creating, filling and updating a synchronization', function () {
@@ -224,14 +213,7 @@ it('keeps field and record transforms through creating, filling and updating a s
     ]);
     $destinations = app(DestinationFactory::class);
     $transforms = app(TransformFactory::class);
-    $livewire = new class extends LivewireComponent implements HasSchemas {
-        use InteractsWithSchemas;
-
-        /** @var array<string, mixed> */
-        public array $data = [];
-    };
-    $livewire->setId('sync-transforms-round-trip');
-    $livewire->setName('sync-transforms-round-trip');
+    $livewire = SchemaHost::make();
 
     $createForm = SyncForm::configure(FormSchema::make($livewire)->statePath('data')->operation('create'));
     $createForm->fill([
@@ -240,9 +222,12 @@ it('keeps field and record transforms through creating, filling and updating a s
         'code' => 'customers_sync',
         'source' => 'object-0',
         'destination' => 'static:customers',
-        'schema' => ['_description' => 'name', '_code' => 'is_active', 'tax_number' => ['value' => 'none']],
+        'schema' => MappingState::mapping([
+            'name' => MappingState::source('_description'),
+            'is_active' => MappingState::source('_code'),
+            'tax_number' => MappingState::value('none'),
+        ], ['_code' => ['transforms' => [['key' => 'cast', 'params' => ['type' => 'boolean']]]]]),
         'transforms' => [['key' => 'exclude_folders']],
-        'field_transforms' => ['_code' => [['key' => 'cast', 'params' => ['type' => 'boolean']]]],
     ]);
     $attributes = SyncForm::forCreate($createForm->getState(), $destinations, $transforms);
     $sync = Sync::create($attributes);
@@ -262,8 +247,11 @@ it('keeps field and record transforms through creating, filling and updating a s
 
     expect(array_column(array_values($state['transforms']), 'key'))
         ->toBe(['exclude_folders'])
-        ->and($state['field_transforms'])
-        ->toBe(['_code' => [['key' => 'cast', 'params' => ['type' => 'boolean']]]]);
+        ->and($state)
+        ->not
+        ->toHaveKey('field_transforms')
+        ->and($state['schema']['sources']['_code']['transforms'])
+        ->toBe([['key' => 'cast', 'params' => ['type' => 'boolean']]]);
 
     $sync->update(SyncForm::forUpdate($state, $sync, $destinations, $transforms));
 
@@ -281,14 +269,7 @@ it('fills the transform rows with the fields of the selected object', function (
             '_marked' => new ScalarField(FieldType::Boolean),
         ],
     ]);
-    $livewire = new class extends LivewireComponent implements HasSchemas {
-        use InteractsWithSchemas;
-
-        /** @var array<string, mixed> */
-        public array $data = [];
-    };
-    $livewire->setId('sync-transform-fields');
-    $livewire->setName('sync-transform-fields');
+    $livewire = SchemaHost::make();
 
     $form = SyncForm::configure(FormSchema::make($livewire)->statePath('data')->operation('create'));
     view()->share('errors', new ViewErrorBag);
@@ -313,34 +294,29 @@ it('fills the transform rows with the fields of the selected object', function (
 });
 
 it('resets the transforms with the connection and the object but not with the destination', function () {
-    $livewire = new class extends LivewireComponent implements HasSchemas {
-        use InteractsWithSchemas;
-
-        /** @var array<string, mixed> */
-        public array $data = [];
-    };
-    $livewire->setId('sync-transform-reset');
-    $livewire->setName('sync-transform-reset');
+    $livewire = SchemaHost::make();
 
     $form = SyncForm::configure(FormSchema::make($livewire)->statePath('data')->operation('create'));
-    $fieldTransforms = ['_code' => [['key' => 'cast', 'params' => ['type' => 'string']]]];
+    $settings = MappingState::mapping([], [
+        '_code' => ['transforms' => [['key' => 'cast', 'params' => ['type' => 'string']]]],
+    ]);
     $form->fill([
         'destination' => 'static:customers',
         'transforms' => [['key' => 'filter']],
-        'field_transforms' => $fieldTransforms,
+        'schema' => $settings,
     ]);
 
     $form->getComponent('destination')->callAfterStateUpdated();
 
-    expect($livewire->data['transforms'])->toHaveCount(1)->and($livewire->data['field_transforms'])->toBe([]);
+    expect($livewire->data['transforms'])->toHaveCount(1)->and($livewire->data['schema'])->toBe([]);
 
     foreach (['source', 'connection_id'] as $name) {
         $livewire->data['transforms'] = [['key' => 'filter']];
-        $livewire->data['field_transforms'] = $fieldTransforms;
+        $livewire->data['schema'] = $settings;
 
         $form->getComponent($name)->callAfterStateUpdated();
 
-        expect($livewire->data['transforms'])->toBe([])->and($livewire->data['field_transforms'])->toBe([]);
+        expect($livewire->data['transforms'])->toBe([])->and($livewire->data['schema'])->toBe([]);
     }
 });
 
@@ -364,7 +340,7 @@ it('rejects transforms that cannot be applied to the synchronization', function 
             'code' => 'customers_sync',
             'source' => 'object-0',
             'destination' => 'dynamic',
-            'schema' => ['_description' => 'title'],
+            'schema' => MappingState::binding(['_description' => 'title']),
             ...$data,
         ],
         app(DestinationFactory::class),
@@ -376,7 +352,9 @@ it('rejects transforms that cannot be applied to the synchronization', function 
         );
 })->with([
     'field transform with an unsupported type' => [
-        ['field_transforms' => ['_description' => [['key' => 'cast', 'params' => ['type' => 'reference']]]]],
+        ['schema' => MappingState::binding(['_description' => 'title'], [
+            '_description' => ['transforms' => [['key' => 'cast', 'params' => ['type' => 'reference']]]],
+        ])],
         'transform_invalid_params',
         fn () => [
             'transform' => __('phpinnacle-ferry::resources.transform.cast'),
@@ -397,42 +375,44 @@ it('rejects transforms that cannot be applied to the synchronization', function 
     ],
 ]);
 
-it('allows each field transform once per field but any number of record transforms', function () {
-    $repeater = fn (TransformScope $scope) => TransformsRepeater::make($scope, null, app(TransformFactory::class));
+it('allows repeated record and field transforms on submission', function (TransformScope $scope) {
+    $object = new ConnectionMetadata([
+        'system' => ['_folder' => new ScalarField(FieldType::Boolean)],
+        'properties' => [],
+    ]);
+    $setting = $scope === TransformScope::Field
+        ? ['key' => 'cast', 'params' => ['type' => 'string']]
+        : ['key' => 'filter', 'params' => ['mode' => 'exclude', 'column' => '_folder', 'value' => 'true']];
+    $schema = FormSchema::make(SchemaHost::make())
+        ->statePath('data')
+        ->components([
+            TransformsBuilder::make($scope, $object, app(TransformFactory::class)),
+        ]);
+    $schema->fill(['transforms' => [$setting, $setting]]);
 
-    expect($repeater(TransformScope::Field)->getMaxItems())
-        ->toBe(count(app(TransformFactory::class)->forScope(TransformScope::Field)))
-        ->and($repeater(TransformScope::Record)->getMaxItems())
-        ->toBeNull();
-});
+    expect($schema->getState()['transforms'])->toBe([$setting, $setting]);
+})->with([TransformScope::Field, TransformScope::Record]);
 
-it('preselects the only registered transform of a block when a row is added', function () {
+it('fills the selected transform block with its native field defaults', function () {
     $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
     TestCase::makeMetadata($connection);
-    $livewire = new class extends LivewireComponent implements HasSchemas {
-        use InteractsWithSchemas;
-
-        /** @var array<string, mixed> */
-        public array $data = [];
-    };
-    $livewire->setId('sync-single-transform');
-    $livewire->setName('sync-single-transform');
+    $livewire = SchemaHost::make();
 
     $form = SyncForm::configure(FormSchema::make($livewire)->statePath('data')->operation('create'));
     $form->fill(['connection_id' => $connection->id, 'source' => 'object-0', 'destination' => 'dynamic']);
 
-    $form->getComponentByStatePath('transforms')->getAction('add')->call();
+    $form->getComponentByStatePath('transforms')->getAction('add')->arguments(['block' => 'filter'])->call();
 
     /** @var array<string, array<string, mixed>> $rows */
     $rows = $livewire->data['transforms'];
 
     expect(array_values($rows)[0])->toBe([
-        'key' => 'filter',
-        'params' => ['mode' => 'exclude', 'column' => null, 'value' => null],
+        'type' => 'filter',
+        'data' => ['mode' => 'exclude', 'column' => null, 'value' => null],
     ]);
 });
 
-it('edits the transforms of a mapped field from its row and drops those of unmapped fields', function () {
+it('keeps transform drafts on unmapped fields and persists only mapped transforms', function () {
     $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
     TestCase::makeMetadata($connection, [
         'system' => [
@@ -440,14 +420,7 @@ it('edits the transforms of a mapped field from its row and drops those of unmap
             '_description' => new StringField(length: 100, fixed: false),
         ],
     ]);
-    $livewire = new class extends LivewireComponent implements HasSchemas {
-        use InteractsWithSchemas;
-
-        /** @var array<string, mixed> */
-        public array $data = [];
-    };
-    $livewire->setId('sync-field-transforms-action');
-    $livewire->setName('sync-field-transforms-action');
+    $livewire = SchemaHost::make();
 
     $form = SyncForm::configure(FormSchema::make($livewire)->statePath('data')->operation('create'));
     $form->fill([
@@ -456,24 +429,24 @@ it('edits the transforms of a mapped field from its row and drops those of unmap
         'code' => 'codes_sync',
         'source' => 'object-0',
         'destination' => 'dynamic',
-        'schema' => ['_code' => 'code'],
+        'schema' => MappingState::binding(['_code' => 'code']),
     ]);
     view()->share('errors', new ViewErrorBag);
-    $action = $form->getComponentByStatePath('schema')->getAction('fieldTransforms');
+    $mapping = $form->getComponentByStatePath('schema');
+    $keys = $mapping->getSourceStateKeys();
+    $action = $form->getComponentByStatePath('schema.sources.' . $keys['_code'] . '.transforms')->getAction(
+        'fieldTransforms',
+    );
     $cast = ['key' => 'cast', 'params' => ['type' => 'integer']];
 
-    expect(substr_count($form->toHtml(), 'Transforms (0)'))->toBe(1);
-
-    $action(['source' => '_code'])->data(['transforms' => ['row' => $cast]])->call();
-
-    expect($livewire->data['field_transforms'])
-        ->toBe(['_code' => [$cast]])
-        ->and($action(['source' => '_code'])->getLabel())
-        ->toBe('Transforms (1)')
-        ->and(fn () => $action(['source' => '_gone'])->data(['transforms' => []])->call())
-        ->toThrow(ValidationException::class);
-
-    $livewire->data['field_transforms']['_description'] = [$cast];
+    expect($form->toHtml())->toContain('data-binding-source-settings="_description"');
+    $action(['transform' => 'cast'])->data(['params' => $cast['params']])->call();
+    expect($mapping->getSourceSettings()['_code']['transforms'])->toBe([$cast]);
+    $description = $form->getComponentByStatePath('schema.sources.' . $keys['_description'] . '.transforms')->getAction(
+        'fieldTransforms',
+    );
+    $description(['transform' => 'cast'])->data(['params' => $cast['params']])->call();
+    expect($mapping->getSourceSettings()['_description']['transforms'])->toBe([$cast]);
     $attributes = SyncForm::forCreate($form->getState(), app(DestinationFactory::class), app(TransformFactory::class));
 
     expect($attributes['schema'])
@@ -487,14 +460,7 @@ it('rejects a static value column that duplicates a bound column', function () {
     TestCase::makeMetadata($connection, [
         'system' => ['_description' => new StringField(length: 100, fixed: false)],
     ]);
-    $livewire = new class extends LivewireComponent implements HasSchemas {
-        use InteractsWithSchemas;
-
-        /** @var array<string, mixed> */
-        public array $data = [];
-    };
-    $livewire->setId('sync-dynamic-duplicate-value');
-    $livewire->setName('sync-dynamic-duplicate-value');
+    $livewire = SchemaHost::make();
 
     $form = SyncForm::configure(FormSchema::make($livewire)->statePath('data')->operation('create'));
     $form->fill([
@@ -503,13 +469,13 @@ it('rejects a static value column that duplicates a bound column', function () {
         'code' => 'customers_sync',
         'source' => 'object-0',
         'destination' => 'dynamic',
-        'schema' => ['_description' => 'title', 'title' => ['type' => 'string', 'value' => 'x']],
+        'schema' => MappingState::binding(['_description' => 'title', 'title' => ['type' => 'string', 'value' => 'x']]),
     ]);
 
     expect($form->getState(...))->toThrow(ValidationException::class);
 });
 
-it('rejects a static value that does not fit the destination field', function () {
+it('rejects unsupported static values before persistence', function () {
     $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
     TestCase::makeMetadata($connection, [
         'system' => ['_description' => new StringField(length: 100, fixed: false)],
@@ -522,19 +488,18 @@ it('rejects a static value that does not fit the destination field', function ()
             'code' => 'customers_sync',
             'source' => 'object-0',
             'destination' => 'static:customers',
-            'schema' => [
-                '_description' => 'name',
-                'tax_number' => ['value' => 'x'],
-                'is_active' => ['value' => 'maybe'],
-            ],
+            'schema' => MappingState::mapping([
+                'name' => MappingState::source('_description'),
+                'tax_number' => MappingState::value('x'),
+                'is_active' => MappingState::value('maybe'),
+            ]),
         ],
         app(DestinationFactory::class),
         app(TransformFactory::class),
     ))
         ->toThrow(
             ValidationException::class,
-            __('phpinnacle-ferry::resources.sync.errors.transform_invalid_params', [
-                'transform' => __('phpinnacle-ferry::resources.transform.static_value'),
+            __('phpinnacle-ferry::resources.sync.errors.constant_invalid_value', [
                 'error' => 'The selected value is invalid.',
             ]),
         );
@@ -579,12 +544,12 @@ it('confirms removed and retyped dynamic columns when saving the form', function
 
     if ($change === 'removed') {
         $field = $page->form->getComponentByStatePath('schema');
-        unset($page->data['schema'][$field->getBindingKey('_description')]);
+        unset($page->data['schema']['bindings'][$field->getBindingKey('_description')]);
     }
 
     if ($change === 'renamed') {
         $field = $page->form->getComponentByStatePath('schema');
-        $page->data['schema'][$field->getBindingKey('_description')]['column'] = 'display_name';
+        $page->data['schema']['bindings'][$field->getBindingKey('_description')]['column'] = 'display_name';
     }
 
     $action = $page->saveAction();

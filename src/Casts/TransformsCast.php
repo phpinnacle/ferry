@@ -24,12 +24,11 @@ class TransformsCast implements CastsAttributes, SerializesCastableAttributes
 
     /**
      * @param  list<TransformSetting>  $value
-     * @return list<array<string, mixed>>
+     * @return list<array{key: string, params: array<string, string>}>
      */
     public function serialize(Model $model, string $key, mixed $value, array $attributes): array
     {
-        /** @var list<array<string, mixed>> */
-        return json_decode(json_encode($value, JSON_THROW_ON_ERROR), true, flags: JSON_THROW_ON_ERROR);
+        return array_map(static fn (TransformSetting $setting) => $setting->jsonSerialize(), $value);
     }
 
     /** @param list<TransformSetting> $value */

@@ -34,33 +34,21 @@ class SyncTableManager
 
     public function update(Sync $sync): void
     {
-        /** @var list<FieldMapping> $previousMappings */
-        $previousMappings = $sync->getOriginal('schema');
-        $previous = array_combine(
-            array_map(static fn (FieldMapping $mapping) => $mapping->identity(), $previousMappings),
-            $previousMappings,
-        );
-        $dropped = $sync->droppedColumns();
+        $changes = $sync->schemaChanges();
 
         $sync
             ->getConnection()
             ->getSchemaBuilder()
-            ->table($sync->destination, function (Blueprint $table) use ($sync, $previous, $dropped) {
-                foreach ($dropped as $column) {
+            ->table($sync->destination, function (Blueprint $table) use ($changes) {
+                foreach ($changes['drop'] as $column) {
                     $table->dropColumn($column);
                 }
 
-                foreach ($sync->schema as $mapping) {
-                    $existing = $previous[$mapping->identity()] ?? null;
-
-                    if ($existing === null || $existing->type() !== $mapping->type()) {
-                        $this->column($table, $mapping)->nullable();
-
-                        continue;
-                    }
-
-                    if ($existing->column !== $mapping->column) {
-                        $table->renameColumn($existing->column, $mapping->column);
+                foreach ($changes['columns'] as $change) {
+                    if ($change['from'] === null) {
+                        $this->column($table, $change['mapping'])->nullable();
+                    } else {
+                        $table->renameColumn($change['from'], $change['mapping']->column);
                     }
                 }
             });

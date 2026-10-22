@@ -157,6 +157,12 @@ it('adds, renames and drops columns when the mapping changes', function () use (
         ),
     ]);
 
+    DB::table($sync->destination)->insert([
+        Sync::ID_COLUMN => 'row-1',
+        'external_id' => 'source-1',
+        'title' => 'Original title',
+    ]);
+
     $updated = SyncSchema::fromBindings(
         $object,
         [
@@ -166,11 +172,38 @@ it('adds, renames and drops columns when the mapping changes', function () use (
         $this->registry,
     );
 
-    $sync->update(['schema' => $updated]);
+    $sync->fill(['schema' => $updated]);
+    expect($sync->droppedColumns())->toBe(['title']);
+    $sync->save();
 
+    expect(DB::table($sync->destination)->sole())->toEqual((object) [
+        Sync::ID_COLUMN => 'row-1',
+        'row_id' => 'source-1',
+        'price' => null,
+    ]);
     expect(Schema::getColumnListing($sync->destination))
         ->toContain('row_id', 'price')
         ->not->toContain('external_id', 'title');
+});
+
+it('preserves renamed values when a new mapping reuses the original column name', function () {
+    $field = new StringField(length: 100, fixed: false);
+    $sync = TestCase::makeSync(['schema' => [new FieldMapping('name', 'name', $field)]]);
+    DB::table($sync->destination)->insert([Sync::ID_COLUMN => 'row-1', 'name' => 'Original']);
+
+    $sync->fill(['schema' => [
+        new FieldMapping('name', 'display_name', $field),
+        new FieldMapping('alias', 'name', $field),
+    ]]);
+
+    expect($sync->droppedColumns())->toBe([]);
+    $sync->save();
+
+    expect(DB::table($sync->destination)->sole())->toEqual((object) [
+        Sync::ID_COLUMN => 'row-1',
+        'display_name' => 'Original',
+        'name' => null,
+    ]);
 });
 
 it('changes the column type when a mapped field changes type', function () use ($makeProperty) {

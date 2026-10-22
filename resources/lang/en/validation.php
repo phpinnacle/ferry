@@ -1,6 +1,7 @@
 <?php
 
 return [
+    'transform_input_type' => 'The ":transform" transform does not support its input type.',
     'sync_schema' => [
         'format' => 'The field mapping must be a list of rows',
         'empty' => 'Add at least one field mapping',

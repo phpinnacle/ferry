@@ -6,5 +6,4 @@ enum TransformScope: string
 {
     case Record = 'record';
     case Field = 'field';
-    case Static = 'static';
 }

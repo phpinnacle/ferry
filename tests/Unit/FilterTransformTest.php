@@ -2,18 +2,17 @@
 
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
-use Filament\Schemas\Concerns\InteractsWithSchemas;
-use Filament\Schemas\Contracts\HasSchemas;
 use Filament\Schemas\Schema;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Validator;
-use Livewire\Component as LivewireComponent;
 use PHPinnacle\Ferry\Enums\ColumnType;
 use PHPinnacle\Ferry\Enums\StructureStatus;
 use PHPinnacle\Ferry\Enums\TransformScope;
 use PHPinnacle\Ferry\Models\ConnectionMetadata;
 use PHPinnacle\Ferry\Services\TransformFactory;
+use PHPinnacle\Ferry\Tests\Fixtures\SchemaHost;
 use PHPinnacle\Ferry\Tests\TestCase as FerryTestCase;
+use PHPinnacle\Ferry\Transformations\Filter;
 use PHPinnacle\Ferry\Transforms\FilterTransform;
 use PHPinnacle\Rosetta\Enums\FieldType;
 use PHPinnacle\Rosetta\Enums\MetadataKind;
@@ -22,6 +21,8 @@ use PHPinnacle\Rosetta\Fields\StringField;
 
 require_once __DIR__ . '/../TestCase.php';
 
+require_once __DIR__ . '/../Fixtures/SchemaHost.php';
+
 uses(FerryTestCase::class);
 
 beforeEach(function () {
@@ -29,11 +30,11 @@ beforeEach(function () {
 });
 
 it('is registered as a built-in record transform that reads its own source column', function () {
-    $filter = $this->app->make(TransformFactory::class)->get('filter');
+    $filter = $this->app->make(TransformFactory::class)->handler('filter');
 
     expect($filter)
         ->toBeInstanceOf(FilterTransform::class)
-        ->and($filter->scope)
+        ->and($this->app->make(TransformFactory::class)->get('filter')->scope())
         ->toBe(TransformScope::Record)
         ->and($filter->sourceColumns(['column' => '_folder']))
         ->toBe(['_folder'])
@@ -101,17 +102,10 @@ it('asks for Yes or No on a flag and for free input on other fields', function (
         'position' => 0,
         'revision' => $connection->generation,
     ]);
-    $livewire = new class extends LivewireComponent implements HasSchemas {
-        use InteractsWithSchemas;
-
-        /** @var array<string, mixed> */
-        public array $data = [];
-    };
-    $livewire->setId('filter-transform-test');
-    $livewire->setName('filter-transform-test');
+    $livewire = SchemaHost::make();
     $schema = Schema::make($livewire)
         ->statePath('data')
-        ->components(new FilterTransform()->schema($object))
+        ->components(Filter::make()->getSchema($object))
         ->fill(['column' => $column]);
 
     $values = array_filter(

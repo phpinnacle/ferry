@@ -9,6 +9,9 @@ use PHPinnacle\Ferry\Services\DestinationFactory;
 use PHPinnacle\Ferry\Services\SourceFactory;
 use PHPinnacle\Ferry\Services\TransformFactory;
 use PHPinnacle\Ferry\Tests\TestCase;
+use PHPinnacle\Ferry\Transformations\MaskField;
+use PHPinnacle\Ferry\Transformations\Substring;
+use PHPinnacle\Ferry\Transformations\Trim;
 use PHPinnacle\Rosetta\Data\MetadataProperty;
 use PHPinnacle\Rosetta\Enums\FieldType;
 use PHPinnacle\Rosetta\Enums\PropertyKind;
@@ -156,4 +159,63 @@ it('keeps building the shared source when a synchronization refers to a transfor
 
     expect(new SourceFactory($this->app->make(TransformFactory::class))->source($connection, new Collection([$sync])))
         ->toMatchArray(['column.include.list' => 'public._reference0._idrref']);
+});
+
+it('builds installed string transforms before renames and guards masking against tombstones', function () {
+    $registry = app(TransformFactory::class);
+    $registry->register(Trim::make(), Substring::make(), MaskField::make());
+    $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
+    $object = TestCase::makeMetadata($connection, [
+        'system' => [
+            '_idrref' => new ScalarField(FieldType::Id),
+            '_description' => new StringField(length: 100, fixed: false),
+        ],
+    ]);
+    $sync = TestCase::makeSync([
+        'connection_id' => $connection->id,
+        'source' => 'object-0',
+        'schema' => SyncSchema::fromBindings($object, ['_description' => 'contact'], $registry, transforms: [
+            'fields' => ['_description' => [
+                new TransformSetting('trim'),
+                new TransformSetting('substring', ['start' => '0', 'end' => '5']),
+                new TransformSetting('substring', ['start' => '1', 'end' => '3']),
+                new TransformSetting('mask', ['replacement' => 'hidden']),
+            ]],
+        ]),
+    ]);
+    $config = new DestinationFactory()
+        ->resolve($sync)
+        ->connector($sync, $object, 'test-topic', $registry);
+
+    expect($config['transforms'])
+        ->toBe('unwrap,field_0_0,field_0_1,field_0_2,field_0_3,rename_keys,rename_values')
+        ->and($config['transforms.field_0_0.type'])
+        ->toBe('org.phpinnacle.toblerone.TrimTransform$Value')
+        ->and($config['transforms.field_0_0.fields'])
+        ->toBe('_description')
+        ->and($config['transforms.field_0_1.type'])
+        ->toBe('org.phpinnacle.toblerone.SubstringTransform$Value')
+        ->and($config['transforms.field_0_1.fields'])
+        ->toBe('_description:0:5')
+        ->and($sync->fresh()->schema[0]->transforms)
+        ->toEqual([
+            new TransformSetting('trim'),
+            new TransformSetting('substring', ['start' => '0', 'end' => '5']),
+            new TransformSetting('substring', ['start' => '1', 'end' => '3']),
+            new TransformSetting('mask', ['replacement' => 'hidden']),
+        ])
+        ->and($config['transforms.field_0_2.fields'])
+        ->toBe('_description:1:3')
+        ->and($config['transforms.field_0_3.fields'])
+        ->toBe('_description')
+        ->and($config['transforms.field_0_3.replacement'])
+        ->toBe('hidden')
+        ->and($config['transforms.field_0_3.predicate'])
+        ->toBe('tombstone')
+        ->and($config['transforms.field_0_3.negate'])
+        ->toBe('true')
+        ->and($config['predicates.tombstone.type'])
+        ->toBe('org.apache.kafka.connect.transforms.predicates.RecordIsTombstone')
+        ->and($config['transforms.rename_values.renames'])
+        ->toBe('_idrref:idrref,_description:contact');
 });

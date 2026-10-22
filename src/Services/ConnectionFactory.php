@@ -47,9 +47,11 @@ class ConnectionFactory
         try {
             $connection = $this->make($data);
 
-            $connection->select('select 1');
-
-            $connection->disconnect();
+            try {
+                $connection->select('select 1');
+            } finally {
+                $connection->disconnect();
+            }
 
             return ConnectionTestResult::success(
                 __('phpinnacle-ferry::resources.connection.messages.test_success'),

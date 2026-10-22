@@ -4,6 +4,7 @@ namespace PHPinnacle\Ferry\Tests;
 
 use Illuminate\Support\Facades\DB;
 use PHPinnacle\Ferry\Data\FieldMapping;
+use PHPinnacle\Ferry\FerryPlugin;
 use PHPinnacle\Ferry\Models\Connection;
 use PHPinnacle\Ferry\Models\ConnectionMetadata;
 use PHPinnacle\Ferry\Models\Connector;
@@ -100,6 +101,8 @@ abstract class TestCase extends ApplicationTestCase
     protected function setUp(): void
     {
         parent::setUp();
+
+        FerryPlugin::make();
 
         config([
             'phpinnacle-ferry.connection' => null,

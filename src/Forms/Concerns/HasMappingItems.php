@@ -2,76 +2,66 @@
 
 namespace PHPinnacle\Ferry\Forms\Concerns;
 
-use BackedEnum;
-use Filament\Support\Contracts\HasDescription;
-use Filament\Support\Contracts\HasIcon;
-use Filament\Support\Contracts\HasLabel;
-use Illuminate\Contracts\Support\Htmlable;
-use Stringable;
-use UnitEnum;
+use Closure;
+use PHPinnacle\Ferry\Forms\JsonSchema;
 
 /**
+ * @phpstan-import-type Definition from JsonSchema
+ * @phpstan-import-type Presentation from JsonSchema
  * @phpstan-type MappingBadge array{label: string, color: string}
  * @phpstan-type MappingItem array{
  *     id: string,
- *     label: string|Htmlable,
- *     icon: string|BackedEnum|Htmlable|null,
- *     description: string|Htmlable|null,
- *     type: string|null,
+ *     label: string,
+ *     icon: string|null,
+ *     color: string|null,
+ *     description: string|null,
+ *     type: string,
  *     required: bool,
- *     badges: list<MappingBadge>
+ *     badges: list<MappingBadge>,
+ *     presentation: Presentation
  * }
  */
 trait HasMappingItems
 {
+    /** @var bool|Closure(): bool */
+    protected bool|Closure $isSearchable = false;
+
+    /** @param bool|Closure(): bool $condition */
+    public function searchable(bool|Closure $condition = true): static
+    {
+        $this->isSearchable = $condition;
+
+        return $this;
+    }
+
+    public function isSearchable(): bool
+    {
+        return $this->evaluate($this->isSearchable);
+    }
+
     /**
-     * @param  array<array-key, string|object>  $items
-     * @param  array<array-key, string>  $types
-     * @param  array<array-key, list<string|array{label: string, color?: string}>>  $badges
-     * @param  list<string>  $required
+     * @param Definition $schema
      * @return list<MappingItem>
      */
-    protected function normalizeItems(array $items, array $types, array $badges, array $required = []): array
+    protected function schemaItems(array $schema): array
     {
-        $isList = array_is_list($items);
-        $normalized = [];
-        foreach ($items as $key => $item) {
-            $id = (string) match (true) {
-                !$isList => $key,
-                is_string($item) => $item,
-                $item instanceof BackedEnum => $item->value,
-                $item instanceof UnitEnum => $item->name,
-                default => $key,
-            };
-
-            $itemBadges = [];
-
-            foreach ($badges[$id] ?? [] as $badge) {
-                $itemBadges[] = is_string($badge)
-                    ? ['label' => $badge, 'color' => 'gray']
-                    : [
-                        'label' => $badge['label'],
-                        'color' => $badge['color'] ?? 'gray',
-                    ];
-            }
-            $fallbackLabel = match (true) {
-                is_string($item) => $item,
-                $item instanceof UnitEnum => $item->name,
-                $item instanceof Stringable => (string) $item,
-                default => $id,
-            };
-
-            $normalized[] = [
-                'id' => $id,
-                'label' => $item instanceof HasLabel ? $item->getLabel() ?? $fallbackLabel : $fallbackLabel,
-                'icon' => $item instanceof HasIcon ? $item->getIcon() : null,
-                'description' => $item instanceof HasDescription ? $item->getDescription() : null,
-                'type' => $types[$id] ?? null,
-                'required' => in_array($id, $required, true),
-                'badges' => $itemBadges,
+        $items = [];
+        $schema = JsonSchema::fromArray($schema);
+        $required = $schema->required();
+        foreach ($schema->properties() as $name => $property) {
+            $items[] = [
+                'id' => (string) $name,
+                'label' => $property->annotation('title') ?? (string) $name,
+                'icon' => $property->annotation('x-icon'),
+                'color' => $property->annotation('x-color'),
+                'description' => $property->annotation('description'),
+                'type' => $property->label(),
+                'required' => in_array((string) $name, $required, true),
+                'badges' => $property->badges(),
+                'presentation' => $property->presentation(),
             ];
         }
 
-        return $normalized;
+        return $items;
     }
 }

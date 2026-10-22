@@ -2,11 +2,19 @@
 
 return [
     'connection' => null,
+    'target_host' => null,
     'tenancy' => null,
     //    'tenancy' => [
     //        'model' => 'App\\Models\\Tenant',
     //        'default' => 'App\\Models\\Tenant::DEFAULT'
     //    ],
+    'transforms' => [
+        'cast' => \PHPinnacle\Ferry\Transforms\CastTransform::class,
+        'filter' => \PHPinnacle\Ferry\Transforms\FilterTransform::class,
+        'trim' => \PHPinnacle\Ferry\Transforms\TrimTransform::class,
+        'substring' => \PHPinnacle\Ferry\Transforms\SubstringTransform::class,
+        'mask' => \PHPinnacle\Ferry\Transforms\MaskFieldTransform::class,
+    ],
     'timeout' => 5,
     'structure' => [
         'chunk_size' => 100,

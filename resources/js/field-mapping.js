@@ -1,12 +1,14 @@
-export default function fieldMapping({ state, disabled, inverse = false, requiredTargets = [], multipleTargets = [] }) {
+export default function fieldMapping({ state, disabled, inverse = false, requiredTargets = [], connectionModes, stateKeys = {}, staticDefaults = {} }) {
     let ports;
+    const idsByStateKey = Object.fromEntries(Object.entries(stateKeys).map(([id, key]) => [key, id]));
+    const isStaticValue = (entry) => entry?.kind === 'value';
 
     return {
         state,
         disabled,
         inverse,
         requiredTargets,
-        multipleTargets,
+        connectionModes,
         sourceSearch: '',
         targetSearch: '',
         unmappedOnly: false,
@@ -15,13 +17,12 @@ export default function fieldMapping({ state, disabled, inverse = false, require
         width: 1,
         height: 1,
         announcement: '',
-        connectionError: '',
         observer: null,
 
         init() {
             this.observer = new ResizeObserver(() => this.refresh());
             this.observer.observe(this.$refs.canvas);
-            this.$root.querySelectorAll('[data-mapping-row]').forEach((row) => this.observer.observe(row));
+            this.$root.querySelectorAll('[data-mapping-row], [data-mapping-anchor]').forEach((element) => this.observer.observe(element));
             ['state', 'sourceSearch', 'targetSearch', 'unmappedOnly'].forEach((property) => {
                 this.$watch(property, () => {
                     if (property !== 'state') this.cancel();
@@ -36,40 +37,34 @@ export default function fieldMapping({ state, disabled, inverse = false, require
         },
 
         mappings() {
-            return this.state ?? {};
+            return Object.fromEntries(Object.entries(this.state?.targets ?? {}).map(([key, value]) => [idsByStateKey[key] ?? key, value]));
+        },
+
+        setMappings(mappings) {
+            for (const [target, value] of Object.entries(staticDefaults)) {
+                if (!Object.hasOwn(mappings, target)) mappings[target] = { kind: 'value', value };
+            }
+            this.state = {
+                ...this.state,
+                targets: Object.fromEntries(Object.entries(mappings).map(([id, value]) => [stateKeys[id] ?? id, value])),
+            };
         },
 
         isConstant(target) {
-            const mapped = this.mappings()[target];
-
-            return !this.inverse && typeof mapped === 'object' && mapped !== null && !Array.isArray(mapped);
-        },
-
-        constantValue(target) {
-            return this.mappings()[target]?.value ?? '';
-        },
-
-        setConstant(target, value = '') {
-            if (this.disabled) return;
-
-            this.state = { ...this.withoutConnection(target), [target]: { value } };
-            this.announcement = 'Static value set.';
+            return isStaticValue(this.mappings()[target]);
         },
 
         pairs() {
             return Object.entries(this.mappings()).flatMap(([id, mapped]) => {
-                if (this.isConstant(id)) return [];
-                if (this.inverse) return [{ source: id, target: mapped }];
+                if (isStaticValue(mapped)) return [];
 
-                const sources = this.multipleTargets.includes(id) ? mapped : [mapped];
-                return sources.map((source) => ({ source, target: id }));
+                const sources = Array.isArray(mapped) ? mapped : [mapped];
+                return sources.map((entry) => ({ source: entry.source, target: id }));
             });
         },
 
         mappedTargetCount() {
-            const constants = Object.keys(this.mappings()).filter((id) => this.isConstant(id));
-
-            return new Set([...this.pairs().map(({ target }) => target), ...constants]).size;
+            return Object.keys(this.mappings()).length;
         },
 
         isMapped(side, id) {
@@ -83,13 +78,7 @@ export default function fieldMapping({ state, disabled, inverse = false, require
         },
 
         isDisabled(side, id) {
-            return this.disabled || this.isLocked(side, id);
-        },
-
-        isLocked(side, id) {
-            return side === 'source'
-                ? this.isSourceLocked(id)
-                : this.inverse && !this.multipleTargets.includes(id) && this.isMapped(side, id);
+            return this.disabled || side === 'source' && this.isMapped(side, id);
         },
 
         fieldBindings(side, id) {
@@ -103,11 +92,13 @@ export default function fieldMapping({ state, disabled, inverse = false, require
 
         rowClasses(side, id, required) {
             const mapped = this.isMapped(side, id);
+            const incompatible = this.isIncompatible(side, id);
 
             return {
                 'is-mapped': mapped,
                 'is-selected': this.isSelected(side, id),
-                'is-incompatible': this.isIncompatible(side, id) || this.isLocked(side, id),
+                'is-incompatible': incompatible,
+                'is-compatible': Boolean(this.selected && this.selected.side !== side && !this.isDisabled(side, id) && !incompatible),
                 'is-required-missing': required && !mapped,
                 'has-type-conflict': side === 'target' && this.hasTypeConflict(id),
             };
@@ -118,13 +109,11 @@ export default function fieldMapping({ state, disabled, inverse = false, require
         },
 
         canConnect(source, target) {
-            const sourcePort = this.port('source', source);
-            const targetPort = this.port('target', target);
-            if (!sourcePort || !targetPort) return false;
+            return Boolean(this.port('source', source) && this.port('target', target) && this.connectionModes[source]?.[target]);
+        },
 
-            const sourceType = sourcePort.dataset.type;
-            const targetType = targetPort.dataset.type;
-            return !sourceType || !targetType || sourceType === targetType;
+        targetMode(target) {
+            return Array.isArray(this.mappings()[target]) ? 'item' : 'whole';
         },
 
         isIncompatible(side, id) {
@@ -140,12 +129,8 @@ export default function fieldMapping({ state, disabled, inverse = false, require
             return !this.pairs().some((pair) => pair.target !== target && pair.source === source);
         },
 
-        isSourceLocked(source) {
-            return this.isMapped('source', source);
-        },
-
         hasTypeConflict(target) {
-            return this.pairs().some((pair) => pair.target === target && !this.canConnect(pair.source, target));
+            return this.pairs().some((pair) => pair.target === target && (!this.canConnect(pair.source, target) || this.connectionModes[pair.source]?.[target] !== this.targetMode(target)));
         },
 
         isVisible(side, id, text) {
@@ -155,9 +140,7 @@ export default function fieldMapping({ state, disabled, inverse = false, require
         },
 
         select(side, id) {
-            if (this.isDisabled(side, id)) return;
-
-            this.connectionError = '';
+            if (this.isDisabled(side, id) || this.isIncompatible(side, id)) return;
 
             if (this.selected && this.selected.side !== side) {
                 const source = side === 'source' ? id : this.selected.id;
@@ -173,47 +156,29 @@ export default function fieldMapping({ state, disabled, inverse = false, require
         },
 
         connect(source, target) {
-            if (this.disabled || !this.port('source', source) || !this.port('target', target)) return;
+            if (this.disabled || !this.canConnect(source, target) || !this.isSourceAvailable(source, target)) return;
 
-            if (!this.canConnect(source, target)) {
-                this.connectionError = 'These fields have incompatible types. Choose fields with the same type.';
-                this.announcement = this.connectionError;
-                return;
-            }
+            const multiple = this.connectionModes[source][target] === 'item';
+            const mappings = multiple && this.targetMode(target) === 'item' ? { ...this.mappings() } : this.withoutConnection(target);
 
-            if (!this.isSourceAvailable(source, target)) {
-                this.connectionError = 'This source already has a connection. Disconnect it first or choose another source.';
-                this.announcement = this.connectionError;
-                return;
-            }
-
-            const multiple = this.multipleTargets.includes(target);
-            const mappings = multiple ? { ...this.mappings() } : this.withoutConnection(target);
-
-            if (this.inverse) {
-                mappings[source] = target;
-            } else if (multiple) {
+            const entry = { kind: 'source', source };
+            if (multiple) {
                 const sources = mappings[target] ?? [];
-                mappings[target] = sources.includes(source) ? sources : [...sources, source];
+                mappings[target] = sources.some(entry => entry.source === source) ? sources : [...sources, entry];
             } else {
-                mappings[target] = source;
+                mappings[target] = entry;
             }
 
-            this.state = mappings;
+            this.setMappings(mappings);
             this.selected = null;
-            this.connectionError = '';
             this.announcement = 'Fields connected.';
         },
 
         withoutConnection(target, source = null) {
             const mappings = { ...this.mappings() };
 
-            if (this.inverse) {
-                this.pairs().forEach((pair) => {
-                    if (pair.target === target && (source === null || pair.source === source)) delete mappings[pair.source];
-                });
-            } else if (source !== null && this.multipleTargets.includes(target)) {
-                const remaining = (mappings[target] ?? []).filter((id) => id !== source);
+            if (source !== null && Array.isArray(mappings[target])) {
+                const remaining = mappings[target].filter((entry) => entry.source !== source);
                 if (remaining.length) mappings[target] = remaining;
                 else delete mappings[target];
             } else {
@@ -226,25 +191,24 @@ export default function fieldMapping({ state, disabled, inverse = false, require
         remove(target, source = null) {
             if (this.disabled) return;
 
-            this.state = this.withoutConnection(target, source);
+            this.setMappings(this.withoutConnection(target, source));
             this.announcement = 'Connection removed.';
         },
 
         cancel() {
             this.selected = null;
-            this.connectionError = '';
         },
 
         port(side, id) {
-            ports ??= Array.from(this.$root.querySelectorAll('[data-mapping-port]'));
+            ports ??= new Map(Array.from(this.$root.querySelectorAll('[data-mapping-port]'), port => [
+                `${port.dataset.side}:${port.dataset.id}`, port,
+            ]));
 
-            return ports.find((port) => {
-                return port.dataset.side === side && port.dataset.id === id;
-            });
+            return ports.get(`${side}:${id}`);
         },
 
         point(port, canvas) {
-            const rect = port?.getBoundingClientRect();
+            const rect = port?.querySelector('[data-mapping-anchor]').getBoundingClientRect();
             if (!rect || rect.width === 0 || rect.height === 0) return null;
 
             return {

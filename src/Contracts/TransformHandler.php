@@ -2,23 +2,11 @@
 
 namespace PHPinnacle\Ferry\Contracts;
 
-use Filament\Forms\Components\Field;
-use Filament\Support\Contracts\HasLabel;
 use PHPinnacle\Ferry\Enums\ColumnType;
-use PHPinnacle\Ferry\Enums\TransformScope;
 use PHPinnacle\Ferry\Models\ConnectionMetadata;
 
-interface Transform extends HasLabel
+interface TransformHandler
 {
-    public string $key { get; }
-
-    public TransformScope $scope { get; }
-
-    public function getLabel(): string;
-
-    /** @return array<Field> */
-    public function schema(?ConnectionMetadata $object): array;
-
     /**
      * @param array<string, string> $params
      * @return array<string, string>

@@ -25,16 +25,19 @@ class FieldBindingForm extends Component implements HasActions, HasSchemas
 
     public bool $complex = false;
 
+    public bool $sourceSettings = false;
+
     /** @param array<string, mixed> $bindings */
-    public function mount(bool $complex = false, array $bindings = []): void
+    public function mount(bool $complex = false, array $bindings = [], bool $sourceSettings = false): void
     {
         $this->complex = $complex;
-        $this->form->fill(['bindings' => $bindings]);
+        $this->sourceSettings = $sourceSettings;
+        $this->form->fill(['bindings' => ['sources' => [], 'bindings' => $bindings]]);
     }
 
     public function form(Schema $schema): Schema
     {
-        $field = FieldBinding::make('bindings')->options(CustomerMappingField::cases());
+        $field = FieldBinding::make('bindings')->jsonSchema(CustomerMappingField::jsonSchema());
 
         if ($this->complex) {
             $field->schema([
@@ -43,6 +46,13 @@ class FieldBindingForm extends Component implements HasActions, HasSchemas
             ]);
         } else {
             $field->simple(TextInput::make('destination')->required());
+        }
+
+        if ($this->sourceSettings) {
+            $field->sourceSettings(fn (string $source) => [
+                TextInput::make('alias')->default($source)->required(),
+                Toggle::make('enabled')->default(true),
+            ]);
         }
 
         return $schema->statePath('data')->components([$field]);

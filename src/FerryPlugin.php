@@ -4,10 +4,11 @@ namespace PHPinnacle\Ferry;
 
 use Filament\Contracts\Plugin;
 use Filament\Panel;
-use PHPinnacle\Ferry\Contracts\Transform;
 use PHPinnacle\Ferry\Destinations\StaticDestination;
 use PHPinnacle\Ferry\Services\DestinationFactory;
 use PHPinnacle\Ferry\Services\TransformFactory;
+use PHPinnacle\Ferry\Transformations\Cast;
+use PHPinnacle\Ferry\Transformations\Filter;
 
 class FerryPlugin implements Plugin
 {
@@ -16,7 +17,9 @@ class FerryPlugin implements Plugin
     public function __construct(
         private readonly DestinationFactory $destinations,
         private readonly TransformFactory $transforms,
-    ) {}
+    ) {
+        $this->transforms->register(Cast::make(), Filter::make());
+    }
 
     public static function get(): static
     {
@@ -41,7 +44,7 @@ class FerryPlugin implements Plugin
         return $this;
     }
 
-    public function transforms(Transform ...$transforms): static
+    public function transforms(Transformation ...$transforms): static
     {
         $this->transforms->register(...$transforms);
 

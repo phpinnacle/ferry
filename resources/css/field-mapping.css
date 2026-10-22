@@ -4,11 +4,95 @@
 
 .field-mapping-row {
     z-index: 1;
-    transition: border-color 120ms, background-color 120ms;
+    transition: border-color 120ms, background-color 120ms, opacity 120ms;
+}
+
+.field-mapping-row:has([aria-expanded="true"]) {
+    z-index: 2;
+}
+
+.ferry-transform {
+    display: inline-flex;
+    max-width: 100%;
+    align-items: center;
+    gap: 0.1875rem;
+    padding: 0.1875rem;
+    border: 1px solid color-mix(in oklab, var(--color-600, var(--gray-600)) 20%, transparent);
+    border-radius: 0.625rem;
+    background: var(--color-50, var(--gray-50));
+    color: var(--text, var(--gray-600));
+    font-size: 0.8125rem;
+    font-weight: 500;
+    line-height: 1.25rem;
+}
+
+.ferry-transform-label {
+    display: inline-flex;
+    min-width: 0;
+    min-height: 1.625rem;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.125rem 0.375rem;
+    border-radius: 0.375rem;
+    cursor: grab;
+}
+
+.ferry-transform-label:active {
+    cursor: grabbing;
+}
+
+.ferry-transform-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ferry-transform-remove {
+    display: inline-flex;
+    width: 1.5rem;
+    height: 1.5rem;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    border-radius: 0.375rem;
+    background: color-mix(in oklab, currentColor 8%, transparent);
+    cursor: pointer;
+}
+
+.ferry-transform-remove:not(:disabled):hover,
+button.ferry-transform-label:not(:disabled):hover {
+    background: color-mix(in oklab, currentColor 14%, transparent);
+}
+
+.ferry-transform-label:focus-visible,
+.ferry-transform-remove:focus-visible {
+    outline: 2px solid currentColor;
+    outline-offset: 2px;
+}
+
+.ferry-transform .fi-icon {
+    width: 1rem;
+    height: 1rem;
+    flex-shrink: 0;
+}
+
+.ferry-transform.is-disabled {
+    opacity: 0.6;
+}
+
+.ferry-transform.is-disabled .ferry-transform-label,
+.ferry-transform-remove:disabled {
+    cursor: default;
+}
+
+.dark .ferry-transform {
+    border-color: color-mix(in oklab, var(--color-400, var(--gray-400)) 25%, transparent);
+    background: color-mix(in oklab, var(--color-400, var(--gray-400)) 10%, transparent);
+    color: var(--dark-text, var(--gray-200));
 }
 
 .field-mapping-row.is-mapped {
-    border-color: oklch(91% 0.096 180.426);
+    border-color: var(--primary-300);
 }
 
 .field-mapping-row.is-selected {
@@ -18,11 +102,17 @@
 }
 
 .field-mapping-row.is-required-missing {
-    border-color: oklch(82.8% 0.189 84.429);
+    border-color: var(--warning-300);
+}
+
+.field-mapping-row.is-compatible {
+    border-color: var(--primary-500);
+    background: var(--primary-50);
 }
 
 .field-mapping-row.is-incompatible {
-    opacity: 0.45;
+    border-color: var(--gray-200);
+    opacity: 0.4;
 }
 
 .field-mapping-row.has-warning {
@@ -76,8 +166,7 @@
     left: -1rem;
 }
 
-.field-mapping-port::after {
-    content: '';
+.field-mapping-anchor {
     width: 0.875rem;
     height: 0.875rem;
     border: 2px solid var(--gray-400);
@@ -85,14 +174,51 @@
     background: white;
 }
 
-.is-mapped .field-mapping-port::after {
-    border-color: oklch(60% 0.118 184.704);
-    background: oklch(60% 0.118 184.704);
+.is-mapped .field-mapping-anchor {
+    border-color: var(--primary-600);
+    background: var(--primary-600);
 }
 
-.is-selected .field-mapping-port::after {
+.is-selected .field-mapping-anchor {
     border-color: var(--primary-500);
     background: var(--primary-500);
+}
+
+.field-mapping-available-icon,
+.field-mapping-unavailable-icon {
+    display: none;
+    width: 0.75rem;
+    height: 0.75rem;
+}
+
+.is-compatible .field-mapping-anchor,
+.is-incompatible .field-mapping-anchor {
+    display: flex;
+    width: 1.25rem;
+    height: 1.25rem;
+    align-items: center;
+    justify-content: center;
+}
+
+.is-compatible .field-mapping-anchor {
+    border-color: var(--primary-600);
+    background: var(--primary-600);
+    color: white;
+}
+
+.is-incompatible .field-mapping-anchor {
+    border-color: var(--gray-400);
+    background: white;
+    color: var(--gray-600);
+}
+
+.is-compatible .field-mapping-available-icon,
+.is-incompatible .field-mapping-unavailable-icon {
+    display: block;
+}
+
+.is-connecting .field-mapping-line {
+    opacity: 0.2;
 }
 
 .field-mapping-port:focus-visible {
@@ -110,7 +236,7 @@
 }
 
 .field-mapping-line {
-    stroke: oklch(60% 0.118 184.704);
+    stroke: var(--primary-600);
     fill: none;
     stroke-width: 2;
 }
@@ -125,12 +251,12 @@
 
 .field-mapping-hit:hover,
 .field-mapping-hit:focus-visible {
-    stroke: color-mix(in oklab, oklch(70.4% 0.14 182.503) 20%, transparent);
+    stroke: color-mix(in oklab, var(--primary-500) 20%, transparent);
     outline: none;
 }
 
 .dark .field-mapping-row.is-mapped {
-    border-color: oklch(43.7% 0.078 188.216);
+    border-color: var(--primary-700);
 }
 
 .dark .field-mapping-row.is-selected {
@@ -139,7 +265,7 @@
 }
 
 .dark .field-mapping-row.is-required-missing {
-    border-color: oklch(66.6% 0.179 58.318);
+    border-color: var(--warning-600);
 }
 
 .dark .field-mapping-row.has-warning {
@@ -155,27 +281,309 @@
     border-color: var(--danger-400);
 }
 
-.dark .field-mapping-port::after {
+.dark .field-mapping-anchor {
     border-color: var(--gray-500);
     background: var(--gray-900);
 }
 
-.dark .is-mapped .field-mapping-port::after {
-    border-color: oklch(77.7% 0.152 181.912);
-    background: oklch(77.7% 0.152 181.912);
+.dark .is-mapped .field-mapping-anchor {
+    border-color: var(--primary-400);
+    background: var(--primary-400);
 }
 
-.dark .is-selected .field-mapping-port::after {
+.dark .is-selected .field-mapping-anchor {
     border-color: var(--primary-500);
     background: var(--primary-500);
 }
 
 .dark .field-mapping-line {
-    stroke: oklch(77.7% 0.152 181.912);
+    stroke: var(--primary-400);
+}
+
+.dark .field-mapping-row.is-compatible {
+    border-color: var(--primary-500);
+    background: color-mix(in oklab, var(--primary-500) 10%, transparent);
+}
+
+.dark .field-mapping-row.is-incompatible {
+    border-color: var(--gray-700);
+}
+
+.dark .is-compatible .field-mapping-anchor {
+    border-color: var(--primary-400);
+    background: var(--primary-400);
+    color: var(--gray-950);
+}
+
+.dark .is-incompatible .field-mapping-anchor {
+    border-color: var(--gray-500);
+    background: var(--gray-900);
+    color: var(--gray-400);
 }
 
 @media (prefers-reduced-motion: reduce) {
     .field-mapping-row {
         transition: none;
     }
+}
+.ferry-mapping-item {
+    display: grid;
+    flex: 1;
+    min-width: 0;
+    gap: 0.25rem;
+    text-align: start;
+}
+
+.ferry-mapping-heading {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) fit-content(60%);
+    min-width: 0;
+    min-height: 1.5rem;
+    align-items: start;
+    gap: 0.25rem;
+}
+
+.ferry-mapping-item.has-icon > .ferry-mapping-heading {
+    grid-template-columns: 1.25rem minmax(0, 1fr) fit-content(60%);
+}
+
+.ferry-mapping-icon {
+    display: inline-flex;
+    width: 1.25rem;
+    height: 1.5rem;
+    align-items: center;
+    justify-content: center;
+    color: var(--mapping-field-color, var(--gray-500));
+}
+
+.ferry-mapping-icon > svg {
+    width: 1rem;
+    height: 1rem;
+}
+
+.ferry-mapping-names {
+    display: flex;
+    min-width: 0;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.25rem 0.375rem;
+}
+
+.ferry-mapping-name {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    font-family: ui-monospace, monospace;
+    font-size: 0.875rem;
+    line-height: 1.5rem;
+    color: var(--mapping-field-color, var(--gray-950));
+}
+
+.ferry-mapping-name.has-title {
+    font-family: inherit;
+    font-weight: 500;
+}
+
+.ferry-mapping-property,
+.ferry-mapping-scope {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    font-family: ui-monospace, monospace;
+    font-size: 0.75rem;
+    line-height: 1.25rem;
+    color: var(--gray-500);
+}
+
+.ferry-mapping-required {
+    flex-shrink: 0;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--danger-600);
+}
+
+.ferry-mapping-types {
+    display: flex;
+    min-width: 0;
+    min-height: 1.5rem;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: end;
+    gap: 0.25rem;
+}
+
+.ferry-mapping-type {
+    display: inline-flex;
+    min-width: 0;
+    align-items: center;
+    padding-inline: 0.25rem;
+    border: 1px solid var(--gray-200);
+    border-radius: 0.25rem;
+    background: var(--gray-50);
+    color: var(--primary-600);
+    font-family: ui-monospace, monospace;
+    font-size: 0.6875rem;
+    line-height: 1rem;
+    overflow-wrap: anywhere;
+}
+
+.ferry-mapping-type.is-null {
+    color: var(--gray-500);
+}
+
+.ferry-mapping-constraint {
+    display: inline-flex;
+    min-width: 0;
+    max-width: 100%;
+    min-height: 1.125rem;
+    align-items: center;
+    gap: 0.25rem;
+    border-radius: 0.25rem;
+    color: var(--gray-500);
+    font-family: ui-monospace, monospace;
+    font-size: 0.6875rem;
+    line-height: 1rem;
+}
+
+.ferry-mapping-constraint > svg {
+    width: 0.875rem;
+    height: 0.875rem;
+    flex-shrink: 0;
+}
+
+.ferry-mapping-constraint.is-unique {
+    color: var(--warning-600);
+}
+
+.ferry-mapping-constraint-value {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ferry-mapping-constraint.is-pattern {
+    max-width: 16ch;
+}
+
+.ferry-mapping-details .ferry-mapping-constraint.is-pattern {
+    max-width: 100%;
+}
+
+.ferry-mapping-details .ferry-mapping-constraint-value {
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+.ferry-mapping-details-toggle {
+    display: inline-flex;
+    width: 1.5rem;
+    height: 1.5rem;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    border-radius: 0.25rem;
+    color: var(--gray-500);
+    pointer-events: auto;
+    cursor: pointer;
+}
+
+.ferry-mapping-details-toggle > svg {
+    width: 0.875rem;
+    height: 0.875rem;
+}
+
+.ferry-mapping-details-toggle[aria-expanded="true"] > svg {
+    transform: rotate(180deg);
+}
+
+.ferry-mapping-details-toggle:hover {
+    background: var(--gray-100);
+}
+
+.ferry-mapping-details-toggle:focus-visible {
+    outline: 2px solid var(--primary-500);
+    outline-offset: 2px;
+}
+
+.ferry-mapping-details {
+    display: grid;
+    min-width: 0;
+    gap: 0.5rem;
+    margin-top: 0.25rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid var(--gray-200);
+}
+
+.ferry-mapping-details-row {
+    display: grid;
+    min-width: 0;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+    gap: 0.5rem;
+    align-items: start;
+}
+
+.ferry-mapping-details-label,
+.ferry-mapping-details-values {
+    display: flex;
+    min-width: 0;
+    flex-wrap: wrap;
+    gap: 0.25rem 0.5rem;
+    align-items: center;
+}
+
+.ferry-mapping-details-label {
+    font-size: 0.75rem;
+    line-height: 1.25rem;
+    color: var(--gray-500);
+    overflow-wrap: anywhere;
+}
+
+.ferry-mapping-description {
+    font-size: 0.75rem;
+    line-height: 1.25rem;
+    color: var(--gray-500);
+    overflow-wrap: anywhere;
+}
+
+.ferry-mapping-item.has-icon > .ferry-mapping-description {
+    margin-inline-start: 1.5rem;
+}
+
+.dark .ferry-mapping-icon {
+    color: var(--mapping-field-color-dark, var(--gray-400));
+}
+
+.dark .ferry-mapping-name {
+    color: var(--mapping-field-color-dark, var(--gray-100));
+}
+
+.dark .ferry-mapping-type {
+    border-color: var(--gray-700);
+    background: var(--gray-800);
+    color: var(--primary-400);
+}
+
+.dark .ferry-mapping-property,
+.dark .ferry-mapping-scope,
+.dark .ferry-mapping-details-label,
+.dark .ferry-mapping-details-toggle,
+.dark .ferry-mapping-constraint,
+.dark .ferry-mapping-description,
+.dark .ferry-mapping-type.is-null {
+    color: var(--gray-400);
+}
+
+.dark .ferry-mapping-required {
+    color: var(--danger-400);
+}
+
+.dark .ferry-mapping-constraint.is-unique {
+    color: var(--warning-400);
+}
+
+.dark .ferry-mapping-details {
+    border-color: var(--gray-700);
+}
+
+.dark .ferry-mapping-details-toggle:hover {
+    background: var(--gray-800);
 }

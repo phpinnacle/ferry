@@ -4,41 +4,33 @@ All notable changes to `ferry` will be documented in this file.
 
 ## Unreleased
 
-- Kafka Connect connector management over `phpinnacle/franz`: one Debezium source connector per connection, one JDBC sink connector per synchronization
-- `ConnectorStatus` of both connectors stored on the connection and the synchronization and surfaced in the Filament tables
-- activate, pause, restart and status actions for synchronizations, and a source connector status action for connections
-- `phpinnacle-ferry.kafka_connect` configuration block
-- connector actions require the `update` permission of `SyncPolicy`
-- the shared source connector keeps capturing the table of a paused synchronization, so no change is lost while its sink is stopped
-- each sink restricts itself to its own mapped columns with `fields.whitelist`
-- a failed Kafka Connect task is reported as a connector failure together with its trace
-- `is_paused` distinguishes an administrator pause from an automatic one, and editing a synchronization no longer resumes an administrator pause
-- destination tables are created, altered and dropped from the `Sync` model lifecycle, so commands, jobs and seeders behave like the panel
-- an ad hoc incremental snapshot is requested through Debezium's Kafka signal channel whenever activation captures a table that the shared source connector was not already tracking, so its existing rows are not silently missed
-- `FieldBinding` texts are translatable
-- `StaticDestination` definition and a registry exposed through `FerryPlugin::destinations()`, so a synchronization can fill an application-owned table instead of a generated one; only declared fields of a compatible logical type can be mapped, every required field must be mapped, and the table is never created, altered or dropped
-- `DestinationFactory::resolve($sync)` selects a registered `StaticDestination` or a generated `DynamicDestination`; both independently implement the `Destination` interface and compose `JdbcConnectorConfig` to build their sink configuration
-- the sink of a static synchronization targets the destination's own database connection and primary key, writes configured fixed values through `InsertField` transforms and never propagates source deletions
-- the synchronization form offers dynamic and registered static destinations in a single select: a dynamic synchronization binds every mappable 1C field, listed with its human-readable title and technical column, to a column name with `FieldBinding`, while a static one connects source fields to the declared destination fields with `FieldMapping`, which shows their logical types and required marks and accepts only compatible types
-- `FieldMapping` texts are translatable
-- the source object select lists references first and obsolete objects last, with titles sorted case-insensitively
-- `ConnectionMetadata::displayTitle()` and `ConnectionMetadata::mappableFields()` expose the presentation of a 1C object and of its mappable fields
-- `ColumnType::Reference` separates 1C references and identifiers from plain strings, and the source connector emits binary keys as hex through `binary.handling.mode`
-- a synchronization whose static destination is no longer registered is paused by the next structure review and reported with an out-of-date mapping instead of failing the review
-- `Transform` contract with record and field scopes and a registry exposed through `FerryPlugin::transforms()`; the built-in cast and static value transforms are registered through the same `TransformFactory`
-- `FieldMapping::constants()` and `FieldBinding::constants()` let a destination receive a static value instead of a source field; the synchronization form offers them for static destination fields of a castable type and, with a column name, type and value row, for dynamic synchronizations, and keeps them when the form is filled again
-- record transforms are stored on `syncs.transforms` in the administrator's order and field transforms on `FieldMapping`; a mapping without a source is a static value; `SyncSchema` validates their parameters and checks the resulting type against the destination; `Destination::connector()` receives the `TransformFactory` and `JdbcConnectorConfig` places the transforms around the sink renames
-- `Transform::schema($object)` describes the parameter form of a transform for the selected object; the synchronization form offers one ordered Transforms block above the field mapping, where the chosen transform decides whether a 1C field is asked for and which parameters follow, keeps the rows when the form is filled again and checks a static connection with the type a field has after its transforms
-- built-in `FilterTransform` keeps or drops records by the value of a 1C field through Confluent's `Filter$Value`; `Transform::sourceColumns()` lets a transform request source columns that no mapping uses, the filter skips tombstone records through the Kafka `RecordIsTombstone` predicate, and `ColumnType::valueRule()` is shared by the value checks of transforms
-- `Transform::normalize()` completes the parameters of a record transform from the selected object when a synchronization is saved, so the filter takes the type of its column from the object's metadata; `SyncSchema::fromTransforms()` requires the columns a transform reads to exist in the object, and the form resets the transforms when the connection or the object changes
-- `TransformScope::Static` separates the static value, which fills a destination field without a source field, from field transforms, so the Transforms block offers exactly the record and field transforms
-- `SyncSchema::fromBindings()` takes the `TransformFactory` as its third argument and `SourceFactory` requires it, so neither falls back to an empty registry
-- `ConnectorManager::activate()` always pushes and resumes both connectors, while saving a synchronization calls it with `refreshSource: false`, so the shared source connector is pushed only when its configuration differs from the stored one and only the own sink connector is updated otherwise
-- `TransformFactory::appliesTo()` lets the structure review pause, and the activation refuse, a synchronization whose transforms are no longer registered or whose filter column disappeared or changed its type; a transform that is no longer registered no longer breaks the source connector of the other synchronizations
-- the filter supports string, reference and boolean fields, and a cast of a 1C number accepts only a string result, because the source connector emits numbers as Kafka Connect decimals
-- transform validation errors are reported under the Transforms block with the transform label, and an empty static value is rejected
-- record transforms are configured in their own **Record transforms** block and field transforms from a **Transforms (N)** button on every mapped field, provided by the new `extraSourceActions()` of `FieldBinding` and `FieldMapping`; the form keeps field transforms in `field_transforms` and drops those of unmapped fields
-- a transform block that has a single registered transform preselects it for a new row and hides its select, so the administrator goes straight to its parameters
+- Array-card chevrons expand internal item types and their scoped constraints. Field-level limits stay in the heading; item details start collapsed and remain readable independently of connection selection, including on connected sources.
+
+- Schema-style mapping and binding cards with technical property names, required markers, colored icons and titles, format/enum/null type chips, and automatic constraint hints. Source hints follow the effective output schema.
+
+- Repeated casts retain their final output type for menus, validation, and connections. Mapping source badges show only that final type; numeric sources support every available cast target.
+
+- Shared synchronization form composition, direct transform-setting serialization, and indexed mapping ports. Binding validation rejects static keys that would overwrite another entry; mixed string/array schemas retain array item type and length constraints. Static synchronization connection choices preserve the same logical types required on save.
+
+- Kafka Connect management through `phpinnacle/franz`: one Debezium PostgreSQL source per connection and one JDBC sink per synchronization, with encrypted applied configurations and connector/task status.
+- Synchronization activation, pause, restart, and status actions; lifecycle actions respect synchronization update permissions.
+- Shared source capture includes active and paused synchronizations. Sinks whitelist their own columns, and activation requests incremental snapshots when capture expands to new tables or columns.
+- Static destinations registered through `FerryPlugin::destinations()`, with declared fields, required mappings, their own connection and primary key, and fixed values. Ferry never changes their tables or propagates source deletions.
+- Model-owned destination table lifecycle and schema change planning, shared by data-loss confirmation and transactional updates. Renames preserve stored values; removals and type changes require confirmation.
+- Source structure preparation ignores superseded runs, imports repeated chunks without duplicates, and preserves the published snapshot when a refresh fails.
+- Immutable `Transformation` descriptions with Filament labels, icons, colors, descriptions, and settings forms, registered through `FerryPlugin::transforms()`. Runtime `TransformHandler` implementations resolve separately from `phpinnacle-ferry.transforms` by key and can run without editor registrations.
+- Shared `sourceSettings()` schemas on `FieldMapping` and `FieldBinding`, with independent native Filament settings for every source. Mapping state separates `sources` from `targets`; binding state separates `sources` from `bindings`. The standalone `FieldTransforms` field owns transformation editing; the mapping components no longer store or validate transformation formats.
+- Ordered record transforms in a Filament Builder and per-source add menus with draggable field transform chips. Every chip has a separate remove button; configurable labels open individual settings modals without deletion actions. Transforms without settings are added immediately. Controls are available before connecting or binding; field and record transforms can repeat with independent settings, ordering, and removal.
+- Built-in cast and record filter, plus optional trim, substring, and mask editor descriptions. Transform validation uses source metadata and resulting destination types; filters request additional source columns and preserve tombstones.
+- Field transform menus use `inputSchema()` and the current chain's output to offer compatible additions. Immutable `Transformation::inputTypes()` and `outputType()` declarations own editor type behavior; native description forms validate parameters without resolving execution handlers. Existing chips remain editable and removable after incompatible edits or reordering; synchronization saving retains handler-based validation.
+- All mapping destinations accept static values; inline editors are selected by type through `staticForms()`, without a destination allowlist. Static values stored separately as `FieldMapping::constant` with a typed `StaticValue`, compiled to insertion and cast transforms after field renames.
+- JSON Schema-based `FieldMapping` with destination-keyed source/value entries, whole-array or individual-item connections, output type checks, inline Filament static editors, and inverse layout.
+- Configurable `SchemaCompatibility` checks for directional formats and string length bounds, including composed schemas and array items. `canConnectUsing()` adds application restrictions shared by candidate availability and submission validation.
+- `FieldBinding` supports simple strings or custom child schemas, separate static values, and source actions. Both fields support search, containment, compact spacing, metadata, and warnings.
+- Unavailable mapping candidates ignore clicks without changing mappings or showing errors; existing incompatible connections remain visible.
+- Source object titles and fields come from `ConnectionMetadata`; references are distinct logical column types and `ColumnType::jsonSchema()` supplies editor types and formats.
+- Connection tests always disconnect, including after a failed query, and return sanitized error messages.
+- Tests exercise import, persistence, connector, validation, and editing outcomes with shared schema fixtures, independently runnable PHP and JavaScript suites, and no live Kafka dependency.
 
 ## 1.0.0 - 202X-XX-XX
 

@@ -2,7 +2,6 @@
 
 namespace PHPinnacle\Ferry\Services;
 
-use PHPinnacle\Ferry\Enums\StructureStatus;
 use PHPinnacle\Ferry\Models\Connection;
 use PHPinnacle\Ferry\Models\ConnectionMetadata;
 use PHPinnacle\Rosetta\Connections\PdoConnection;
@@ -128,10 +127,7 @@ class StructureImporter
         $connection
             ->getConnection()
             ->transaction(function () use ($metadata, $connection, $offset) {
-                $currentConnection = Connection::query()
-                    ->whereKey($connection->id)
-                    ->where('status', StructureStatus::Preparing)
-                    ->where('run_id', $connection->run_id)
+                $currentConnection = Connection::structureRun($connection->id, $connection->run_id)
                     ->lockForUpdate()
                     ->first();
 

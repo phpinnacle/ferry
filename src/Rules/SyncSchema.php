@@ -5,10 +5,12 @@ namespace PHPinnacle\Ferry\Rules;
 use Closure;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
-use PHPinnacle\Ferry\Contracts\Transform;
+use PHPinnacle\Ferry\Contracts\TransformHandler;
 use PHPinnacle\Ferry\Data\DestinationField;
 use PHPinnacle\Ferry\Data\FieldMapping;
+use PHPinnacle\Ferry\Data\StaticValue;
 use PHPinnacle\Ferry\Data\TransformSetting;
 use PHPinnacle\Ferry\Destinations\StaticDestination;
 use PHPinnacle\Ferry\Enums\ColumnType;
@@ -16,7 +18,6 @@ use PHPinnacle\Ferry\Enums\TransformScope;
 use PHPinnacle\Ferry\Models\ConnectionMetadata;
 use PHPinnacle\Ferry\Models\Sync;
 use PHPinnacle\Ferry\Services\TransformFactory;
-use PHPinnacle\Ferry\Transforms\StaticValueTransform;
 
 readonly class SyncSchema implements ValidationRule
 {
@@ -137,7 +138,7 @@ readonly class SyncSchema implements ValidationRule
                 if ($type === null) {
                     throw ValidationException::withMessages([
                         'data.transforms' => __('phpinnacle-ferry::resources.sync.errors.transform_field_unsupported', [
-                            'transform' => $transform->getLabel(),
+                            'transform' => $registry->getOrFail($setting->key)->getLabel(),
                             'field' => $source,
                         ]),
                     ]);
@@ -154,8 +155,24 @@ readonly class SyncSchema implements ValidationRule
 
         foreach ($transforms['constants'] ?? [] as $column => $params) {
             $column = (string) $column;
-            $setting = new TransformSetting(StaticValueTransform::KEY, $params);
-            $type = self::transform($setting, TransformScope::Static, $registry)->resultType(null, $params);
+            $validator = Validator::make($params, [
+                'type' => ['required', Rule::enum(ColumnType::class)->only(ColumnType::castable())],
+                'value' => [
+                    'required',
+                    'string',
+                    (ColumnType::tryFrom($params['type'] ?? '') ?? ColumnType::String)->valueRule(),
+                ],
+            ]);
+
+            if ($validator->fails()) {
+                throw ValidationException::withMessages([
+                    'data.schema' => __('phpinnacle-ferry::resources.sync.errors.constant_invalid_value', [
+                        'error' => $validator->errors()->first(),
+                    ]),
+                ]);
+            }
+
+            $type = ColumnType::from($params['type']);
 
             if (in_array($column, array_column($mappings, 'column'), true)) {
                 throw ValidationException::withMessages([
@@ -169,7 +186,7 @@ readonly class SyncSchema implements ValidationRule
                 self::assertCompatibleWithDestination($fields, $column, $type);
             }
 
-            $mappings[] = new FieldMapping(null, $column, null, $type, [$setting]);
+            $mappings[] = new FieldMapping(null, $column, null, constant: new StaticValue($type, $params['value']));
         }
 
         if ($destination !== null) {
@@ -193,7 +210,7 @@ readonly class SyncSchema implements ValidationRule
         foreach ($settings as $setting) {
             $setting = new TransformSetting(
                 $setting->key,
-                $registry->getOrFail($setting->key)->normalize($setting->params, $object),
+                $registry->handlerOrFail($setting->key)->normalize($setting->params, $object),
             );
             $transform = self::transform($setting, TransformScope::Record, $registry);
 
@@ -217,14 +234,14 @@ readonly class SyncSchema implements ValidationRule
         TransformSetting $setting,
         TransformScope $scope,
         TransformFactory $registry,
-    ): Transform {
-        $transform = $registry->getOrFail($setting->key);
-        $attribute = $scope === TransformScope::Static ? 'data.schema' : 'data.transforms';
+    ): TransformHandler {
+        $definition = $registry->getOrFail($setting->key);
+        $transform = $registry->handlerOrFail($setting->key);
 
-        if ($transform->scope !== $scope) {
+        if ($definition->scope() !== $scope) {
             throw ValidationException::withMessages([
-                $attribute => __('phpinnacle-ferry::resources.sync.errors.transform_scope_mismatch', [
-                    'transform' => $transform->getLabel(),
+                'data.transforms' => __('phpinnacle-ferry::resources.sync.errors.transform_scope_mismatch', [
+                    'transform' => $definition->getLabel(),
                 ]),
             ]);
         }
@@ -233,8 +250,8 @@ readonly class SyncSchema implements ValidationRule
 
         if ($validator->fails()) {
             throw ValidationException::withMessages([
-                $attribute => __('phpinnacle-ferry::resources.sync.errors.transform_invalid_params', [
-                    'transform' => $transform->getLabel(),
+                'data.transforms' => __('phpinnacle-ferry::resources.sync.errors.transform_invalid_params', [
+                    'transform' => $definition->getLabel(),
                     'error' => $validator->errors()->first(),
                 ]),
             ]);
