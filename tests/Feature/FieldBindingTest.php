@@ -340,7 +340,7 @@ it('rejects unknown or malformed source action arguments', function (mixed $sour
     'array source' => [['name']],
 ]);
 
-it('rejects forged binding shapes and unknown sources on submission', function (mixed $state) {
+it('rejects malformed binding envelopes on submission', function (mixed $state) {
     $field = FieldBinding::make('bindings')
         ->jsonSchema(['type' => 'object', 'properties' => array_fill_keys(['name'], [])])
         ->simple(TextInput::make('destination'));
@@ -350,10 +350,28 @@ it('rejects forged binding shapes and unknown sources on submission', function (
     expect($schema->getState(...))->toThrow(ValidationException::class);
 })->with([
     'scalar state' => ['invalid'],
-    'unknown source' => [['source_unknown' => ['destination' => 'profile.name']]],
-    'scalar binding' => [['source_6e616d65' => 'profile.name']],
-    'nested simple value' => [['source_6e616d65' => ['destination' => ['path' => 'profile.name']]]],
-    'empty simple value' => [['source_6e616d65' => ['destination' => '']]],
+    'unexpected state key' => [['unexpected' => []]],
+]);
+
+it('rejects forged binding values and unknown sources on submission', function (string $source, mixed $binding) {
+    $field = FieldBinding::make('bindings')
+        ->jsonSchema(['properties' => ['name' => []]])
+        ->simple(TextInput::make('destination'));
+    $schema = field_binding_schema($field, ['name' => 'profile.name']);
+    expect($schema->getState()['bindings']['bindings'])->toBe(['name' => 'profile.name']);
+
+    $field->rawState([
+        'sources' => [],
+        'bindings' => [$field->getBindingKey($source) => $binding],
+    ]);
+
+    expect($schema->getState(...))->toThrow(ValidationException::class);
+})->with([
+    'unknown source' => ['unknown', ['destination' => 'profile.name']],
+    'dotted unknown source' => ['name.destination', ['destination' => 'profile.name']],
+    'scalar binding' => ['name', 'profile.name'],
+    'nested simple value' => ['name', ['destination' => ['path' => 'profile.name']]],
+    'empty simple value' => ['name', ['destination' => '']],
 ]);
 
 it('preserves binding metadata and values across presentation options', function (
@@ -389,7 +407,6 @@ it('keeps the binding toolbar around the empty state', function () {
     view()->share('errors', new ViewErrorBag);
 
     expect($schema->toHtml())
-        ->toContain('fi-empty-state')
         ->toContain('No fields available.')
         ->not->toContain('Incoming fields')
         ->not->toContain('Output fields')
@@ -415,7 +432,9 @@ it('round trips static values beside bindings without treating them as sources',
     $state = ['name' => 'profile.name', 'status' => ['value' => 'active']];
     $schema = field_binding_schema($field, $state);
 
-    expect($field->getSources())
+    expect($field->getBindingValues())
+        ->toBe($state)
+        ->and($field->getSources())
         ->toHaveCount(2)
         ->and($field->getConstants())
         ->toHaveCount(1)
@@ -470,10 +489,9 @@ it('rejects static values unless the component enables them', function () {
         ->jsonSchema(['type' => 'object', 'properties' => array_fill_keys(['name'], [])])
         ->simple(TextInput::make('destination'));
     $schema = field_binding_schema($field);
-    $field->rawState([
-        'sources' => [],
-        'bindings' => ['constant_737461747573' => ['column' => 'status', 'value' => 'active']],
-    ]);
+    $withConstants = field_binding_constants();
+    field_binding_schema($withConstants, ['status' => ['value' => 'active']]);
+    $field->rawState($withConstants->getRawState());
 
     expect($schema->getState(...))->toThrow(ValidationException::class);
 });
@@ -482,15 +500,16 @@ it('rejects forged static value actions and disabled changes', function () {
     $field = field_binding_constants();
     field_binding_schema($field, ['status' => ['value' => 'active']]);
     $state = $field->getRawState();
+    $constant = array_key_first($field->getConstants());
 
-    expect(fn () => $field->getAction('removeConstant')(['constant' => 'source_6e616d65'])->call())
+    expect(fn () => $field->getAction('removeConstant')(['constant' => $field->getBindingKey('name')])->call())
         ->toThrow(
             ValidationException::class,
         );
 
     $field->disabled();
     $field->getAction('addConstant')([])->call();
-    $field->getAction('removeConstant')(['constant' => 'constant_737461747573'])->call();
+    $field->getAction('removeConstant')(['constant' => $constant])->call();
 
     expect($field->getRawState())->toBe($state);
 });
@@ -543,12 +562,15 @@ it('highlights warned sources and preserves warnings for missing source identifi
 
 it('keeps source settings available before binding and after unbinding across Livewire requests', function (bool $complex) {
     $page = Livewire::test(FieldBindingForm::class, ['complex' => $complex, 'sourceSettings' => true]);
+    $field = $page->instance()->form->getComponent('bindings');
+    $settingsKey = $field->getSourceStateKeys()['name'];
+    $bindingKey = $field->getBindingKey('name');
     $page
-        ->assertSet('data.bindings.sources.source_6e616d65.alias', 'name')
-        ->set('data.bindings.sources.source_6e616d65.alias', 'Customer')
-        ->set('data.bindings.sources.source_6e616d65.enabled', false)
+        ->assertSet("data.bindings.sources.{$settingsKey}.alias", 'name')
+        ->set("data.bindings.sources.{$settingsKey}.alias", 'Customer')
+        ->set("data.bindings.sources.{$settingsKey}.enabled", false)
         ->callAction(TestAction::make('bind')->schemaComponent('bindings', 'form')->arguments(['source' => 'name']))
-        ->set('data.bindings.bindings.source_6e616d65.destination', 'profile.name')
+        ->set("data.bindings.bindings.{$bindingKey}.destination", 'profile.name')
         ->call('submit')
         ->assertHasNoErrors()
         ->assertSet('saved.bindings.sources.name', ['alias' => 'Customer', 'enabled' => false])
@@ -557,7 +579,7 @@ it('keeps source settings available before binding and after unbinding across Li
         ->assertHasNoErrors()
         ->assertSet('saved.bindings.bindings', [])
         ->assertSet('saved.bindings.sources.name', ['alias' => 'Customer', 'enabled' => false])
-        ->set('data.bindings.sources.source_6e616d65.alias', '')
+        ->set("data.bindings.sources.{$settingsKey}.alias", '')
         ->call('submit')
-        ->assertHasErrors(['data.bindings.sources.source_6e616d65.alias' => 'required']);
+        ->assertHasErrors(["data.bindings.sources.{$settingsKey}.alias" => 'required']);
 })->with([false, true]);

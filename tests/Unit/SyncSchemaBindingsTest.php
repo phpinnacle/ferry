@@ -3,7 +3,7 @@
 use Illuminate\Validation\ValidationException;
 use PHPinnacle\Ferry\Models\ConnectionMetadata;
 use PHPinnacle\Ferry\Rules\SyncSchema;
-use PHPinnacle\Ferry\Services\TransformFactory;
+use PHPinnacle\Ferry\Services\TransformRegistry;
 use PHPinnacle\Rosetta\Enums\FieldType;
 use PHPinnacle\Rosetta\Fields\ScalarField;
 use PHPinnacle\Rosetta\Fields\StringField;
@@ -16,7 +16,6 @@ require_once __DIR__ . '/../Fakes/CustomersDestination.php';
 uses(TestCase::class);
 
 beforeEach(function () {
-    $this->registry = $this->app->make(TransformFactory::class);
     $this->object = new ConnectionMetadata([
         'system' => [
             '_idrref' => new ScalarField(FieldType::Id),
@@ -32,7 +31,7 @@ it('builds dynamic mappings directly from source to column bindings', function (
     $mappings = SyncSchema::fromBindings(
         $this->object,
         ['_idrref' => 'external_id', '_description' => 'title'],
-        $this->registry,
+        app(TransformRegistry::class),
     );
 
     expect(array_column($mappings, 'column', 'source'))
@@ -47,7 +46,7 @@ it('maps source fields to compatible static destination fields', function () {
     $mappings = SyncSchema::fromBindings(
         $this->object,
         ['_description' => 'name', '_code' => 'tax_number'],
-        $this->registry,
+        app(TransformRegistry::class),
         customers_destination(),
     );
 
@@ -64,7 +63,7 @@ it('rejects bindings that do not match source or destination declarations', func
     expect(fn () => SyncSchema::fromBindings(
         $this->object,
         $bindings,
-        $this->registry,
+        app(TransformRegistry::class),
         $static ? customers_destination() : null,
     ))
         ->toThrow(

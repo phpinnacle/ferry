@@ -8,42 +8,12 @@ use LogicException;
 use PHPinnacle\Ferry\Contracts\TransformHandler;
 use PHPinnacle\Ferry\Data\StaticValue;
 use PHPinnacle\Ferry\Enums\ColumnType;
-use PHPinnacle\Ferry\Enums\TransformScope;
 use PHPinnacle\Ferry\Models\ConnectionMetadata;
 use PHPinnacle\Ferry\Models\Sync;
-use PHPinnacle\Ferry\Transformation;
 
-/**
- * @phpstan-type TransformInput array{key: string, params?: array<string, string>}
- */
 #[Singleton]
 class TransformFactory
 {
-    /** @var array<string, Transformation> */
-    private array $items = [];
-
-    public function register(Transformation ...$transforms): void
-    {
-        foreach ($transforms as $transform) {
-            $this->items[$transform->key()] = $transform;
-        }
-    }
-
-    public function get(string $key): ?Transformation
-    {
-        return $this->items[$key] ?? null;
-    }
-
-    public function getOrFail(string $key): Transformation
-    {
-        return (
-            $this->get($key) ?? throw new LogicException(__(
-                'phpinnacle-ferry::resources.sync.errors.transform_missing',
-                ['transform' => $key],
-            ))
-        );
-    }
-
     public function handler(string $key): ?TransformHandler
     {
         /** @var array<string, class-string<TransformHandler>> $handlers */
@@ -141,52 +111,5 @@ class TransformFactory
         }
 
         return true;
-    }
-
-    /**
-     * @param array<string, string> $types
-     * @param array<string, array<array-key, TransformInput>> $fieldTransforms
-     * @return array<string, string>
-     */
-    public function resultTypes(array $types, array $fieldTransforms): array
-    {
-        foreach ($fieldTransforms as $source => $rows) {
-            if (!array_key_exists($source, $types)) {
-                continue;
-            }
-
-            $type = $this->resultType(ColumnType::from($types[$source]), $rows);
-            if ($type === null) {
-                unset($types[$source]);
-            } else {
-                $types[$source] = $type->value;
-            }
-        }
-
-        return $types;
-    }
-
-    /** @param array<array-key, TransformInput> $settings */
-    public function resultType(?ColumnType $input, array $settings): ?ColumnType
-    {
-        foreach ($settings as $row) {
-            $params = $row['params'] ?? [];
-            $transform = $this->getOrFail($row['key']);
-            if (!$transform->accepts($input)) {
-                return null;
-            }
-            $input = $transform->getOutputType($input, $params);
-            if ($input === null) {
-                return null;
-            }
-        }
-
-        return $input;
-    }
-
-    /** @return array<string, Transformation> */
-    public function forScope(TransformScope $scope): array
-    {
-        return array_filter($this->items, static fn (Transformation $transform) => $transform->scope() === $scope);
     }
 }

@@ -7,7 +7,7 @@ Ferry manages 1C database connections, source structure snapshots, synchronizati
 ## Features
 
 - `Connection` model with an encrypted password that is never returned to the interface.
-- `ConnectionFactory` service that opens a temporary connection with the current (possibly unsaved) form values, runs a lightweight query and reports a sanitized result.
+- `ConnectionFactory` service that tests current (possibly unsaved) form values, always closes the temporary connection, and reports a sanitized result.
 - Queued structure preparation built on `phpinnacle/rosetta`, storing the semantic 1C metadata as `ConnectionMetadata` records.
 - Filament `ConnectionResource` with create/edit/list pages, "Test connection" and "Fetch structure" actions, a structure status badge and driver-based default port suggestion.
 - Reusable JSON Schema-based `FieldMapping` form field with connection lines, type checks, array collections, inline static editors, and reversible column layout.
@@ -76,15 +76,17 @@ When a run fails for good, the connection switches to `StructureStatus::Failed`,
 
 ## Synchronizations
 
-A synchronization selects a connection with a ready structure and one object from its published snapshot, then maps source fields (system fields by key, properties by id) to unique snake-case column names. Saving creates a physical destination table named `{prefix}{code}` in the Ferry connection; every table carries a single system column `idrref`, the primary key holding the 1C row identifier, followed by the nullable mapped columns typed from the Rosetta fields.
+A synchronization selects a connection with a ready structure and one object from its published snapshot, then maps source fields (system fields by key, properties by id) to destination columns. For dynamic destinations, column names must be unique, start with a lowercase letter, contain only lowercase letters, digits and underscores, and differ from the reserved `idrref`. The form requires at least one source binding or static value. Saving creates a physical table named `{prefix}{code}` in the Ferry connection, with `idrref` as its primary key and nullable mapped columns typed from the source, their transformations or static values.
 
 Editing the mapping applies the difference to the table: new mappings add nullable columns, renames rename the column and removed mappings drop it. Deleting the synchronization drops the table after a data-loss confirmation. When a structure refresh removes the source object, removes a mapped field or changes a field type, the synchronization is paused automatically; the table and its stored rows stay untouched.
 
 A change of logical column type drops and recreates that column, so it requires the same data-loss confirmation as removing a mapping.
 
-The model owns this lifecycle regardless of the caller: creating a `Sync` creates its destination table, changing its `schema` applies the difference and deleting it drops the table, so a synchronization created from a command, job or seeder behaves exactly like one created from the panel.
+The model owns this lifecycle regardless of the caller: creating a `Sync` creates its destination table, changing its `schema` applies the difference and deleting it drops the table, so a synchronization created from a command, job or seeder behaves exactly like one created from the panel. Saving state and table changes is transactional; eligible connectors update after commit.
 
-`SyncSchema::fromBindings($object, $bindings, $registry, $destination)` converts validated form bindings into typed mappings and checks them against the source metadata and optional static destination. `Sync::brokenColumns($object, $destinationFields)` and `hasValidSchema($object, $destinationFields)` compare the saved mapping with current declarations; `shouldResume($object, $destinationFields)` applies the automatic-resume policy. These methods accept only a list of typed `DestinationField` values, or `null` for a dynamic or unavailable destination; the model distinguishes them by its saved `type`, cast to the `DestinationType` enum. Callers resolve registrations and pass their fields, so the model does not depend on a registry or connector adapter. `schemaChanges()` compares the original and current typed schemas and plans column additions, renames, and removals in mapping order. `droppedColumns()` exposes the removals for confirmation; `SyncTableManager` applies the same plan, preserving stored values on renames. Confirmation fills a copy of the record to preview changes. A single `SyncObserver` coordinates table and connector lifecycle operations.
+`SyncSchema::fromBindings($object, $bindings, $registry, $destination, $transforms)` converts source-to-column bindings and optional field transforms and constants into typed mappings, checking source metadata and the optional static destination. Pass the `TransformRegistry` explicitly. Transform parameters must already be validated by their native Filament forms. Dynamic column-name validation belongs to `SyncSchema::validateColumns($columns, $fail)` and is applied by the form before conversion.
+
+`Sync::brokenColumns($object, $destinationFields)` and `hasValidSchema($object, $destinationFields)` compare saved mappings with current declarations; `shouldResume($object, $destinationFields)` applies the automatic-resume policy. Pass a list of typed `DestinationField` values for a static destination, or `null` for a dynamic or unavailable destination. `schemaChanges()` plans additions, renames, and removals from the original and current typed mappings; `droppedColumns()` exposes removals for confirmation. Table updates use the same plan and preserve stored values on renames.
 
 A pause requested by an administrator and a pause caused by a broken mapping are distinguished by `is_paused`. Saving the edit form resumes only a synchronization that was paused automatically and whose mapping is valid again; a pause requested through the pause action survives editing and requires the activate action. `ConnectorManager::activate()` refuses a synchronization whose mapping no longer matches its source or destination.
 
@@ -112,13 +114,13 @@ FerryPlugin::make()->destinations(new StaticDestination(
 ));
 ```
 
-The readonly `key` property identifies the destination in the persisted synchronization. `table` is its target table, and `fields` lists the only columns an administrator may map together with their logical type and whether they are required. `StaticDestination` implements Filament's `HasLabel` contract for its display label. The connection, primary key and fixed values belong only to the static destination (a `null` connection means the Ferry connection). Fixed values are written into every row through `InsertField` transforms. Both implementations compose `JdbcConnectorConfig` to serialize the shared JDBC protocol settings without inheriting behavior or state from each other.
+The readonly `key` identifies the destination in the persisted synchronization. `table` is its target table; `fields` lists the permitted columns, their logical types and whether they are required. `StaticDestination` implements Filament's `HasLabel` contract. A `null` connection uses the Ferry connection. Fixed values are written into every row through `InsertField` transforms.
 
 `ColumnType::jsonSchema()` projects a logical type into the inline type and format used by the mapping editor; references remain distinct from strings, and dates use the `date-time` format.
 
 `Sync.type` explicitly selects `DestinationType::Static` or `DestinationType::Dynamic` (the default). `Sync.destination` stores the registered key for static synchronizations or the generated table name for dynamic ones. `DestinationFactory::get($key)` returns the registered destination or `null`. Use `getOrFail($key)` when a static destination is required. `DestinationFactory::resolve($sync)` returns the registered static destination or a `DynamicDestination` for its generated table. `fieldsFor($sync)` returns the registered static destination's fields, or `null` for a dynamic or unavailable destination. `SyncObserver` initializes only a dynamic record's destination table name when created; static records retain their registered destination key.
 
-Saving a static synchronization accepts only declared fields, only source fields of the same logical `ColumnType` (`Reference` covers 1C references and identifiers), requires every required field, forbids mapping one field twice and rejects the source key field, which always feeds the configured primary key. Ferry never creates, alters or drops a static table, and its sink connector upserts rows without propagating source deletions. Removing a destination from the registry while synchronizations still point at it never makes them write elsewhere: the next structure review pauses them automatically, they cannot be activated or saved until the destination is registered again, and their whole mapping is reported as out of date.
+Saving a static synchronization accepts only declared destination fields whose logical `ColumnType` matches the transformed source or static value (`Reference` covers 1C references and identifiers). Every required field must be mapped, no destination may be mapped twice, and the source key cannot be remapped: it always feeds the configured primary key. Ferry never creates, alters or drops a static table, and its sink connector upserts rows without propagating source deletions. Removing a registered destination causes the next structure review to pause its synchronizations and report their mappings as out of date; saving and activation remain blocked until it is registered again.
 
 The synchronization form has one destination select: Dynamic followed by the registered static destinations. Selecting a different destination clears the field mapping; the saved synchronization keeps its explicit type and destination key. A dynamic synchronization lists every mappable 1C field with its title and technical column and binds it to a column name with `FieldBinding`; a static one connects 1C fields to the fields declared by the destination with `FieldMapping`, which shows the logical types and required marks and refuses incompatible connections.
 
@@ -127,6 +129,8 @@ The static synchronization form adds an exact-format connection condition to pre
 ## Transforms
 
 A transform changes data on its way to the destination as a Kafka Connect transform of the sink connector. Editor descriptions and execution handlers share a stable key but are registered separately. `Transformation` is an immutable description with Filament-style `label()`, `icon()`, `color()`, `description()`, and `schema()` methods. `key()` identifies it and `scope()` returns `TransformScope::Record` or `TransformScope::Field`. It implements Filament's `HasLabel`, `HasIcon`, `HasColor`, and `HasDescription` contracts; icons and descriptions are optional.
+
+### Editor descriptions
 
 `FerryPlugin` provides the built-in cast and record filter descriptions. Register optional descriptions on the plugin:
 
@@ -143,26 +147,38 @@ A custom description uses the same API:
 
 ```php
 use Filament\Forms\Components\TextInput;
-use PHPinnacle\Ferry\Enums\ColumnType;
 use PHPinnacle\Ferry\Enums\TransformScope;
 use PHPinnacle\Ferry\Transformation;
 
 Transformation::make('replace', TransformScope::Field)
-    ->inputTypes([ColumnType::String])
+    ->inputSchema(['type' => 'string'])
+    ->outputSchema(['type' => 'string'])
     ->label('Replace text')
     ->color('warning')
     ->schema(fn () => [TextInput::make('replacement')->required()]);
 ```
 
-Labels, icons, descriptions, and colors accept values or closures. `color()` defaults to `primary` and accepts a Filament color name, a shade palette such as `Color::Emerald`, or `null`. Source transform chips and Builder block labels use `getColor()`; Builder labels render through the native Filament badge component. `schema()` accepts an array of Filament schema components or a closure; a schema closure can receive the selected `?ConnectionMetadata $object`. `getSchema($object)` returns fresh components for each form. Fluent methods return a new description, leaving the original unchanged. The reusable descriptions in `Transformations` contain the package's forms; they do not construct execution handlers.
+Labels, icons, descriptions, and colors accept values or closures. `color()` defaults to `primary` and accepts a Filament color name, a shade palette such as `Color::Emerald`, or `null`, styling source chips and Builder labels. `schema()` accepts an array of Filament components or a closure receiving the selected `?ConnectionMetadata $object`; `getSchema($object)` returns fresh components for each form. Fluent methods return a new description, leaving the original unchanged.
 
-Editor type behavior also belongs to `Transformation`. `inputTypes([ColumnType::String])` restricts accepted inputs; without it the description accepts any logical type, including an unknown type represented by null. Output preserves the input type by default. Use `outputType(ColumnType::Boolean)` for a fixed result or a callback for a setting-dependent result:
+`inputSchema()` describes supported values using the same compatibility rules as `FieldMapping`: types, directional formats, string lengths and array items. It also accepts a predicate `fn (JsonSchema $input) => bool` for additional restrictions. Without an input schema, a description accepts any input. `accepts($input)` checks a `Forms\JsonSchema` value object directly, without projecting it to `ColumnType`.
+
+`outputSchema()` declares a fixed JSON Schema array or a callback receiving the full input schema and settings. For example, a string transform that preserves null values can declare:
 
 ```php
-->outputType(fn (?ColumnType $input, array $params) => ColumnType::from($params['type']))
+use PHPinnacle\Ferry\Forms\JsonSchema;
+
+->outputSchema(fn (JsonSchema $input, array $params) => [
+    'type' => in_array('null', $input->types(), true) ? ['string', 'null'] : 'string',
+])
 ```
 
-`accepts($input)` and `getOutputType($input, $params)` read these rules. Type callbacks return null when a setting cannot produce a supported output. Cast returns its configured target type; repeated casts consume the preceding result, including numeric results. Forms, menus, and editor type previews use descriptions without resolving execution handlers or requiring their configuration. Parameter validation in `FieldTransforms` runs the description's native Filament schema, including relative field rules.
+`getOutputSchema($input, $params)` returns a `JsonSchema` object. Without an output declaration it preserves the complete input schema, which is appropriate only when the transform guarantees that all its constraints remain true. A callback can return null when its settings are incomplete and no output can be determined. An empty schema array means unconstrained values, not an invalid chain.
+
+Each step consumes the preceding output schema. Cast replaces the value constraints with the selected scalar type and preserves nullability; repeated casts use that result. Trim, Substring and Mask accept strings, including formatted and nullable strings, but reject `date-time` and `ferry-reference`, which represent logical dates and references. Their outputs retain nullability and discard the original format, enum, pattern and length bounds. Custom descriptions can preserve or establish guarantees their execution actually provides.
+
+Forms, menus and previews use descriptions without resolving execution handlers or requiring their configuration. Parameter validation in `FieldTransforms` runs the description's native Filament schema, including relative field rules. `ColumnType` conversion happens only when synchronization mappings are saved; the final output must have a supported scalar column type.
+
+### Execution handlers
 
 Configure execution separately in `config/phpinnacle-ferry.php`. The default configuration includes handlers for all five supplied descriptions, including the optional editor choices:
 
@@ -183,11 +199,15 @@ use PHPinnacle\Ferry\Transforms\TrimTransform;
 ];
 ```
 
-Custom handlers implement `Contracts\TransformHandler`: `normalize()` completes parameters from object metadata, `rules()` validates parameters at the synchronization boundary, `sourceColumns()` declares additional reads, `resultType()` determines the produced logical type given valid settings and returns null for unsupported inputs, and `connector()` builds Kafka Connect settings. Handlers have no Filament labels or forms and resolve through Laravel's container only when needed. They do not declare editor availability.
+Custom handlers implement `Contracts\TransformHandler`: `normalize()` projects parameters onto current object metadata for structure review, `sourceColumns()` declares additional reads, and `connector()` builds Kafka Connect settings. Handlers resolve through Laravel's container only when needed. Input/output JSON Schemas belong to the editor description; parameter validation belongs to its native Filament form.
 
-`TransformFactory::get($key)` and `forScope($scope)` read the editor descriptions registered through the plugin. `resultType($input, $settings)` and `resultTypes($types, $fieldTransforms)` compute editor previews from those descriptions and return an unknown result when a step is incompatible. `handler($key)` and `handlerOrFail($key)` resolve the configured handler independently of that catalog. Saving a synchronization validates its parameters and resulting types through handlers; connector generation, runtime availability checks, and source-column discovery also use configured handlers. Workers can execute saved transforms without registering descriptions or booting a Filament panel. Hiding a transform from the editor does not disable its saved pipelines; remove its handler configuration to make it unavailable at runtime.
+`TransformRegistry` stores the UI descriptions registered through the plugin. Its `get($key)`, `getOrFail($key)` and `forScope($scope)` methods read that catalog. `resultSchema(JsonSchema $input, array $settings)` passes the full schema through the ordered chain and returns null for an incompatible step or an unavailable output. Forms use this registry without resolving handlers.
 
-Transform settings are stored as `key`/`params` pairs. A synchronization stores ordered record transforms in `Sync::$transforms` and field transforms on each `FieldMapping`, with the logical `result` type they produce. `SyncSchema::fromBindings()` and `SourceFactory` receive the factory explicitly. `SyncSchema::fromBindings()` validates field parameters and compares the produced type with the destination; `SyncSchema::fromTransforms()` validates and normalizes record transforms. `TransformFactory::pipeline()` runs record and field transforms on source column names after `unwrap`, before renames, preserving Debezium keys and deletions. Static values remain separate mappings and are inserted after renames. Saving changes refreshes the synchronization's sink connector; the shared source connector changes only when its capture configuration changes. Structure review pauses a synchronization whose configured handlers or required source columns are no longer available, and connector activation refuses it.
+`TransformFactory::handler($key)` and `handlerOrFail($key)` resolve handlers from configuration independently of the UI registry. The factory also builds connector pipelines and checks their runtime availability. Input validation in `SyncSchema` uses only `TransformRegistry`. Workers can execute saved transforms without resolving the UI registry or booting a Filament panel. Hiding a transform from the editor does not disable its saved pipelines; remove its handler configuration to make it unavailable at runtime.
+
+Transform settings are ordered `['key' => 'mask', 'params' => ['replacement' => '***']]` entries; parameter values are strings, and `params` may be omitted when empty. A synchronization stores record transforms in `Sync::$transforms` and field transforms on each `Data\FieldMapping`, with their logical `result` type. Native Filament forms validate parameters before conversion. `SyncSchema::fromBindings()` checks field scope, the type chain and destination compatibility; `SyncSchema::fromTransforms($settings, $registry)` checks record scope. The sink applies record transforms, then field transforms, after `unwrap` and before renames. Static values are inserted after renames. Saving refreshes the sink connector; the shared source connector changes only when its capture configuration changes. Structure review pauses synchronizations with unavailable handlers or required source columns, and connector activation refuses them.
+
+### Built-in transforms
 
 The built-in `CastTransform` casts a field to a `ColumnType`. `ColumnType::castType()` exposes its Kafka Connect type and is `null` for references and dates, which Kafka Connect cannot cast. Static values use the separate mapping mechanism: `Data\StaticValue` stores their type and value in the mapping's `constant` property, outside its transform list. They are validated as static values and compiled to `InsertField` plus a cast when needed, without registering a transform handler. Numeric sources can be cast to any supported target type.
 
@@ -201,13 +221,17 @@ The built-in `CastTransform` casts a field to a `ColumnType`. `ColumnType::castT
 
 Trim requires the Toblerone plugin and preserves null field values and tombstones. Substring serializes indexes as `fields=source:start[:end]` and requires the Toblerone plugin on the worker. It uses Java UTF-16 indexes without clamping: indexes must fit every input string. Masking uses Apache's `fields` and `replacement` settings and skips tombstones through the built-in predicate. Other MaskField options keep their Kafka defaults. Forms validate the settings; Ferry does not execute the transformations in PHP.
 
-A `Transformation` declares `getSchema($object)`, the Filament components that edit its parameters given the selected 1C object (or `null` before one is chosen), while its handler declares `rules()`, the Laravel rules that validate parameters on save. The synchronization form configures record transforms separately, in a **Record transforms** block above the field mapping: a Filament Builder with an ordered list of transform blocks. Each block displays its icon, label, optional description, and settings. Record transforms can repeat and their blocks can be reordered or removed. The Builder adapts its internal `type`/`data` state to the public `key`/`params` format on fill and submission, including empty settings arrays.
+The record `FilterTransform` keeps (`include`) or drops (`exclude`) records whose selected string, reference or boolean field equals a value. It uses Confluent's `Filter$Value` with a JSON Path condition. The native form validates the selected column and value, then derives the persisted field type from object metadata during dehydration. Record transforms declare additional reads through `sourceColumns()`, and `SourceFactory` includes them in capture. Structure review uses `normalize()` to detect changes to the saved filter's field type. Unmapped filter columns are excluded from destination writes by the sink whitelist.
 
-Every scalar source field has an **Add transform** menu with a sparkles icon at the bottom left, provided by `FieldTransforms::make('transforms')` inside `sourceSettings()` on both `FieldBinding` and `FieldMapping`. The menu contains registered transforms accepting the current chain's output type. Boolean sources offer Cast; after casting to string, Trim, Substring, and Mask become available. Compatible transforms remain in the menu after use and can repeat. Arrays and objects offer no scalar transformations. Transforms with settings open an individual form with their icon and optional description. Transforms without settings, such as Trim, are added immediately. Added transforms appear as colored chips in execution order. Each chip has a larger label area and a separate inset remove button. Click a configurable label to edit its settings; labels without settings open no modal. Remove every transform through its chip; settings modals contain no deletion action. Drag the label area to reorder chips; Alt+Left and Alt+Right provide keyboard reordering. Existing chips remain editable and removable after an incompatible edit or reorder; validation rejects unsupported steps in the submitted chain, and no additions are offered until it is corrected. These controls remain available before connecting or binding a source.
+Records missing the field are dropped by `include` and kept by `exclude`. Filters skip tombstones through the negated `RecordIsTombstone` predicate, preserving Debezium deletions. The form resets transforms when the connection or object changes.
+
+### Editing synchronization transforms
+
+The synchronization form configures record transforms in a **Record transforms** Builder above the field mapping. Blocks show their icon, label, optional description, and settings; they can repeat, reorder, or be removed. The form converts native Builder state to the public `key`/`params` format on fill and submission.
+
+`FieldTransforms` inside `sourceSettings()` provides an **Add transform** menu for compatible registered field transforms. Boolean sources initially offer Cast; casting to string enables Trim, Substring, and Mask. Compatible transforms can repeat. Transforms with settings open their native form; those without settings are added immediately. Chips show execution order: click a configurable label to edit, use its separate remove button to delete, and drag the label or press Alt+Left / Alt+Right to reorder. Existing chips remain editable and removable after an incompatible change; validation rejects the unsupported chain and additions remain unavailable until it is corrected. Settings modals contain no deletion action. These controls work before connecting or binding a source.
 
 `FieldMapping` and `FieldBinding` keep transform settings in `sources[source].transforms`, independently of their connections or bindings. `SyncForm` combines these settings with connected or bound fields on save and restores them on fill; settings for unused sources remain in the editor but are not persisted in the synchronization. Static values have their own mapping controls. Several transforms of one field apply in chip order, and the static mapping checks a connection with the type its source field has after those transforms, so a cast makes a string field connectable to a boolean destination.
-
-The built-in `FilterTransform` is the record transform of the package: it keeps (`include`) or drops (`exclude`) the records whose 1C field equals a value of a string, reference or boolean type (numbers are emitted as decimals, which a JSON Path condition cannot compare), through Confluent's `Filter$Value` with a JSON Path condition on the source column. The field is picked from the fields of the selected object. `TransformHandler::normalize()` runs when the form is saved and lets a transform complete its parameters from the object: the filter takes the type of its column from the object's metadata, never from the form, so the value is validated and written as a literal of the real type. Because the shared source connector captures only mapped columns, a transform declares the extra columns it reads through `TransformHandler::sourceColumns()`, which `SyncSchema::fromTransforms()` requires to exist in the object and `SourceFactory` adds to `column.include.list`; the destination never receives them, since the sink whitelist lists only mapped columns. Records without the field are dropped by `include` and kept by `exclude`, so a missing field never fails the task, and the filter is attached to the `tombstone` predicate negated: Debezium deletions pass untouched. A transform requests this with the `predicate` and `negate` properties, and `JdbcConnectorConfig` then defines the Kafka `RecordIsTombstone` predicate. The form resets the transforms when the connection or the object changes.
 
 ## Kafka Connect connectors
 
@@ -235,7 +259,7 @@ Both `Connection` and `Sync` store a nullable `connector_id`; their `connector` 
 
 A source connector failure concerns all synchronizations of its connection, while a sink connector failure concerns its synchronization alone. A connector that reports itself as running while one of its tasks has failed is recorded as failed together with the trace of that task, so a stalled transfer stays visible. Both states are shown as badges in the Filament tables and can be refreshed from there. Deleting a synchronization removes only its sink connector; the source connector is owned by the connection and is removed with it.
 
-Because the target Kafka Connect cluster is shared, the connectors pin their own converters instead of relying on worker defaults, and the sink flattens Debezium envelopes with `ExtractNewRecordState` before applying the field renames taken from the synchronization schema. Each sink also restricts itself to its own mapped columns with `fields.whitelist`, so two synchronizations reading the same source table with different field selections never write each other's columns.
+Connectors pin their converters instead of relying on worker defaults. The sink unwraps Debezium envelopes, applies the configured transform pipeline and renames fields. Its `fields.whitelist` includes only its own mapped columns, constants and fixed values, so synchronizations reading the same source table do not write each other's columns.
 
 Debezium only snapshots a source connector's tables once, when its replication slot is first created; widening `table.include.list`/`column.include.list` for an already running connector does not back-fill the rows that existed before the change. The source connector therefore always runs with `read.only=true` and `signal.enabled.channels=kafka`, and `ConnectorManager::activate()` compares the connector's `column.include.list` before and after pushing the new configuration. When the diff exposes new columns, including those of a newly captured table or a record filter, it publishes an `execute-snapshot` signal for each affected table through its `SignalProducer`, keyed by the connector's `topic.prefix` as Debezium's Kafka signal channel requires. The very first synchronization of a connection never needs a signal, since Debezium's own initial snapshot already covers it.
 
@@ -268,14 +292,16 @@ FieldMapping::make('mapping')
 
 Required destinations come from the destination object's `required` list. Array destinations derive their multiple-connection capability from `type: array` and `items`.
 
+### State and connections
+
 State separates source settings from destination mappings. Each destination entry has an explicit `kind`:
 
 ```php
 [
-    'sources' => ['name' => ['alias' => 'Customer']],
+    'sources' => [],
     'targets' => [
         'contact' => ['kind' => 'source', 'source' => 'name'],
-        'enabled' => ['kind' => 'value', 'value' => true],
+        'phone_numbers' => ['kind' => 'source', 'source' => 'phones'],
     ],
 ]
 ```
@@ -285,9 +311,11 @@ An array destination supports two mutually exclusive forms:
 - Whole array: `['phone_numbers' => ['kind' => 'source', 'source' => 'phones']]` connects the source array as one value.
 - Individual items: `['phone_numbers' => [['kind' => 'source', 'source' => 'name'], ['kind' => 'source', 'source' => 'email']]]` collects one value from each source, checked against `items`. Settings remain associated with their source, independently of the item collection.
 
-Connecting a whole array replaces the individual items; connecting an item replaces a whole array. Arrays are never flattened. An array source can itself become an item when `items` describes a compatible array. Each source has one connection. Click a line to remove that connection. Focus a line and press Enter or Space to remove it with the keyboard.
+Connecting a whole array replaces the individual items; connecting an item replaces a whole array. Arrays are never flattened. An array source can itself become an item when `items` describes a compatible array. Each source permits at most one connection. Click a line to remove it, or focus it and press Enter or Space.
 
 `inverse()` only swaps the columns: destinations appear on the left and sources on the right. State, static editors, cardinality, and source settings stay the same, so switching orientation requires no data conversion.
+
+### Compatibility and output schemas
 
 Schema compatibility is directional: declared source values must fit the destination's supported constraints. Checks include types, nullability, formats, string lengths, alternatives, and nested array items. An omitted type imposes no type restriction; other supported constraints still apply. Type names match exactly, so numeric widening requires an explicit transformation. A formatted string can connect to an unrestricted string. A destination with a format requires the same source format: UUID cannot connect to `date` or `date-time`, and `date` cannot connect to `date-time`.
 
@@ -321,15 +349,11 @@ The callback receives effective source and destination property schemas, or the 
 
 The component projects inline `type`, `format`, `minLength`, `maxLength`, `items`, `required`, `properties`, `allOf`, `anyOf`, and `oneOf` definitions. It does not resolve `$ref`, validate runtime payloads, or prove arbitrary JSON Schema containment. Other constraints such as `enum`, `pattern`, numeric bounds, item counts, and uniqueness are displayed as metadata but are not enforced by connection compatibility; native static editors remain responsible for their value validation.
 
-Mapping cards on both sides and binding source cards share a schema-oriented metadata layout: an optional leading icon, a title with the literal property name beside it, a required asterisk, compact constraint hints, and monospace type chips, followed by description and warnings. Cards without an icon reserve no icon space. Source actions sit below the metadata at the bottom left; their open menus appear above neighboring cards. Static and binding editors keep their own controls. Array type chips have a chevron that expands their item schemas below the heading, with a row for each nested array level. Item constraints and enum choices appear beside the corresponding inner type; field-level constraints stay in the heading. Item details start collapsed and remain available on connected or disabled sources. The disclosure button does not change connection selection; connection geometry follows card resizing automatically.
+Use `outputSchema(array|Closure)` for the effective source object schema after applying source settings. It replaces the input schema for source type chips, constraint hints and compatibility checks. Declare only formats and bounds guaranteed by the transformation: a logical string output alone does not preserve an email/UUID format or establish a length limit. The consumer supplies this schema; the field does not execute transforms or infer their guarantees.
 
-Property `title`, `description`, `x-icon`, and `x-color` provide presentation metadata. `x-color` accepts a registered Filament color name or a literal hex/RGB color for the icon and title. Formats such as `uuid`, `email`, and `date-time` replace the general string label; nullable values show a separate `null` chip. Enum chips expose their allowed values in a tooltip. Length and item-count limits use ruler and list icons; numeric bounds, multiples, patterns, and uniqueness appear as compact hints with accessible labels. Composition constraints retain their scope. Array item constraints appear only in the expanded item-type rows. These visual conventions follow Eidos while Ferry remains independent of that package. `x-badges` accepts a list of `['label' => 'Imported', 'color' => 'info']` badges; the type badge appears last. For framework schema builders, pass their inline `toArray()` result.
+### Static values
 
-Use `outputSchema(array|Closure)` for the effective source schema after applying source settings, including resulting formats and length bounds. Only declare bounds guaranteed by the transformation; changing a type alone does not establish a length limit. Source type chips and constraint hints show only the effective output schema; both client interaction and server validation use the same server-computed connection modes. The field does not know how transforms execute.
-
-`extraSourceActions([...])` renders native Filament actions on each source, including disconnected sources and inverse mode. Each receives the source property name in its `source` argument, and action visibility is respected. Use `iconButton()` and `tooltip()` for compact controls. Connected fields retain full contrast outside connection selection. Connection lines, borders, ports, and binding arrows follow the panel's Filament `primary` palette; required destinations use `warning` and type conflicts use `danger`, in both light and dark themes. During selection, compatible candidates have a highlighted card and a check on their port. Incompatible candidates dim as a whole, including existing connections and static editors, and show a cross on their port. Existing connection lines fade while selecting. Compatible destinations can replace their existing connection or static value. Clicking an unavailable candidate leaves the selection and mappings unchanged without showing an error; choose a compatible field or cancel the selection.
-
-Every destination accepts static values, stored as `['contact' => ['kind' => 'value', 'value' => 'Customer']]`. Constants count as mapped without a source or line in either orientation. The component preserves existing static entries; the consumer owns domain validation.
+Static values use entries such as `['contact' => ['kind' => 'value', 'value' => 'Customer']]`. Without a matching `staticForms()` editor, only non-empty strings are accepted. With an editor, its native rules and casts define accepted values. Static values count as mapped without a source or line in either orientation; the consumer owns domain validation.
 
 Use `staticForms()` to assign an inline Filament editor to a JSON Schema type:
 
@@ -351,6 +375,8 @@ An unconnected destination immediately shows its configured editor and becomes a
 
 Livewire uses encoded source and destination keys internally so dots and numeric names remain literal identifiers. Fill the form with the public `sources`/`targets` state; submitted `getState()` uses the same shape and preserves typed values. Editor templates are rendered up front; Alpine mounts or removes them when connections change, without a server request. Connecting a source replaces and hides the static editor. Removing the destination's final connection restores it with the configured default. Native live fields and actions still make their usual requests.
 
+### Source settings and transforms
+
 Both `FieldMapping` and `FieldBinding` accept `sourceSettings(array|Closure)`: a native Filament schema displayed inside every source card, including unconnected or unbound sources. A closure can receive the literal source identifier as `$source`. Each source has a separate child schema with its own defaults, validation, relative `Get`/`Set`, callbacks, and dehydration. Use `live()` on fields that must recompute other server-rendered configuration.
 
 ```php
@@ -360,7 +386,7 @@ Both `FieldMapping` and `FieldBinding` accept `sourceSettings(array|Closure)`: a
 ])
 ```
 
-Settings are submitted under `sources[source]` and remain there when a connection or binding is removed. `getSourceSettings()` reads the current source-keyed settings for callbacks such as `outputSchema()`. The components do not interpret settings or move them into their connection entries.
+Settings are submitted under `sources[source]` and remain there when a connection or binding is removed. `getSourceSettings()` reads current source-keyed settings for callbacks such as `outputSchema()`, before native child dehydration. The components do not interpret settings or move them into their connection entries.
 
 For the Ferry transformation editor, use the standalone `FieldTransforms` field:
 
@@ -375,7 +401,19 @@ use PHPinnacle\Ferry\Forms\FieldTransforms;
 ])
 ```
 
-`object()` accepts the selected `?ConnectionMetadata`, which is passed to transformation forms. `inputSchema(array|Closure)` supplies the original inline source definition, before applying transformations. The field projects a single logical scalar type, including a nullable type and the formats supplied by `ColumnType::jsonSchema()`; arrays, objects, and unions of several non-null types offer no scalar transforms. An unknown input permits only descriptions accepting a null type, such as Cast. `FieldTransforms` owns the ordered `key`/`params` state, parameter and input-type validation, add menu, chips, drag ordering, and settings actions. Neither mapping component knows this format or requires a transformation registry.
+`object()` accepts the selected `?ConnectionMetadata`, which is passed to transformation forms. `inputSchema(array|Closure)` supplies the original source property definition. The field passes this complete schema through `TransformRegistry::resultSchema()` to determine compatible additions. Mapping consumers use the same result in their `outputSchema()` callbacks for hints and connection checks.
+
+Built-in scalar transforms reject arrays and objects; custom descriptions can accept them through their input schemas. Cast accepts unions of scalar types, including null. The built-in string transforms require a known string type, optionally nullable, and reject logical date/reference formats. `FieldTransforms` owns the ordered `key`/`params` state, native parameter validation, schema compatibility checks, menus, chips and ordering described above. Neither mapping component interprets this format or requires a transformation registry.
+
+### Presentation and assets
+
+Property `title`, `description`, `x-icon`, and `x-color` provide presentation metadata for mapping cards and binding sources. `x-color` accepts a registered Filament color name or a literal hex/RGB color for the icon and title. Cards display the literal property name, required marker, constraint hints, type chips, description and warnings; omitted icons reserve no space. Formats replace the general type label, nullable types add a `null` chip, and enum tooltips list allowed values. `x-badges` accepts a list such as `[['label' => 'Imported', 'color' => 'info']]`; the type chip appears last. For framework schema builders, pass their inline `toArray()` result.
+
+Array chevrons expand item schemas and their scoped constraints, one row per nested level. Field constraints remain in the heading. Details start collapsed and work on connected or disabled cards without changing selection; lines follow card resizing. Source actions appear below the metadata. Colors use Filament's `primary` palette for connections, `warning` for required destinations and `danger` for conflicts, in light and dark themes.
+
+`extraSourceActions([...])` renders native Filament actions on each source, including disconnected sources and inverse mode. Each receives the literal source name in its `source` argument and respects action visibility. Use `iconButton()` and `tooltip()` for compact controls.
+
+During selection, compatible candidates highlight with a check; incompatible cards and their editors dim with a cross, and existing lines fade. Compatible destinations can replace an existing connection or static value. Unavailable clicks preserve the selection and mappings without an error. Outside selection, connected cards retain full contrast and existing incompatible connections remain visible for correction.
 
 Both components support these presentation options:
 
@@ -460,11 +498,7 @@ Use `extraSourceActions([...])` to render Filament actions in every source card,
 
 `jsonSchema(array|Closure)` supplies the source object schema and the same property metadata as `FieldMapping`. Its `required` annotations describe source properties; they do not require the user to bind them. The native `schema()` method continues to describe the per-binding Filament editor. Source identifiers retain their literal identity, including numeric identifiers and dots. `labels(source: 'Source', dest: 'Binding')` sets the headings and accepts closures. Configuration is trusted developer code; source identifiers and binding shapes are validated on submission, while the child fields define the value validation.
 
-The component uses the package views and the shared mapping stylesheet. Include the package views in your custom theme and publish Filament assets as described above. Form state is hydrated into internal child schema state and dehydrated to `sources` settings and a source-keyed `bindings` map when the parent schema is submitted.
-
-## Runtime responsibilities
-
-Ferry keeps separate services for external boundaries: `ConnectionFactory` opens and tests source database connections and closes test connections on success or failure, `StructureImporter` imports Rosetta metadata, `SyncTableManager` creates, drops and updates destination tables directly from a `Sync` model, and `DestinationFactory` holds application registrations. `SourceFactory` builds source connector configurations; each `Destination` builds its sink configuration through `connector()` and composes `JdbcConnectorConfig` for shared JDBC settings. Remote lifecycle operations and Kafka transport belong to `ConnectorManager` and `RdKafkaSignalProducer`. Persisted state and mapping decisions belong to the models; submitted schema validation belongs to `SyncSchema`. `SyncForm` converts validated form state into model attributes. `Sync` saves its state and table changes in a transaction; `SyncObserver` updates eligible connectors after commit, independently of the caller. `ConfirmSchemaChangesAction` only presents column-loss confirmation. Resource pages wire the form into Filament's lifecycle.
+`getBindingValues()` reads the current source-keyed bindings and column-keyed constants for callbacks before native child dehydration. Submit the parent schema with `getState()` to run validation and return the public `sources`/`bindings` state. Internal Livewire keys are encoded to preserve dots and numeric identifiers; fill forms using the public state shown above. Package views, theme setup and asset publishing are shared with `FieldMapping` as described above.
 
 ## Testing
 

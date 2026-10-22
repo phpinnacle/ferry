@@ -68,9 +68,9 @@ export default function fieldMapping({ state, disabled, inverse = false, require
         },
 
         isMapped(side, id) {
-            if (side === 'target' && this.isConstant(id)) return true;
-
-            return this.pairs().some((pair) => pair[side] === id);
+            return side === 'target'
+                ? Object.hasOwn(this.mappings(), id)
+                : this.pairs().some((pair) => pair.source === id);
         },
 
         isSelected(side, id) {
@@ -158,12 +158,11 @@ export default function fieldMapping({ state, disabled, inverse = false, require
         connect(source, target) {
             if (this.disabled || !this.canConnect(source, target) || !this.isSourceAvailable(source, target)) return;
 
+            const mappings = this.mappings();
             const multiple = this.connectionModes[source][target] === 'item';
-            const mappings = multiple && this.targetMode(target) === 'item' ? { ...this.mappings() } : this.withoutConnection(target);
-
             const entry = { kind: 'source', source };
             if (multiple) {
-                const sources = mappings[target] ?? [];
+                const sources = Array.isArray(mappings[target]) ? mappings[target] : [];
                 mappings[target] = sources.some(entry => entry.source === source) ? sources : [...sources, entry];
             } else {
                 mappings[target] = entry;
@@ -174,8 +173,10 @@ export default function fieldMapping({ state, disabled, inverse = false, require
             this.announcement = 'Fields connected.';
         },
 
-        withoutConnection(target, source = null) {
-            const mappings = { ...this.mappings() };
+        remove(target, source = null) {
+            if (this.disabled) return;
+
+            const mappings = this.mappings();
 
             if (source !== null && Array.isArray(mappings[target])) {
                 const remaining = mappings[target].filter((entry) => entry.source !== source);
@@ -185,13 +186,7 @@ export default function fieldMapping({ state, disabled, inverse = false, require
                 delete mappings[target];
             }
 
-            return mappings;
-        },
-
-        remove(target, source = null) {
-            if (this.disabled) return;
-
-            this.setMappings(this.withoutConnection(target, source));
+            this.setMappings(mappings);
             this.announcement = 'Connection removed.';
         },
 

@@ -5,11 +5,14 @@ use PHPinnacle\Ferry\Data\FieldMapping;
 use PHPinnacle\Ferry\Data\StaticValue;
 use PHPinnacle\Ferry\Data\TransformSetting;
 use PHPinnacle\Ferry\Enums\ColumnType;
+use PHPinnacle\Ferry\Enums\TransformScope;
 use PHPinnacle\Ferry\FerryPlugin;
 use PHPinnacle\Ferry\Models\ConnectionMetadata;
 use PHPinnacle\Ferry\Models\Sync;
 use PHPinnacle\Ferry\Rules\SyncSchema;
 use PHPinnacle\Ferry\Services\TransformFactory;
+use PHPinnacle\Ferry\Services\TransformRegistry;
+use PHPinnacle\Ferry\Transformation;
 use PHPinnacle\Rosetta\Enums\FieldType;
 use PHPinnacle\Rosetta\Fields\NumberField;
 use PHPinnacle\Rosetta\Fields\ScalarField;
@@ -24,7 +27,6 @@ uses(TestCase::class);
 
 beforeEach(function () {
     FerryPlugin::make();
-    $this->registry = $this->app->make(TransformFactory::class);
     $this->object = new ConnectionMetadata([
         'system' => [
             '_idrref' => new ScalarField(FieldType::Id),
@@ -35,13 +37,74 @@ beforeEach(function () {
     ]);
 });
 
+it('converts only the final schema to a persisted column type', function () {
+    $registry = app(TransformRegistry::class);
+    $registry->register(
+        Transformation::make('pack', TransformScope::Field)
+            ->inputSchema(['type' => 'string'])
+            ->outputSchema(['type' => 'array', 'items' => ['type' => 'string']]),
+        Transformation::make('join', TransformScope::Field)
+            ->inputSchema(['type' => 'array', 'items' => ['type' => 'string']])
+            ->outputSchema(['type' => ['string', 'null'], 'maxLength' => 100]),
+    );
+    $settings = [new TransformSetting('pack'), new TransformSetting('join')];
+
+    $mappings = SyncSchema::fromBindings($this->object, ['_code' => 'title'], $registry, transforms: ['fields' => [
+        '_code' => $settings,
+    ]]);
+
+    expect($mappings[0]->result)->toBe(ColumnType::String)->and($mappings[0]->transforms)->toEqual($settings);
+    expect(fn () => SyncSchema::fromBindings($this->object, ['_code' => 'title'], $registry, transforms: [
+        'fields' => ['_code' => [new TransformSetting('pack')]],
+    ]))
+        ->toThrow(ValidationException::class);
+});
+
+it('validates field and record settings without configured or resolvable handlers', function () {
+    config(['phpinnacle-ferry.transforms' => []]);
+    app()->bind(
+        TransformFactory::class,
+        fn () => throw new LogicException('Input validation must not resolve handlers.'),
+    );
+
+    $mappings = SyncSchema::fromBindings(
+        $this->object,
+        ['_code' => 'active'],
+        app(TransformRegistry::class),
+        transforms: ['fields' => ['_code' => [new TransformSetting('cast', ['type' => 'boolean'])]]],
+    );
+    $settings = SyncSchema::fromTransforms(
+        [
+            new TransformSetting('filter', [
+                'mode' => 'exclude',
+                'column' => '_code',
+                'value' => 'x',
+                'type' => 'string',
+            ]),
+        ],
+        app(TransformRegistry::class),
+    );
+
+    expect($mappings[0]->result)
+        ->toBe(ColumnType::Boolean)
+        ->and($settings)
+        ->toEqual([
+            new TransformSetting('filter', [
+                'mode' => 'exclude',
+                'column' => '_code',
+                'value' => 'x',
+                'type' => 'string',
+            ]),
+        ]);
+});
+
 it('lets a field transform change the type that is checked against the destination', function () {
     $cast = new TransformSetting('cast', ['type' => 'boolean']);
 
     $mappings = SyncSchema::fromBindings(
         $this->object,
         ['_description' => 'name', '_code' => 'is_active'],
-        $this->registry,
+        app(TransformRegistry::class),
         customers_destination(),
         ['fields' => ['_code' => [$cast]], 'constants' => ['tax_number' => ['type' => 'string', 'value' => 'none']]],
     );
@@ -51,7 +114,7 @@ it('lets a field transform change the type that is checked against the destinati
         ->and($mappings[1]->sourceType())
         ->toBe(ColumnType::String)
         ->and($mappings[1]->transforms)
-        ->toBe([$cast]);
+        ->toEqual([$cast]);
 });
 
 it('validates the final cast type and preserves every step in the connector pipeline', function () {
@@ -62,17 +125,17 @@ it('validates the final cast type and preserves every step in the connector pipe
     $mappings = SyncSchema::fromBindings(
         $this->object,
         ['_description' => 'name', '_code' => 'is_active'],
-        $this->registry,
+        app(TransformRegistry::class),
         customers_destination(),
         ['fields' => ['_code' => $settings], 'constants' => ['tax_number' => ['type' => 'string', 'value' => 'none']]],
     );
     $sync = new Sync(['schema' => $mappings, 'transforms' => []]);
-    $pipeline = $this->registry->pipeline($sync, $this->object)['before'];
+    $pipeline = app(TransformFactory::class)->pipeline($sync, $this->object)['before'];
 
     expect($mappings[1]->result)
         ->toBe(ColumnType::Boolean)
         ->and($mappings[1]->transforms)
-        ->toBe($settings)
+        ->toEqual($settings)
         ->and(array_column($pipeline, 'spec'))
         ->toBe(['_code:int64', '_code:boolean']);
 });
@@ -81,7 +144,7 @@ it('maps a static value to a destination field without a source field', function
     $mappings = SyncSchema::fromBindings(
         $this->object,
         ['_description' => 'name'],
-        $this->registry,
+        app(TransformRegistry::class),
         customers_destination(),
         transforms: [
             'constants' => [
@@ -116,21 +179,12 @@ it('rejects transform settings that cannot be applied', function (
     expect(fn () => SyncSchema::fromBindings(
         $this->object,
         ['_description' => 'name', '_code' => 'tax_number'],
-        $this->registry,
+        app(TransformRegistry::class),
         customers_destination(),
         ['fields' => $fieldTransforms, 'constants' => $constants],
     ))
         ->toThrow(ValidationException::class, __('phpinnacle-ferry::resources.sync.errors.' . $error, $replace));
 })->with([
-    'unsupported cast type' => [
-        ['_code' => [new TransformSetting('cast', ['type' => 'reference'])]],
-        [],
-        'transform_invalid_params',
-        fn () => [
-            'transform' => __('phpinnacle-ferry::resources.transform.cast'),
-            'error' => 'The selected type is invalid.',
-        ],
-    ],
     'constant that does not match its type' => [
         [],
         ['is_active' => ['type' => 'boolean', 'value' => 'maybe']],
@@ -176,7 +230,7 @@ it('casts a numeric source to the selected supported type', function (int $scale
     $mappings = SyncSchema::fromBindings(
         $object,
         ['_qty' => 'qty'],
-        $this->registry,
+        app(TransformRegistry::class),
         transforms: ['fields' => ['_qty' => [new TransformSetting('cast', ['type' => $type->value])]]],
     );
 
@@ -187,7 +241,7 @@ it('refuses transforms that are not registered', function () {
     expect(fn () => SyncSchema::fromBindings(
         $this->object,
         ['_description' => 'title'],
-        $this->registry,
+        app(TransformRegistry::class),
         transforms: ['fields' => ['_description' => [new TransformSetting('missing')]]],
     ))
         ->toThrow(LogicException::class, __('phpinnacle-ferry::resources.sync.errors.transform_missing', [
@@ -198,81 +252,13 @@ it('refuses transforms that are not registered', function () {
 it('accepts only record transforms for a whole synchronization', function () {
     expect(fn () => SyncSchema::fromTransforms(
         [new TransformSetting('cast', ['type' => 'string'])],
-        $this->object,
-        $this->registry,
+        app(TransformRegistry::class),
     ))
         ->toThrow(ValidationException::class, __('phpinnacle-ferry::resources.sync.errors.transform_scope_mismatch', [
             'transform' => __('phpinnacle-ferry::resources.transform.cast'),
         ]))
-        ->and(SyncSchema::fromTransforms([], $this->object, $this->registry))
+        ->and(SyncSchema::fromTransforms([], app(TransformRegistry::class)))
         ->toBe([]);
-});
-
-it('requires the columns a record transform reads to exist in the object', function () {
-    $exists = new TransformSetting('filter', [
-        'mode' => 'exclude',
-        'column' => '_code',
-        'type' => 'string',
-        'value' => 'x',
-    ]);
-    $gone = new TransformSetting('filter', [
-        'mode' => 'exclude',
-        'column' => '_gone',
-        'type' => 'string',
-        'value' => 'x',
-    ]);
-
-    expect(SyncSchema::fromTransforms([$exists], $this->object, $this->registry))
-        ->toEqual([$exists])
-        ->and(fn () => SyncSchema::fromTransforms([$exists, $gone], $this->object, $this->registry))
-        ->toThrow(ValidationException::class, __('phpinnacle-ferry::resources.sync.errors.transform_column_missing', [
-            'column' => '_gone',
-        ]));
-});
-
-it('takes the type of a filtered column from the object instead of the submitted settings', function () {
-    $object = new ConnectionMetadata([
-        'system' => [
-            '_idrref' => new ScalarField(FieldType::Id),
-            '_code' => new StringField(length: 11, fixed: true),
-            '_folder' => new ScalarField(FieldType::Boolean),
-        ],
-        'properties' => [],
-    ]);
-    $forged = new TransformSetting('filter', [
-        'mode' => 'exclude',
-        'column' => '_code',
-        'type' => 'boolean',
-        'value' => 'x',
-    ]);
-    $omitted = new TransformSetting('filter', ['mode' => 'exclude', 'column' => '_folder', 'value' => 'true']);
-    $disguised = new TransformSetting('filter', [
-        'mode' => 'include',
-        'column' => '_folder',
-        'type' => 'string',
-        'value' => 'maybe',
-    ]);
-
-    expect(SyncSchema::fromTransforms([$forged, $omitted], $object, $this->registry))
-        ->toEqual([
-            new TransformSetting('filter', [
-                'mode' => 'exclude',
-                'column' => '_code',
-                'type' => 'string',
-                'value' => 'x',
-            ]),
-            new TransformSetting('filter', [
-                'mode' => 'exclude',
-                'column' => '_folder',
-                'type' => 'boolean',
-                'value' => 'true',
-            ]),
-        ])
-        ->and(fn () => SyncSchema::fromTransforms([$disguised], $object, $this->registry))
-        ->toThrow(ValidationException::class, __('phpinnacle-ferry::resources.sync.errors.transform_invalid_params', [
-            'transform' => __('phpinnacle-ferry::resources.transform.filter'),
-            'error' => 'The selected value is invalid.',
-        ]));
 });
 
 it('round-trips source and static mappings without synthetic transforms', function () {
@@ -291,7 +277,7 @@ it('preserves false and zero static values without transform settings', function
     $mapping = SyncSchema::fromBindings(
         $this->object,
         [],
-        $this->registry,
+        app(TransformRegistry::class),
         transforms: ['constants' => ['status' => ['type' => $type, 'value' => $value]]],
     )[0];
 

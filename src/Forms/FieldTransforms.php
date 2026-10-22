@@ -7,11 +7,10 @@ use Filament\Forms\Components\Field;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Translation\PotentiallyTranslatedString;
 use Illuminate\Validation\Rule;
-use PHPinnacle\Ferry\Enums\ColumnType;
 use PHPinnacle\Ferry\Enums\TransformScope;
 use PHPinnacle\Ferry\Forms\Actions\FieldTransformsAction;
 use PHPinnacle\Ferry\Models\ConnectionMetadata;
-use PHPinnacle\Ferry\Services\TransformFactory;
+use PHPinnacle\Ferry\Services\TransformRegistry;
 use PHPinnacle\Ferry\Transformation;
 
 /**
@@ -35,53 +34,20 @@ class FieldTransforms extends Field
         return $this;
     }
 
-    private function isScalarInput(): bool
-    {
-        $types = array_values(array_diff(
-            JsonSchema::fromArray($this->evaluate($this->inputSchema))->types(),
-            ['null'],
-        ));
-
-        return (
-            count($types) <= 1
-            && array_diff($types, [
-                'string',
-                'integer',
-                'number',
-                'boolean',
-            ]) === []
-        );
-    }
-
-    private function inputType(): ?ColumnType
-    {
-        $schema = JsonSchema::fromArray($this->evaluate($this->inputSchema));
-        $types = array_values(array_diff($schema->types(), ['null']));
-        foreach (ColumnType::cases() as $type) {
-            $definition = $type->jsonSchema();
-            if ($types === [$definition['type']] && $schema->annotation('format') === ($definition['format'] ?? null)) {
-                return $type;
-            }
-        }
-
-        return null;
-    }
-
     /** @return array<string, Transformation> */
-    public function getAvailableTransforms(TransformFactory $transforms): array
+    public function getAvailableTransforms(TransformRegistry $transforms): array
     {
-        if (!$this->isScalarInput()) {
-            return [];
-        }
-
-        $type = $transforms->resultType($this->inputType(), $this->getSettings());
-        if ($type === null && $this->getSettings() !== []) {
+        $schema = $transforms->resultSchema(
+            JsonSchema::fromArray($this->evaluate($this->inputSchema)),
+            $this->getSettings(),
+        );
+        if ($schema === null) {
             return [];
         }
 
         return array_filter(
             $transforms->forScope(TransformScope::Field),
-            fn (Transformation $transform) => $transform->accepts($type),
+            fn (Transformation $transform) => $transform->accepts($schema),
         );
     }
 
@@ -114,14 +80,14 @@ class FieldTransforms extends Field
             $this->validateSettings(...),
         ]);
         $this->registerActions([
-            fn (self $component, TransformFactory $transforms) => FieldTransformsAction::make($component, $transforms),
+            fn (self $component, TransformRegistry $transforms) => FieldTransformsAction::make($component, $transforms),
         ]);
     }
 
     /** @param Closure(string): PotentiallyTranslatedString $fail */
     private function validateSettings(string $attribute, mixed $value, Closure $fail): void
     {
-        $transforms = app(TransformFactory::class);
+        $transforms = app(TransformRegistry::class);
         $validator = Validator::make(['transforms' => $value], [
             'transforms' => ['array', 'list'],
             'transforms.*' => ['array:key,params'],
@@ -140,7 +106,7 @@ class FieldTransforms extends Field
         }
         /** @var list<Transform> $settings */
         $settings = $validator->validated()['transforms'];
-        $type = $this->inputType();
+        $schema = JsonSchema::fromArray($this->evaluate($this->inputSchema));
         foreach ($settings as $index => $setting) {
             $transform = $transforms->getOrFail($setting['key']);
             $params = $setting['params'] ?? [];
@@ -149,10 +115,8 @@ class FieldTransforms extends Field
                 ->statePath($index . '.params')
                 ->components($transform->getSchema($this->object))
                 ->validate();
-            $type = $this->isScalarInput() && $transform->accepts($type)
-                ? $transform->getOutputType($type, $params)
-                : null;
-            if ($type === null) {
+            $schema = $transform->accepts($schema) ? $transform->getOutputSchema($schema, $params) : null;
+            if ($schema === null) {
                 $fail('phpinnacle-ferry::validation.transform_input_type')->translate([
                     'transform' => $transform->getLabel(),
                 ]);

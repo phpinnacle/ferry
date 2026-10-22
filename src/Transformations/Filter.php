@@ -2,6 +2,7 @@
 
 namespace PHPinnacle\Ferry\Transformations;
 
+use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Components\Utilities\Get;
@@ -21,6 +22,11 @@ final class Filter
             ->icon(Heroicon::Funnel)
             ->description(fn () => __('phpinnacle-ferry::resources.transform.filter_description'))
             ->schema(fn (?ConnectionMetadata $object) => [
+                Hidden::make('type')
+                    ->dehydrated(fn (Get $get) => filled($get('column')))
+                    ->dehydrateStateUsing(fn (Get $get) => self::fields($object)[$get->string(
+                        'column',
+                    )]['type']->value),
                 Select::make('mode')
                     ->label(__('phpinnacle-ferry::resources.transform.filter_mode'))
                     ->options([

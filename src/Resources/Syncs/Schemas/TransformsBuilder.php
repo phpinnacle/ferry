@@ -11,7 +11,7 @@ use Illuminate\Translation\PotentiallyTranslatedString;
 use Illuminate\Validation\Rule;
 use PHPinnacle\Ferry\Enums\TransformScope;
 use PHPinnacle\Ferry\Models\ConnectionMetadata;
-use PHPinnacle\Ferry\Services\TransformFactory;
+use PHPinnacle\Ferry\Services\TransformRegistry;
 use PHPinnacle\Ferry\Transformation;
 
 class TransformsBuilder
@@ -19,7 +19,7 @@ class TransformsBuilder
     public static function make(
         TransformScope $scope,
         ?ConnectionMetadata $object,
-        TransformFactory $transforms,
+        TransformRegistry $transforms,
     ): Builder {
         $available = $transforms->forScope($scope);
 

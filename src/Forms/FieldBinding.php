@@ -148,6 +148,12 @@ class FieldBinding extends Field
         );
     }
 
+    /** @return array<string, mixed> */
+    public function getBindingValues(): array
+    {
+        return $this->getDehydratedBindings($this->getBindingState());
+    }
+
     /** @return array<Schema> */
     public function getConstants(): array
     {
@@ -269,7 +275,7 @@ class FieldBinding extends Field
 
         $this->schema([]);
         $this->default(['sources' => [], 'bindings' => []]);
-        $this->rules(fn (self $component) => ['array', $component->validateBindings(...)]);
+        $this->rules(fn (self $component) => ['bail', 'array', $component->validateBindings(...)]);
         $this->registerActions([
             fn (self $component) => $component->getBindAction(),
             fn (self $component) => $component->getUnbindAction(),

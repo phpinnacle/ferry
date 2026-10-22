@@ -12,6 +12,7 @@ use PHPinnacle\Ferry\Models\Sync;
 use PHPinnacle\Ferry\Rules\SyncSchema;
 use PHPinnacle\Ferry\Services\SyncTableManager;
 use PHPinnacle\Ferry\Services\TransformFactory;
+use PHPinnacle\Ferry\Services\TransformRegistry;
 use PHPinnacle\Ferry\Tests\TestCase;
 use PHPinnacle\Rosetta\Data\MetadataProperty;
 use PHPinnacle\Rosetta\Enums\FieldType;
@@ -27,7 +28,7 @@ uses(TestCase::class);
 beforeEach(function () {
     Queue::fake();
 
-    $this->registry = $this->app->make(TransformFactory::class);
+    $this->factory = $this->app->make(TransformFactory::class);
 });
 
 it('rolls back a synchronization and its table when creation fails', function () {
@@ -110,7 +111,7 @@ it('owns the persisted schema and destination table throughout its lifecycle', f
                 'price' => 'price',
                 'posted' => 'posted',
             ],
-            $this->registry,
+            app(TransformRegistry::class),
         ),
     ]);
 
@@ -153,7 +154,7 @@ it('adds, renames and drops columns when the mapping changes', function () use (
                 '_idrref' => 'external_id',
                 'title' => 'title',
             ],
-            $this->registry,
+            app(TransformRegistry::class),
         ),
     ]);
 
@@ -169,7 +170,7 @@ it('adds, renames and drops columns when the mapping changes', function () use (
             '_idrref' => 'row_id',
             'price' => 'price',
         ],
-        $this->registry,
+        app(TransformRegistry::class),
     );
 
     $sync->fill(['schema' => $updated]);
@@ -221,7 +222,7 @@ it('changes the column type when a mapped field changes type', function () use (
                 '_idrref' => 'external_id',
                 'flag' => 'flag',
             ],
-            $this->registry,
+            app(TransformRegistry::class),
         ),
     ]);
 

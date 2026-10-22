@@ -3,6 +3,7 @@
 namespace PHPinnacle\Ferry\Enums;
 
 use Filament\Support\Contracts\HasLabel;
+use PHPinnacle\Ferry\Forms\JsonSchema;
 use PHPinnacle\Rosetta\Contracts\Field;
 use PHPinnacle\Rosetta\Enums\FieldType;
 use PHPinnacle\Rosetta\Fields\NumberField;
@@ -31,6 +32,21 @@ enum ColumnType: string implements HasLabel
                 FieldType::Id, FieldType::Uuid => self::Reference,
                 default => null,
             },
+            default => null,
+        };
+    }
+
+    public static function fromJsonSchema(JsonSchema $schema): ?self
+    {
+        return match (array_values(array_diff($schema->types(), ['null']))) {
+            ['string'] => match ($schema->annotation('format')) {
+                'ferry-reference' => self::Reference,
+                'date-time' => self::DateTime,
+                default => self::String,
+            },
+            ['integer'] => self::Integer,
+            ['number'] => self::Decimal,
+            ['boolean'] => self::Boolean,
             default => null,
         };
     }

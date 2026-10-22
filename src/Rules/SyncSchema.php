@@ -5,9 +5,9 @@ namespace PHPinnacle\Ferry\Rules;
 use Closure;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Translation\PotentiallyTranslatedString;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
-use PHPinnacle\Ferry\Contracts\TransformHandler;
 use PHPinnacle\Ferry\Data\DestinationField;
 use PHPinnacle\Ferry\Data\FieldMapping;
 use PHPinnacle\Ferry\Data\StaticValue;
@@ -15,9 +15,11 @@ use PHPinnacle\Ferry\Data\TransformSetting;
 use PHPinnacle\Ferry\Destinations\StaticDestination;
 use PHPinnacle\Ferry\Enums\ColumnType;
 use PHPinnacle\Ferry\Enums\TransformScope;
+use PHPinnacle\Ferry\Forms\JsonSchema;
 use PHPinnacle\Ferry\Models\ConnectionMetadata;
 use PHPinnacle\Ferry\Models\Sync;
-use PHPinnacle\Ferry\Services\TransformFactory;
+use PHPinnacle\Ferry\Services\TransformRegistry;
+use PHPinnacle\Ferry\Transformation;
 
 readonly class SyncSchema implements ValidationRule
 {
@@ -62,33 +64,72 @@ readonly class SyncSchema implements ValidationRule
                 return;
             }
 
-            if (array_key_exists($column, $columns)) {
-                $fail('phpinnacle-ferry::validation.sync_schema.column_duplicate')->translate([
-                    'column' => $column,
-                ]);
-
-                return;
-            }
-
-            if (preg_match('/^[a-z][a-z0-9_]*$/', $column) !== 1) {
-                $fail('phpinnacle-ferry::validation.sync_schema.column_format')->translate([
-                    'column' => $column,
-                ]);
-
-                return;
-            }
-
-            if (in_array($column, Sync::RESERVED_COLUMNS, true)) {
-                $fail('phpinnacle-ferry::validation.sync_schema.column_reserved')->translate([
-                    'column' => $column,
-                ]);
-
+            if (!self::validateColumn($column, $columns, $fail)) {
                 return;
             }
 
             $sources[$source] = true;
             $columns[$column] = true;
         }
+    }
+
+    /**
+     * @param list<mixed> $columns
+     * @param Closure(string): PotentiallyTranslatedString $fail
+     */
+    public static function validateColumns(array $columns, Closure $fail): void
+    {
+        if ($columns === []) {
+            $fail('phpinnacle-ferry::validation.sync_schema.empty')->translate();
+
+            return;
+        }
+
+        $used = [];
+        foreach ($columns as $column) {
+            if (!is_string($column) || $column === '') {
+                $fail('phpinnacle-ferry::validation.sync_schema.column_required')->translate();
+
+                return;
+            }
+            if (!self::validateColumn($column, $used, $fail)) {
+                return;
+            }
+            $used[$column] = true;
+        }
+    }
+
+    /**
+     * @param array<string, true> $used
+     * @param Closure(string): PotentiallyTranslatedString $fail
+     */
+    private static function validateColumn(string $column, array $used, Closure $fail): bool
+    {
+        if (array_key_exists($column, $used)) {
+            $fail('phpinnacle-ferry::validation.sync_schema.column_duplicate')->translate([
+                'column' => $column,
+            ]);
+
+            return false;
+        }
+
+        if (preg_match('/^[a-z][a-z0-9_]*$/', $column) !== 1) {
+            $fail('phpinnacle-ferry::validation.sync_schema.column_format')->translate([
+                'column' => $column,
+            ]);
+
+            return false;
+        }
+
+        if (in_array($column, Sync::RESERVED_COLUMNS, true)) {
+            $fail('phpinnacle-ferry::validation.sync_schema.column_reserved')->translate([
+                'column' => $column,
+            ]);
+
+            return false;
+        }
+
+        return true;
     }
 
     /**
@@ -99,7 +140,7 @@ readonly class SyncSchema implements ValidationRule
     public static function fromBindings(
         ConnectionMetadata $object,
         array $bindings,
-        TransformFactory $registry,
+        TransformRegistry $registry,
         ?StaticDestination $destination = null,
         array $transforms = [],
     ): array {
@@ -130,15 +171,28 @@ readonly class SyncSchema implements ValidationRule
 
             $settings = $transforms['fields'][$source] ?? [];
             $type = ColumnType::fromField($field);
+            $schema = JsonSchema::fromArray($type?->jsonSchema() ?? []);
 
             foreach ($settings as $setting) {
                 $transform = self::transform($setting, TransformScope::Field, $registry);
-                $type = $transform->resultType($type, $setting->params);
+                $schema = $transform->accepts($schema) ? $transform->getOutputSchema($schema, $setting->params) : null;
 
+                if ($schema === null) {
+                    throw ValidationException::withMessages([
+                        'data.transforms' => __('phpinnacle-ferry::resources.sync.errors.transform_field_unsupported', [
+                            'transform' => $transform->getLabel(),
+                            'field' => $source,
+                        ]),
+                    ]);
+                }
+            }
+
+            if ($settings !== []) {
+                $type = ColumnType::fromJsonSchema($schema);
                 if ($type === null) {
                     throw ValidationException::withMessages([
                         'data.transforms' => __('phpinnacle-ferry::resources.sync.errors.transform_field_unsupported', [
-                            'transform' => $registry->getOrFail($setting->key)->getLabel(),
+                            'transform' => $registry->getOrFail($settings[array_key_last($settings)]->key)->getLabel(),
                             'field' => $source,
                         ]),
                     ]);
@@ -200,43 +254,21 @@ readonly class SyncSchema implements ValidationRule
      * @param list<TransformSetting> $settings
      * @return list<TransformSetting>
      */
-    public static function fromTransforms(
-        array $settings,
-        ConnectionMetadata $object,
-        TransformFactory $registry,
-    ): array {
-        $normalized = [];
-
+    public static function fromTransforms(array $settings, TransformRegistry $registry): array
+    {
         foreach ($settings as $setting) {
-            $setting = new TransformSetting(
-                $setting->key,
-                $registry->handlerOrFail($setting->key)->normalize($setting->params, $object),
-            );
-            $transform = self::transform($setting, TransformScope::Record, $registry);
-
-            foreach ($transform->sourceColumns($setting->params) as $column) {
-                if (!$object->hasColumn($column)) {
-                    throw ValidationException::withMessages([
-                        'data.transforms' => __('phpinnacle-ferry::resources.sync.errors.transform_column_missing', [
-                            'column' => $column,
-                        ]),
-                    ]);
-                }
-            }
-
-            $normalized[] = $setting;
+            self::transform($setting, TransformScope::Record, $registry);
         }
 
-        return $normalized;
+        return $settings;
     }
 
     private static function transform(
         TransformSetting $setting,
         TransformScope $scope,
-        TransformFactory $registry,
-    ): TransformHandler {
+        TransformRegistry $registry,
+    ): Transformation {
         $definition = $registry->getOrFail($setting->key);
-        $transform = $registry->handlerOrFail($setting->key);
 
         if ($definition->scope() !== $scope) {
             throw ValidationException::withMessages([
@@ -246,18 +278,7 @@ readonly class SyncSchema implements ValidationRule
             ]);
         }
 
-        $validator = Validator::make($setting->params, $transform->rules($setting->params));
-
-        if ($validator->fails()) {
-            throw ValidationException::withMessages([
-                'data.transforms' => __('phpinnacle-ferry::resources.sync.errors.transform_invalid_params', [
-                    'transform' => $definition->getLabel(),
-                    'error' => $validator->errors()->first(),
-                ]),
-            ]);
-        }
-
-        return $transform;
+        return $definition;
     }
 
     /** @param array<string, DestinationField> $fields */

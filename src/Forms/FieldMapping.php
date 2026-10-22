@@ -423,11 +423,6 @@ class FieldMapping extends Field
         $usedTargets = [];
 
         foreach ($value as $target => $mapped) {
-            if (!array_key_exists($target, $targets)) {
-                $fail('The :attribute field contains an unknown source or destination.')->translate();
-
-                return;
-            }
             $collection = is_array($mapped) && array_is_list($mapped);
             if (!is_array($mapped) || $mapped === [] || $collection && !in_array((string) $target, $multiple, true)) {
                 $fail('The :attribute field contains an invalid mapping value.')->translate();

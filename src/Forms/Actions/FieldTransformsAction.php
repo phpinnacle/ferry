@@ -12,13 +12,13 @@ use Illuminate\Validation\Rule;
 use PHPinnacle\Ferry\Enums\TransformScope;
 use PHPinnacle\Ferry\Forms\FieldTransforms;
 use PHPinnacle\Ferry\Models\ConnectionMetadata;
-use PHPinnacle\Ferry\Services\TransformFactory;
+use PHPinnacle\Ferry\Services\TransformRegistry;
 use PHPinnacle\Ferry\Transformation;
 
 /** @phpstan-import-type Transform from FieldTransforms */
 class FieldTransformsAction
 {
-    public static function make(FieldTransforms $field, TransformFactory $transforms): Action
+    public static function make(FieldTransforms $field, TransformRegistry $transforms): Action
     {
         $object = $field->getObject();
         $available = $transforms->forScope(TransformScope::Field);

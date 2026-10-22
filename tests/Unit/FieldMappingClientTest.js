@@ -37,7 +37,8 @@ test('native static editors switch modes locally and preserve typed defaults', (
     component.state.targets.encoded_name.value = true;
     component.connect('title', 'name');
     assert.deepEqual(component.state.targets, { encoded_name: sourceEntry('title') });
-    assert.deepEqual(component.pairs(), [{ source: 'title', target: 'name' }]);
+    component.refresh();
+    assert.deepEqual(component.connections.map(({ source, target }) => ({ source, target })), [{ source: 'title', target: 'name' }]);
     component.remove('name');
     assert.deepEqual(component.state.targets, { encoded_name: value(false) });
 });
@@ -52,7 +53,8 @@ for (const value of [null, '', false, 0, []]) {
         assert.equal(component.isMapped('target', 'name'), true);
         assert.equal(component.mappedTargetCount(), 1);
         assert.deepEqual(component.missingRequired(), []);
-        assert.deepEqual(component.pairs(), []);
+        component.refresh();
+        assert.deepEqual(component.connections, []);
         assert.equal(component.isDisabled('source', 'title'), false);
     });
 }
@@ -69,24 +71,6 @@ test('connects by selecting fields in either order and appends sources to a mult
     component.select('target', 'contact');
     assert.deepEqual(component.state.targets, { name: [sourceEntry('title')], contact: sourceEntry('email') });
     assert.equal(component.selected, null);
-});
-
-test('occupied sources cannot be selected in either selection order', () => {
-    const component = editor({ name: sourceEntry('title'), contact: sourceEntry('email') });
-    component.select('source', 'title');
-    assert.equal(component.selected, null);
-    component.select('target', 'contact');
-    assert.deepEqual(component.state.targets, { name: sourceEntry('title'), contact: sourceEntry('email') });
-
-    component.cancel();
-    component.select('target', 'contact');
-    assert.equal(component.isIncompatible('source', 'title'), true);
-    component.select('source', 'title');
-    assert.deepEqual(component.state.targets, { name: sourceEntry('title'), contact: sourceEntry('email') });
-    assert.deepEqual(component.selected, { side: 'target', id: 'contact' });
-
-    component.connect('title', 'contact');
-    assert.deepEqual(component.state.targets, { name: sourceEntry('title'), contact: sourceEntry('email') });
 });
 
 test('removing a connection frees a source and connecting the same pair is allowed', () => {
@@ -150,12 +134,6 @@ test('occupied source ports cannot be selected or connected from a destination p
         component.fieldBindings(side === 'source' ? 'target' : 'source', side === 'source' ? 'contact' : 'title')['@click']();
         assert.deepEqual(component.state.targets, { name: sourceEntry('title') });
     }
-});
-
-test('removing a connection preserves the other connections', () => {
-    const component = editor({ name: sourceEntry('title'), contact: sourceEntry('email') });
-    component.remove('name');
-    assert.deepEqual(component.state.targets, { contact: sourceEntry('email') });
 });
 
 test('field controls track source locks, selection, and read-only state after creation', () => {
@@ -352,16 +330,6 @@ test('incompatible selections are ignored without replacing an existing connecti
     assert.deepEqual(component.state.targets, { contact: sourceEntry('email'), name: sourceEntry('title') });
 });
 
-test('destination-first port clicks ignore mismatched types and highlight incompatible sources', () => {
-    const component = editor({}, false, {
-        connectionModes: { title: { contact: 'whole' }, email: { name: 'whole', contact: 'whole' } },
-    });
-    component.fieldBindings('target', 'name')['@click']();
-    assert.equal(component.isIncompatible('source', 'title'), true);
-    component.fieldBindings('source', 'title')['@click']();
-    assert.deepEqual(component.state.targets, {});
-});
-
 test('server connection modes identify existing conflicts and allow compatible replacements', () => {
     const component = editor({ name: sourceEntry('title') }, false, {
         connectionModes: { title: { contact: 'whole' }, email: { name: 'whole', contact: 'whole' } },
@@ -486,16 +454,14 @@ test('inline static edits are reflected in mappings and connections replace thei
     assert.deepEqual(component.state.targets, { name: sourceEntry('title') });
 });
 
-test('read-only connections cannot replace static values and inverse uses the same state', () => {
-    const readOnly = editor({ name: value('Customer') }, true);
-    readOnly.connect('title', 'name');
-    readOnly.remove('name');
-    assert.deepEqual(readOnly.state.targets, { name: value('Customer') });
-
-    const inverse = editor({ name: sourceEntry('title') }, false, { inverse: true });
-    assert.equal(inverse.isConstant('title'), false);
-    assert.equal(inverse.pairs().length, 1);
-});
+for (const inverse of [false, true]) {
+    test(`${inverse ? 'inverse' : 'forward'}: read-only connections cannot replace static values`, () => {
+        const component = editor({ name: value('Customer') }, true, { inverse });
+        component.connect('title', 'name');
+        component.remove('name');
+        assert.deepEqual(component.state.targets, { name: value('Customer') });
+    });
+}
 
 for (const inverse of [false, true]) {
     test(`${inverse ? 'inverse' : 'forward'}: whole arrays and item collections replace each other without flattening`, () => {

@@ -3,7 +3,6 @@
 namespace PHPinnacle\Ferry\Tests\Fakes;
 
 use PHPinnacle\Ferry\Contracts\TransformHandler;
-use PHPinnacle\Ferry\Enums\ColumnType;
 use PHPinnacle\Ferry\Enums\TransformScope;
 use PHPinnacle\Ferry\Models\ConnectionMetadata;
 use PHPinnacle\Ferry\Transformation;
@@ -22,19 +21,9 @@ final class ExcludeFoldersHandler implements TransformHandler
         return $params;
     }
 
-    public function rules(array $params): array
-    {
-        return [];
-    }
-
     public function sourceColumns(array $params): array
     {
         return ['_folder'];
-    }
-
-    public function resultType(?ColumnType $input, array $params): ?ColumnType
-    {
-        return $input;
     }
 
     public function connector(string $name, ?string $field, array $params): array

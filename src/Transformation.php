@@ -11,10 +11,11 @@ use Filament\Support\Contracts\HasDescription;
 use Filament\Support\Contracts\HasIcon;
 use Filament\Support\Contracts\HasLabel;
 use Illuminate\Contracts\Support\Htmlable;
-use PHPinnacle\Ferry\Enums\ColumnType;
 use PHPinnacle\Ferry\Enums\TransformScope;
+use PHPinnacle\Ferry\Forms\JsonSchema;
 use PHPinnacle\Ferry\Models\ConnectionMetadata;
 
+/** @phpstan-import-type Definition from JsonSchema */
 final class Transformation implements HasColor, HasDescription, HasIcon, HasLabel
 {
     use EvaluatesClosures;
@@ -31,11 +32,11 @@ final class Transformation implements HasColor, HasDescription, HasIcon, HasLabe
     /** @var array<Component>|Closure */
     private array|Closure $schema = [];
 
-    /** @var list<ColumnType>|null */
-    private ?array $inputTypes = null;
+    /** @var Definition|Closure(JsonSchema): bool */
+    private array|Closure $inputSchema = [];
 
-    /** @var ColumnType|Closure(?ColumnType, array<string, string>): ?ColumnType|null */
-    private ColumnType|Closure|null $outputType = null;
+    /** @var Definition|Closure(JsonSchema, array<string, string>): (Definition|null)|null */
+    private array|Closure|null $outputSchema = null;
 
     private function __construct(
         private readonly string $key,
@@ -59,37 +60,43 @@ final class Transformation implements HasColor, HasDescription, HasIcon, HasLabe
         return $this->scope;
     }
 
-    /** @param list<ColumnType> $types */
-    public function inputTypes(array $types): self
+    /** @param Definition|Closure(JsonSchema): bool $schema */
+    public function inputSchema(array|Closure $schema): self
     {
         $transformation = clone $this;
-        $transformation->inputTypes = $types;
+        $transformation->inputSchema = $schema;
 
         return $transformation;
     }
 
-    public function accepts(?ColumnType $input): bool
+    public function accepts(JsonSchema $input): bool
     {
-        return $this->inputTypes === null || in_array($input, $this->inputTypes, true);
+        return $this->inputSchema instanceof Closure
+            ? ($this->inputSchema)($input)
+            : $input->compatible(JsonSchema::fromArray($this->inputSchema));
     }
 
-    /** @param ColumnType|Closure(?ColumnType, array<string, string>): ?ColumnType $type */
-    public function outputType(ColumnType|Closure $type): self
+    /** @param Definition|Closure(JsonSchema, array<string, string>): (Definition|null) $schema */
+    public function outputSchema(array|Closure $schema): self
     {
         $transformation = clone $this;
-        $transformation->outputType = $type;
+        $transformation->outputSchema = $schema;
 
         return $transformation;
     }
 
     /** @param array<string, string> $params */
-    public function getOutputType(?ColumnType $input, array $params): ?ColumnType
+    public function getOutputSchema(JsonSchema $input, array $params): ?JsonSchema
     {
-        if ($this->outputType instanceof Closure) {
-            return ($this->outputType)($input, $params);
+        if ($this->outputSchema === null) {
+            return $input;
         }
 
-        return $this->outputType ?? $input;
+        $schema = $this->outputSchema instanceof Closure
+            ? ($this->outputSchema)($input, $params)
+            : $this->outputSchema;
+
+        return $schema === null ? null : JsonSchema::fromArray($schema);
     }
 
     public function label(string|Closure $label): self

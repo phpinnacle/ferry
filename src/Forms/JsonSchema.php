@@ -31,11 +31,11 @@ final readonly class JsonSchema
      */
     private function __construct(
         private array $definition,
-        private array $declaredProperties,
-        private ?self $declaredItems,
-        private array $allOf,
-        private array $anyOf,
-        private array $oneOf,
+        private array $declaredProperties = [],
+        private ?self $declaredItems = null,
+        private array $allOf = [],
+        private array $anyOf = [],
+        private array $oneOf = [],
     ) {}
 
     /** @param array<string, mixed> $definition Valid inline JSON Schema, including recursive child definitions. */
@@ -60,7 +60,7 @@ final readonly class JsonSchema
         foreach ($this->allOf as $branch) {
             foreach ($branch->properties() as $name => $property) {
                 $properties[$name] = array_key_exists($name, $properties)
-                    ? self::fromArray(['allOf' => [$properties[$name]->definition, $property->definition]])
+                    ? self::compose('allOf', [$properties[$name], $property])
                     : $property;
             }
         }
@@ -118,12 +118,14 @@ final readonly class JsonSchema
      */
     private static function compose(string $keyword, array $schemas): self
     {
-        return (
-            count($schemas) === 1
-                ? $schemas[0]
-                : self::fromArray([
-                    $keyword => array_map(fn (self $schema) => $schema->definition, $schemas),
-                ])
+        if (count($schemas) === 1) {
+            return $schemas[0];
+        }
+
+        return new self(
+            definition: [$keyword => array_map(fn (self $schema) => $schema->definition, $schemas)],
+            allOf: $keyword === 'allOf' ? $schemas : [],
+            anyOf: $keyword === 'anyOf' ? $schemas : [],
         );
     }
 
@@ -398,15 +400,19 @@ final readonly class JsonSchema
                     unset($siblings['allOf'][$index]);
                     $siblings['allOf'] = array_values($siblings['allOf']);
 
-                    return array_map(fn (self $alternative) => self::fromArray([
-                        'allOf' => [$siblings, $alternative->definition],
-                    ]), $alternatives);
+                    $branches = $alternatives;
+
+                    break;
                 }
             }
         }
 
-        return array_map(fn (self $branch) => self::fromArray([
-            'allOf' => [$siblings, $branch->definition],
-        ]), $branches);
+        if ($branches === []) {
+            return [];
+        }
+
+        $siblings = self::fromArray($siblings);
+
+        return array_map(fn (self $branch) => self::compose('allOf', [$siblings, $branch]), $branches);
     }
 }

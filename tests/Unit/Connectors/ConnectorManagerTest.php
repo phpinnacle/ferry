@@ -16,6 +16,7 @@ use PHPinnacle\Ferry\Services\Connectors\ConnectorManager;
 use PHPinnacle\Ferry\Services\DestinationFactory;
 use PHPinnacle\Ferry\Services\SourceFactory;
 use PHPinnacle\Ferry\Services\TransformFactory;
+use PHPinnacle\Ferry\Services\TransformRegistry;
 use PHPinnacle\Ferry\Tests\TestCase;
 use PHPinnacle\Franz\Client;
 use PHPinnacle\Franz\Exception\ApiException;
@@ -162,7 +163,7 @@ it('activates a synchronization by pushing the connector configs and resuming bo
         'schema' => SyncSchema::fromBindings(
             $object,
             ['_description' => 'name', '_code' => 'tax_number'],
-            app(TransformFactory::class),
+            app(TransformRegistry::class),
             $destinations->get($destination),
         ),
     ], ['status' => SyncStatus::Active]);

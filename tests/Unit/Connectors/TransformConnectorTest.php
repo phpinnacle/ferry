@@ -8,6 +8,7 @@ use PHPinnacle\Ferry\Rules\SyncSchema;
 use PHPinnacle\Ferry\Services\DestinationFactory;
 use PHPinnacle\Ferry\Services\SourceFactory;
 use PHPinnacle\Ferry\Services\TransformFactory;
+use PHPinnacle\Ferry\Services\TransformRegistry;
 use PHPinnacle\Ferry\Tests\TestCase;
 use PHPinnacle\Ferry\Transformations\MaskField;
 use PHPinnacle\Ferry\Transformations\Substring;
@@ -32,8 +33,8 @@ beforeEach(function () {
 });
 
 it('orders record, field and constant transforms around the renames of a sink', function () {
-    $registry = $this->app->make(TransformFactory::class);
-    $registry->register(exclude_folders_transform());
+    $factory = $this->app->make(TransformFactory::class);
+    app(TransformRegistry::class)->register(exclude_folders_transform());
 
     $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
     $object = TestCase::makeMetadata($connection, [
@@ -60,19 +61,22 @@ it('orders record, field and constant transforms around the renames of a sink', 
         'schema' => SyncSchema::fromBindings(
             $object,
             ['title' => 'size'],
-            $registry,
+            app(TransformRegistry::class),
             transforms: [
                 'fields' => ['title' => [new TransformSetting('cast', ['type' => 'integer'])]],
                 'constants' => ['active' => ['type' => 'boolean', 'value' => 'true']],
             ],
         ),
-        'transforms' => SyncSchema::fromTransforms([new TransformSetting('exclude_folders')], $object, $registry),
+        'transforms' => SyncSchema::fromTransforms(
+            [new TransformSetting('exclude_folders')],
+            app(TransformRegistry::class),
+        ),
     ]);
 
-    $builder = new SourceFactory($registry);
+    $builder = new SourceFactory($factory);
     $config = new DestinationFactory()
         ->resolve($sync)
-        ->connector($sync, $object, $builder->topic($connection, $object), $registry);
+        ->connector($sync, $object, $builder->topic($connection, $object), $factory);
 
     expect($sync->fresh()->transforms)
         ->toEqual([new TransformSetting('exclude_folders')])
@@ -99,7 +103,7 @@ it('orders record, field and constant transforms around the renames of a sink', 
 });
 
 it('captures the column of a record filter in the source and keeps tombstones out of it', function () {
-    $registry = $this->app->make(TransformFactory::class);
+    $factory = $this->app->make(TransformFactory::class);
     $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
     $object = TestCase::makeMetadata($connection, [
         'system' => [
@@ -119,16 +123,15 @@ it('captures the column of a record filter in the source and keeps tombstones ou
                     'value' => 'true',
                 ]),
             ],
-            $object,
-            $registry,
+            app(TransformRegistry::class),
         ),
     ]);
 
-    $builder = new SourceFactory($registry);
+    $builder = new SourceFactory($factory);
     $source = $builder->source($connection, new Collection([$sync]));
     $config = new DestinationFactory()
         ->resolve($sync)
-        ->connector($sync, $object, $builder->topic($connection, $object), $registry);
+        ->connector($sync, $object, $builder->topic($connection, $object), $factory);
 
     expect($source['column.include.list'])
         ->toBe('public._reference0._idrref,public._reference0._marked')
@@ -162,8 +165,8 @@ it('keeps building the shared source when a synchronization refers to a transfor
 });
 
 it('builds installed string transforms before renames and guards masking against tombstones', function () {
-    $registry = app(TransformFactory::class);
-    $registry->register(Trim::make(), Substring::make(), MaskField::make());
+    $factory = app(TransformFactory::class);
+    app(TransformRegistry::class)->register(Trim::make(), Substring::make(), MaskField::make());
     $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
     $object = TestCase::makeMetadata($connection, [
         'system' => [
@@ -174,18 +177,23 @@ it('builds installed string transforms before renames and guards masking against
     $sync = TestCase::makeSync([
         'connection_id' => $connection->id,
         'source' => 'object-0',
-        'schema' => SyncSchema::fromBindings($object, ['_description' => 'contact'], $registry, transforms: [
-            'fields' => ['_description' => [
-                new TransformSetting('trim'),
-                new TransformSetting('substring', ['start' => '0', 'end' => '5']),
-                new TransformSetting('substring', ['start' => '1', 'end' => '3']),
-                new TransformSetting('mask', ['replacement' => 'hidden']),
-            ]],
-        ]),
+        'schema' => SyncSchema::fromBindings(
+            $object,
+            ['_description' => 'contact'],
+            app(TransformRegistry::class),
+            transforms: [
+                'fields' => ['_description' => [
+                    new TransformSetting('trim'),
+                    new TransformSetting('substring', ['start' => '0', 'end' => '5']),
+                    new TransformSetting('substring', ['start' => '1', 'end' => '3']),
+                    new TransformSetting('mask', ['replacement' => 'hidden']),
+                ]],
+            ],
+        ),
     ]);
     $config = new DestinationFactory()
         ->resolve($sync)
-        ->connector($sync, $object, 'test-topic', $registry);
+        ->connector($sync, $object, 'test-topic', $factory);
 
     expect($config['transforms'])
         ->toBe('unwrap,field_0_0,field_0_1,field_0_2,field_0_3,rename_keys,rename_values')

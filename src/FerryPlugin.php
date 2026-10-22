@@ -6,7 +6,7 @@ use Filament\Contracts\Plugin;
 use Filament\Panel;
 use PHPinnacle\Ferry\Destinations\StaticDestination;
 use PHPinnacle\Ferry\Services\DestinationFactory;
-use PHPinnacle\Ferry\Services\TransformFactory;
+use PHPinnacle\Ferry\Services\TransformRegistry;
 use PHPinnacle\Ferry\Transformations\Cast;
 use PHPinnacle\Ferry\Transformations\Filter;
 
@@ -16,7 +16,7 @@ class FerryPlugin implements Plugin
 
     public function __construct(
         private readonly DestinationFactory $destinations,
-        private readonly TransformFactory $transforms,
+        private readonly TransformRegistry $transforms,
     ) {
         $this->transforms->register(Cast::make(), Filter::make());
     }

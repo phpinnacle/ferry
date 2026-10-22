@@ -6,7 +6,7 @@ use Filament\Actions\Action;
 use PHPinnacle\Ferry\Resources\Syncs\Pages\EditSync;
 use PHPinnacle\Ferry\Resources\Syncs\Schemas\SyncForm;
 use PHPinnacle\Ferry\Services\DestinationFactory;
-use PHPinnacle\Ferry\Services\TransformFactory;
+use PHPinnacle\Ferry\Services\TransformRegistry;
 
 /** @phpstan-import-type EditState from SyncForm */
 class ConfirmSchemaChangesAction
@@ -19,12 +19,12 @@ class ConfirmSchemaChangesAction
             ->mountUsing(function (
                 EditSync $livewire,
                 DestinationFactory $destinations,
-                TransformFactory $transforms,
+                TransformRegistry $registry,
             ) use (&$columns) {
                 /** @var EditState $data */
                 $data = $livewire->form->getState();
                 $preview = clone $livewire->record;
-                $preview->fill(SyncForm::forUpdate($data, $livewire->record, $destinations, $transforms));
+                $preview->fill(SyncForm::forUpdate($data, $livewire->record, $destinations, $registry));
                 $columns = $preview->droppedColumns();
             })
             ->action(fn (EditSync $livewire) => $livewire->save())

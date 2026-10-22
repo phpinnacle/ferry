@@ -7,6 +7,7 @@ use PHPinnacle\Ferry\Rules\SyncSchema;
 use PHPinnacle\Ferry\Services\DestinationFactory;
 use PHPinnacle\Ferry\Services\SourceFactory;
 use PHPinnacle\Ferry\Services\TransformFactory;
+use PHPinnacle\Ferry\Services\TransformRegistry;
 use PHPinnacle\Ferry\Tests\TestCase;
 use PHPinnacle\Rosetta\Data\MetadataProperty;
 use PHPinnacle\Rosetta\Enums\PropertyKind;
@@ -22,7 +23,7 @@ uses(TestCase::class);
 beforeEach(function () {
     Queue::fake();
 
-    $this->registry = $this->app->make(TransformFactory::class);
+    $this->factory = $this->app->make(TransformFactory::class);
 
     config([
         'database.connections.sqlite.host' => 'db.internal',
@@ -59,11 +60,11 @@ it('builds a confluent jdbc sink connector config with field renames', function 
             [
                 'title' => 'title',
             ],
-            $this->registry,
+            app(TransformRegistry::class),
         ),
     ]);
 
-    $builder = new SourceFactory($this->registry);
+    $builder = new SourceFactory($this->factory);
     config(['phpinnacle-ferry.sync.table_prefix' => 'changed_prefix_']);
 
     $config = new DestinationFactory()
@@ -72,7 +73,7 @@ it('builds a confluent jdbc sink connector config with field renames', function 
             $sync,
             $object,
             $builder->topic($connection, $object),
-            $this->registry,
+            $this->factory,
         );
 
     expect($builder->name($sync))
@@ -127,7 +128,7 @@ it('keeps each sink limited to the fields of its own mapping when several syncs 
             [
                 'title' => 'title',
             ],
-            $this->registry,
+            app(TransformRegistry::class),
         ),
     ]);
 
@@ -140,11 +141,11 @@ it('keeps each sink limited to the fields of its own mapping when several syncs 
             [
                 'taxNumber' => 'tax_number',
             ],
-            $this->registry,
+            app(TransformRegistry::class),
         ),
     ]);
 
-    $builder = new SourceFactory($this->registry);
+    $builder = new SourceFactory($this->factory);
 
     $firstConfig = new DestinationFactory()
         ->resolve($first)
@@ -152,7 +153,7 @@ it('keeps each sink limited to the fields of its own mapping when several syncs 
             $first,
             $object,
             $builder->topic($connection, $object),
-            $this->registry,
+            $this->factory,
         );
     $secondConfig = new DestinationFactory()
         ->resolve($second)
@@ -160,7 +161,7 @@ it('keeps each sink limited to the fields of its own mapping when several syncs 
             $second,
             $object,
             $builder->topic($connection, $object),
-            $this->registry,
+            $this->factory,
         );
 
     expect($firstConfig['fields.whitelist'])
@@ -191,17 +192,17 @@ it('builds a static sink with fixed fields and its target connection', function 
             [
                 'title' => 'name',
             ],
-            $this->registry,
+            app(TransformRegistry::class),
         ),
     ]);
 
-    $builder = new SourceFactory($this->registry);
+    $builder = new SourceFactory($this->factory);
 
     $config = $registry->resolve($sync)->connector(
         $sync,
         $object,
         $builder->topic($connection, $object),
-        $this->registry,
+        $this->factory,
     );
 
     expect($config['table.name.format'])
@@ -284,7 +285,7 @@ it('keeps configured sink hosts and environment ports while applying the default
         config(['database.connections.sqlite.port' => $port]);
     }
 
-    $builder = new SourceFactory($this->registry);
+    $builder = new SourceFactory($this->factory);
 
     expect(
         new DestinationFactory()
@@ -293,7 +294,7 @@ it('keeps configured sink hosts and environment ports while applying the default
                 $sync,
                 $object,
                 $builder->topic($connection, $object),
-                $this->registry,
+                $this->factory,
             )['connection.url'],
     )
         ->toBe(sprintf('jdbc:postgresql://%s:%d/:memory:', $expectedHost, $expectedPort));

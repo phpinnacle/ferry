@@ -14,7 +14,7 @@ use PHPinnacle\Ferry\Models\ConnectionMetadata;
 use PHPinnacle\Ferry\Models\Sync;
 use PHPinnacle\Ferry\Resources\Syncs\Schemas\SyncForm;
 use PHPinnacle\Ferry\Services\DestinationFactory;
-use PHPinnacle\Ferry\Services\TransformFactory;
+use PHPinnacle\Ferry\Services\TransformRegistry;
 use PHPinnacle\Ferry\Tests\Fixtures\MappingState;
 use PHPinnacle\Ferry\Tests\Fixtures\SchemaHost;
 use PHPinnacle\Ferry\Tests\TestCase;
@@ -59,14 +59,7 @@ it('binds dynamic fields and connects static fields to the declared destination 
     app(DestinationFactory::class)->register(customers_destination());
 
     $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
-    ConnectionMetadata::create([
-        'connection_id' => $connection->id,
-        'external_id' => 'object-0',
-        'name' => '_reference0',
-        'code' => 1,
-        'kind' => MetadataKind::Reference,
-        'label' => 'Object 0',
-        'title' => 'Object 0',
+    TestCase::makeMetadata($connection, [
         'system' => [
             '_idrref' => new ScalarField(FieldType::Id),
             '_description' => new StringField(length: 100, fixed: false),
@@ -82,9 +75,6 @@ it('binds dynamic fields and connects static fields to the declared destination 
                 field: new ScalarField(FieldType::Uuid),
             ),
         ],
-        'values' => [],
-        'position' => 0,
-        'revision' => $connection->generation,
     ]);
 
     $form = function (string $destination) use ($connection) {
@@ -143,23 +133,13 @@ it('validates the static mapping against the declared destination fields', funct
     app(DestinationFactory::class)->register(customers_destination());
 
     $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
-    ConnectionMetadata::create([
-        'connection_id' => $connection->id,
-        'external_id' => 'object-0',
-        'name' => '_reference0',
-        'code' => 1,
-        'kind' => MetadataKind::Reference,
-        'label' => 'Object 0',
-        'title' => 'Object 0',
+    TestCase::makeMetadata($connection, [
         'system' => [
             '_idrref' => new ScalarField(FieldType::Id),
             '_code' => new StringField(length: 11, fixed: true),
             '_description' => new StringField(length: 100, fixed: false),
         ],
         'properties' => [],
-        'values' => [],
-        'position' => 0,
-        'revision' => $connection->generation,
     ]);
 
     $livewire = SchemaHost::make();
@@ -187,7 +167,7 @@ it('validates the static mapping against the declared destination fields', funct
                 SyncForm::forCreate(
                     $schema->getState(),
                     app(DestinationFactory::class),
-                    app(TransformFactory::class),
+                    app(TransformRegistry::class),
                 )['type'],
             )
             ->toBe(DestinationType::Static);
@@ -215,20 +195,7 @@ it('validates the static mapping against the declared destination fields', funct
 
 it('validates the bound column names of a dynamic synchronization', function (string $column, bool $valid) {
     $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
-    ConnectionMetadata::create([
-        'connection_id' => $connection->id,
-        'external_id' => 'object-0',
-        'name' => '_reference0',
-        'code' => 1,
-        'kind' => MetadataKind::Reference,
-        'label' => 'Object 0',
-        'title' => 'Object 0',
-        'system' => ['_idrref' => new ScalarField(FieldType::Id)],
-        'properties' => [],
-        'values' => [],
-        'position' => 0,
-        'revision' => $connection->generation,
-    ]);
+    TestCase::makeMetadata($connection);
     $sync = TestCase::makeSync(['connection_id' => $connection->id]);
 
     $livewire = SchemaHost::make();
@@ -274,22 +241,16 @@ it('creates every parameter of a chosen transform so that live inputs can bind t
         'transforms' => [],
     ]);
 
-    $schema->getComponentByStatePath('transforms')->getAction('add')->arguments(['block' => 'filter'])->call();
-
-    /** @var array<string, array{type: string, data: array<string, mixed>}> $rows */
-    $rows = $livewire->data['transforms'];
-
-    expect($rows[array_key_first($rows)]['data'])->toBe(['mode' => 'exclude', 'column' => null, 'value' => null]);
+    $builder = $schema->getComponentByStatePath('transforms');
+    $builder->getAction('add')->arguments(['block' => 'filter'])->call();
+    expect($builder->getRawItemState(array_key_first($builder->getItems())))
+        ->toMatchArray(['mode' => 'exclude', 'column' => null, 'value' => null]);
 
     $column = collect($schema->getFlatComponents())
-        ->first(fn ($component) => str_ends_with($component->getStatePath() ?? '', '.data.column'));
+        ->first(fn ($component) => $component instanceof Select && $component->getName() === 'column');
     $column->state('_folder')->callAfterStateUpdated();
-
     $value = collect($schema->getFlatComponents(withHidden: true))
-        ->first(
-            fn ($component) => $component instanceof Select
-            && str_ends_with($component->getStatePath() ?? '', '.data.value'),
-        );
+        ->first(fn ($component) => $component instanceof Select && $component->getName() === 'value');
 
     expect($value->isVisible())->toBeTrue()->and($value->getOptions())->toBe(['true' => 'Yes', 'false' => 'No']);
 });
