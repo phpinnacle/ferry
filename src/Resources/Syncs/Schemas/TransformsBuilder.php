@@ -35,7 +35,11 @@ class TransformsBuilder
             )
             ->blocks(array_map(
                 static fn (Transformation $transform) => Block::make($transform->key())
-                    ->label(view('phpinnacle-ferry::components.transform-label', ['transform' => $transform]))
+                    ->label(static fn (?array $state) => (
+                        $state === null
+                            ? $transform->getLabel()
+                            : view('phpinnacle-ferry::components.transform-label', ['transform' => $transform])
+                    ))
                     ->icon($transform->getIcon())
                     ->schema([
                         Text::make($transform->getDescription())->visible(filled($transform->getDescription())),

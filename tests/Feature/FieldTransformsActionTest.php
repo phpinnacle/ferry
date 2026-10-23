@@ -69,19 +69,20 @@ it('uses description colors for configurable and settings-free badges', function
     );
 });
 
-it('uses colored builder labels without changing submitted transform settings', function () {
+it('uses plain picker labels and colored builder headers without changing submitted settings', function () {
     view()->share('errors', new ViewErrorBag);
+    $builder = TransformsBuilder::make(TransformScope::Field, null, app(TransformRegistry::class));
     $schema = Schema::make(SchemaHost::make())
         ->statePath('data')
-        ->components([
-            TransformsBuilder::make(TransformScope::Field, null, app(TransformRegistry::class)),
-        ]);
+        ->components([$builder]);
     $settings = [
         ['key' => 'trim', 'params' => []],
         ['key' => 'mask', 'params' => ['replacement' => 'hidden']],
     ];
     $schema->fill(['transforms' => $settings]);
 
+    expect($builder->getBlock('trim')->getLabel())->toBe('Trim whitespace');
+    expect($builder->getBlock('mask')->getLabel())->toBe('Mask field');
     expect($schema->toHtml())->toContain('fi-color-success', 'Trim whitespace', 'fi-color-warning', 'Mask field');
     expect($schema->getState()['transforms'])->toBe($settings);
 });

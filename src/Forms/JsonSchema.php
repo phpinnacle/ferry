@@ -8,6 +8,7 @@ namespace PHPinnacle\Ferry\Forms;
  * @phpstan-type Badge array{label: string, color: string}
  * @phpstan-type MappingItem array{
  *     id: string,
+ *     name: string,
  *     label: string,
  *     icon: string|null,
  *     color: string|null,
@@ -24,7 +25,7 @@ namespace PHPinnacle\Ferry\Forms;
  *     title?: string, description?: string, format?: string, minLength?: int, maxLength?: int,
  *     minimum?: int|float, maximum?: int|float, exclusiveMinimum?: int|float, exclusiveMaximum?: int|float,
  *     minItems?: int, maxItems?: int, uniqueItems?: bool, multipleOf?: int|float, pattern?: string, enum?: list<mixed>,
- *     x-icon?: string, x-color?: string, x-badges?: list<Badge>, ...
+ *     x-name?: string, x-icon?: string, x-color?: string, x-badges?: list<Badge>, ...
  * }
  * @phpstan-type Constraint array{kind: string, value: string, scope: list<string>}
  * @phpstan-type ValuePresentation array{type: string, nullable: bool, constraints: list<Constraint>, enum: list<string>}
@@ -70,9 +71,11 @@ final readonly class JsonSchema
         $items = [];
         $required = $this->required();
         foreach ($this->properties() as $name => $property) {
+            $displayName = $property->annotation('x-name') ?? (string) $name;
             $items[] = [
                 'id' => (string) $name,
-                'label' => $property->annotation('title') ?? (string) $name,
+                'name' => $displayName,
+                'label' => $property->annotation('title') ?? $displayName,
                 'icon' => $property->annotation('x-icon'),
                 'color' => $property->annotation('x-color'),
                 'description' => $property->annotation('description'),
@@ -175,8 +178,9 @@ final readonly class JsonSchema
 
                 return implode(' | ', array_diff($labels, ['null'])) ?: 'null';
             }
-            if ($this->annotation('format') !== null) {
-                return $this->annotation('format');
+            $format = $this->annotation('format');
+            if ($format !== null) {
+                return $format === 'ferry-reference' ? 'uuid' : $format;
             }
             $types = array_values(array_diff($types, ['null']));
         }
@@ -313,7 +317,7 @@ final readonly class JsonSchema
         return array_values(array_unique($types));
     }
 
-    /** @param 'title'|'description'|'format'|'x-icon'|'x-color' $name */
+    /** @param 'title'|'description'|'format'|'x-name'|'x-icon'|'x-color' $name */
     public function annotation(string $name): ?string
     {
         if (array_key_exists($name, $this->definition)) {

@@ -2,7 +2,7 @@
 
 @php
     $presentation ??= $item['presentation'];
-    $hasTitle = strip_tags($item['label']) !== $item['id'];
+    $hasTitle = strip_tags($item['label']) !== $item['name'];
     $color = $item['color'];
     $literalColor = $color !== null && (str_starts_with($color, '#') || str_starts_with($color, 'rgb'));
     $hasItems = $presentation['items'] !== [];
@@ -37,7 +37,7 @@
                 <span class="ferry-mapping-required"><span aria-hidden="true">*</span><span class="fi-sr-only">{{ __('phpinnacle-ferry::resources.mapping.required') }}</span></span>
             @endif
             @if ($hasTitle)
-                <span class="ferry-mapping-property">{{ $item['id'] }}</span>
+                <span class="ferry-mapping-property">{{ $item['name'] }}</span>
             @endif
         </span>
         <span class="ferry-mapping-types" data-mapping-badges>

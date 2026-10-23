@@ -119,7 +119,7 @@
                                         $warning = $panel['warnings'][$item['id']] ?? null;
                                         $presentation = $side === 'source' ? ($outputPresentation[$item['id']] ?? JsonSchema::fromArray([])->presentation()) : $item['presentation'];
                                         $typeLabel = $presentation['type'];
-                                        $searchText = $plainLabel.' '.strip_tags($item['description'] ?? '').' '.$item['id'].' '.$typeLabel.' '.implode(' ', array_column($item['badges'], 'label'));
+                                        $searchText = $plainLabel.' '.strip_tags($item['description'] ?? '').' '.$item['id'].' '.$item['name'].' '.$typeLabel.' '.implode(' ', array_column($item['badges'], 'label'));
                                         $isMultiple = $side === 'target' && in_array($item['id'], $multipleTargets, true);
                                         $staticSchema = $side === 'target' && array_key_exists($item['id'], $staticDefaults)
                                             ? ($staticSchemas[$stateKeys[$item['id']]] ?? $getStaticFormSchema($item['id']))
@@ -168,7 +168,6 @@
                                                 data-side="{{ $side }}"
                                                 data-id="{{ $item['id'] }}"
                                                 data-label="{{ $plainLabel }}"
-                                                data-type="{{ $typeLabel }}"
                                                 x-bind="fieldBindings(@js($side), @js($item['id']))"
                                                 aria-label="{{ 'Connect '.$plainLabel.' ('.$side.')' }}"
                                                 @disabled($disabled)

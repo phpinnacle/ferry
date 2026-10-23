@@ -17,6 +17,7 @@ it('presents formats, enums, nullable values and nested arrays without changing 
         ->toBe($logicalType);
 })->with([
     'format' => [['type' => 'string', 'format' => 'uuid'], 'uuid', false, 'string'],
+    'reference format' => [['type' => 'string', 'format' => 'ferry-reference'], 'uuid', false, 'string'],
     'formatted alternatives' => [
         ['anyOf' => [['type' => 'string', 'format' => 'uuid'], ['type' => 'boolean']]],
         'uuid | boolean',
@@ -307,4 +308,12 @@ it('projects composed property metadata and required names', function () {
     expect($properties['contacts']->label())->toBe('string[]');
     expect(JsonSchema::fromArray(['type' => ['array', 'null'], 'items' => ['type' => 'string']])->items()->label())
         ->toBe('string');
+});
+
+it('uses a technical display name without changing the property identifier', function () {
+    $items = JsonSchema::fromArray(['properties' => ['property-1' => ['x-name' => '_fld11']]])->toMappingItems();
+
+    expect($items[0]['id'])->toBe('property-1');
+    expect($items[0]['name'])->toBe('_fld11');
+    expect($items[0]['label'])->toBe('_fld11');
 });

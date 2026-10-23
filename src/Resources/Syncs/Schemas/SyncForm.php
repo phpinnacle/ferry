@@ -353,10 +353,10 @@ class SyncForm
                 ]);
 
                 return [
+                    $mapping,
                     TransformsBuilder::make(TransformScope::Record, $object, $registry)
                         ->label(__('phpinnacle-ferry::resources.sync.fields.transforms'))
                         ->columnSpanFull(),
-                    $mapping,
                 ];
             });
     }
@@ -365,6 +365,8 @@ class SyncForm
     private static function dynamicMapping(?ConnectionMetadata $object, array $warnings): FieldBinding
     {
         return FieldBinding::make('schema')
+            ->dense()
+            ->compact()
             ->warnings($warnings)
             ->label(__('phpinnacle-ferry::resources.sync.fields.schema'))
             ->jsonSchema(self::sourceSchema($object))
@@ -426,6 +428,8 @@ class SyncForm
         $fields = array_column($destination->fields ?? [], null, 'id');
 
         return FieldMapping::make('schema')
+            ->dense()
+            ->compact()
             ->canConnectUsing(
                 fn (JsonSchema $source, JsonSchema $target) => (
                     $source->annotation('format') === $target->annotation('format')
@@ -495,7 +499,10 @@ class SyncForm
     private static function resetMapping(Set $set, Select $component): void
     {
         $set('schema', []);
-        $component->getRootContainer()->clearCachedChildSchemas();
+        $container = $component->getRootContainer();
+        $container->clearCachedChildSchemas();
+        $defaultState = null;
+        $container->getComponentByStatePath('schema')?->hydrateState($defaultState);
     }
 
     private static function resetSource(Set $set, Select $component): void
@@ -510,7 +517,8 @@ class SyncForm
         $properties = [];
         foreach ($object?->mappableFields(withKey: $withKey) ?? [] as $field) {
             $properties[$field['source']] = [
-                'title' => sprintf('%s (%s)', $field['title'], $field['physical']),
+                'title' => $field['title'],
+                'x-name' => $field['physical'],
                 ...$field['type']->jsonSchema(),
             ];
         }

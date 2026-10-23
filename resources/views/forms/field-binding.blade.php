@@ -76,7 +76,7 @@
                         $key = $getBindingKey($source['id']);
                         $binding = $bindings[$key] ?? null;
                         $warning = $warnings[$source['id']] ?? null;
-                        $searchText = strip_tags($source['label'].' '.($source['description'] ?? '')).' '.$source['id'].' '.$source['presentation']['type'];
+                        $searchText = strip_tags($source['label'].' '.($source['description'] ?? '')).' '.$source['id'].' '.$source['name'].' '.$source['presentation']['type'];
                     @endphp
                     <div
                         class="grid grid-cols-1 items-stretch md:grid-cols-[minmax(0,1fr)_minmax(72px,0.45fr)_minmax(0,2fr)] md:gap-0"

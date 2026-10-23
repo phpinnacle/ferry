@@ -43,6 +43,26 @@ test('native static editors switch modes locally and preserve typed defaults', (
     assert.deepEqual(component.state.targets, { encoded_name: value(false) });
 });
 
+for (const [type, initial, edit] of [
+    ['array', ['default'], value => value.push('edited')],
+    ['object', { options: { enabled: true } }, value => { value.options.enabled = false; }],
+]) {
+    test(`repeated disconnects restore an independent ${type} default from reactive state`, () => {
+        const expected = structuredClone(initial);
+        const defaults = { name: new Proxy(initial, {}) };
+        const component = editor({}, false, { staticDefaults: defaults });
+        component.setMappings({});
+
+        for (let cycle = 0; cycle < 2; cycle++) {
+            edit(component.state.targets.name.value);
+            assert.deepEqual(defaults.name, expected);
+            component.connect('title', 'name');
+            component.remove('name');
+            assert.deepEqual(component.state.targets.name, value(expected));
+        }
+    });
+}
+
 for (const value of [null, '', false, 0, []]) {
     test(`removing a connection restores its static form default ${JSON.stringify(value)} as a mapped value`, () => {
         const component = editor({ name: sourceEntry('title') }, false, {

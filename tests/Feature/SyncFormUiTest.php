@@ -99,10 +99,12 @@ it('binds dynamic fields and connects static fields to the declared destination 
 
     expect(array_column($binding->getSources(), 'label', 'id'))
         ->toBe([
-            '_idrref' => __('phpinnacle-ferry::resources.sync.system_fields._idrref') . ' (_idrref)',
-            '_description' => __('phpinnacle-ferry::resources.sync.system_fields._description') . ' (_description)',
-            'property-1' => 'Title 1 (_fld1)',
+            '_idrref' => __('phpinnacle-ferry::resources.sync.system_fields._idrref'),
+            '_description' => __('phpinnacle-ferry::resources.sync.system_fields._description'),
+            'property-1' => 'Title 1',
         ])
+        ->and(array_column($binding->getSources(), 'name', 'id'))
+        ->toBe(['_idrref' => '_idrref', '_description' => '_description', 'property-1' => '_fld1'])
         ->and(array_column($mapping->getSources(), 'type', 'id'))
         ->toBe(['_description' => 'string', 'property-1' => 'string'])
         ->and(array_column($mapping->getTargets(), 'required', 'id'))
@@ -358,7 +360,7 @@ it('resets the shared schema when switching destinations', function (string $fro
         fields: customers_destination()->fields,
     ));
     $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
-    TestCase::makeMetadata($connection);
+    TestCase::makeMetadata($connection, ['system' => ['_description' => new StringField(length: 100, fixed: false)]]);
     $livewire = SchemaHost::make();
     $form = SyncForm::configure(FilamentSchema::make($livewire)->statePath('data')->operation('create'));
     $form->fill([
@@ -373,9 +375,13 @@ it('resets the shared schema when switching destinations', function (string $fro
     $form->getComponent('destination')->state($to)->callAfterStateUpdated();
 
     expect($livewire->data['destination'])->toBe($to);
-    expect($livewire->data['schema'])->toBe([]);
-    expect($form->getComponentByStatePath('schema'))
+    $mapping = $form->getComponentByStatePath('schema');
+    expect($mapping)
         ->toBeInstanceOf($to === 'dynamic' ? FieldBinding::class : FieldMapping::class);
+    expect($mapping->isSourceUsed('_description'))->toBeFalse();
+    expect($mapping->getSourceSettings())->toBe(['_description' => ['transforms' => []]]);
+    view()->share('errors', new \Illuminate\Support\ViewErrorBag);
+    expect($form->toHtml())->toContain('Field Mapping');
 })->with([
     'dynamic to static' => ['dynamic', 'static:customers'],
     'static to dynamic' => ['static:customers', 'dynamic'],

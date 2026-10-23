@@ -42,7 +42,7 @@ export default function fieldMapping({ state, disabled, inverse = false, require
 
         setMappings(mappings) {
             for (const [target, value] of Object.entries(staticDefaults)) {
-                if (!Object.hasOwn(mappings, target)) mappings[target] = { kind: 'value', value };
+                if (!Object.hasOwn(mappings, target)) mappings[target] = { kind: 'value', value: JSON.parse(JSON.stringify(value)) };
             }
             this.state = {
                 ...this.state,

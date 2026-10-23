@@ -544,3 +544,29 @@ it('ignores invalid unused transform drafts and validates them once selected', f
     'incompatible transform' => ['boolean', [['key' => 'trim', 'params' => []]]],
     'missing parameters' => ['string', [['key' => 'mask', 'params' => []]]],
 ]);
+
+it('shows the technical display name separately while retaining the source identifier', function (bool $binding) {
+    $sourceId = '63e1c289-8a21-4ac1-bfb0-353d38184bfd';
+    $sourceSchema = ['properties' => [$sourceId => ['type' => 'string', 'title' => 'Email', 'x-name' => '_fld11']]];
+    $field = $binding
+        ? FieldBinding::make('widget')
+            ->jsonSchema($sourceSchema)
+            ->simple(TextInput::make('destination')->default('contact.email'))
+        : FieldMapping::make('widget')->jsonSchema(source: $sourceSchema, dest: [
+            'properties' => ['email' => ['type' => 'string']],
+        ]);
+    $field->searchable();
+    $schema = Schema::make(SchemaHost::make())->statePath('data')->components([$field]);
+    $state = $binding
+        ? MappingState::binding([$sourceId => 'contact.email'])
+        : MappingState::mapping(['email' => MappingState::source($sourceId)]);
+    $schema->fill(['widget' => $state]);
+    view()->share('errors', new ViewErrorBag);
+
+    $html = $schema->toHtml();
+    preg_match('/<span class="ferry-mapping-property">([^<]+)<\/span>/', $html, $technicalName);
+    expect($technicalName[1])->toBe('_fld11');
+    expect($field->getSources()[0]['id'])->toBe($sourceId);
+    expect($field->getSources()[0]['label'])->toBe('Email');
+    expect($schema->getState()['widget'])->toBe($state);
+})->with([false, true]);

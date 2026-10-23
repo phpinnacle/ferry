@@ -307,32 +307,43 @@ it('fills the transform rows with the fields of the selected object', function (
         ->toBeGreaterThan(substr_count($bare, 'Code (_code)'));
 });
 
-it('resets the transforms with the connection and the object but not with the destination', function () {
+it('resets field settings with mappings and retains record transforms only when the destination changes', function (
+    string $changed,
+    bool $retainsRecordTransforms,
+) {
+    $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
+    TestCase::makeMetadata($connection, ['system' => ['_code' => new StringField(length: 11, fixed: true)]]);
     $livewire = SchemaHost::make();
-
     $form = SyncForm::configure(FormSchema::make($livewire)->statePath('data')->operation('create'));
-    $settings = MappingState::mapping([], [
-        '_code' => ['transforms' => [['key' => 'cast', 'params' => ['type' => 'string']]]],
-    ]);
+    $fieldTransforms = [['key' => 'cast', 'params' => ['type' => 'string']]];
     $form->fill([
+        'connection_id' => $connection->id,
+        'source' => 'object-0',
         'destination' => 'static:customers',
         'transforms' => [['key' => 'filter']],
-        'schema' => $settings,
+        'schema' => MappingState::mapping(['name' => MappingState::source('_code')], [
+            '_code' => ['transforms' => $fieldTransforms],
+        ]),
     ]);
+    $mapping = $form->getComponentByStatePath('schema');
+    expect($mapping->isSourceUsed('_code'))->toBeTrue();
+    expect($mapping->getSourceSettings()['_code']['transforms'])->toBe($fieldTransforms);
+    $recordTransforms = $livewire->data['transforms'];
 
-    $form->getComponent('destination')->callAfterStateUpdated();
+    $form
+        ->getComponent($changed)
+        ->state($changed === 'destination' ? 'dynamic' : null)
+        ->callAfterStateUpdated();
 
-    expect($livewire->data['transforms'])->toHaveCount(1)->and($livewire->data['schema'])->toBe([]);
-
-    foreach (['source', 'connection_id'] as $name) {
-        $livewire->data['transforms'] = [['key' => 'filter']];
-        $livewire->data['schema'] = $settings;
-
-        $form->getComponent($name)->callAfterStateUpdated();
-
-        expect($livewire->data['transforms'])->toBe([])->and($livewire->data['schema'])->toBe([]);
-    }
-});
+    $mapping = $form->getComponentByStatePath('schema');
+    expect($mapping->isSourceUsed('_code'))->toBeFalse();
+    expect($mapping->getSourceSettings())->toBe($retainsRecordTransforms ? ['_code' => ['transforms' => []]] : []);
+    expect($livewire->data['transforms'])->toBe($retainsRecordTransforms ? $recordTransforms : []);
+})->with([
+    'destination' => ['destination', true],
+    'source' => ['source', false],
+    'connection' => ['connection_id', false],
+]);
 
 it('validates transform parameters through their native form schemas', function (array $data) {
     $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);

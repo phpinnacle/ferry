@@ -124,6 +124,8 @@ Saving a static synchronization accepts only declared destination fields whose l
 
 The synchronization form has one destination select: Dynamic followed by the registered static destinations. Selecting a different destination clears the field mapping; the saved synchronization keeps its explicit type and destination key. A dynamic synchronization lists every mappable 1C field with its title and technical column and binds it to a column name with `FieldBinding`; a static one connects 1C fields to the fields declared by the destination with `FieldMapping`, which shows the logical types and required marks and refuses incompatible connections.
 
+Both synchronization mapping editors use `dense()` for reduced spacing and `compact()` to show descriptions in title tooltips.
+
 The static synchronization form adds an exact-format connection condition to preserve its logical `ColumnType` contract: references and dates require an explicit Cast before connecting to a plain string destination. The reusable `FieldMapping` component keeps its more general directional format compatibility described below.
 
 ## Transforms
@@ -158,7 +160,7 @@ Transformation::make('replace', TransformScope::Field)
     ->schema(fn () => [TextInput::make('replacement')->required()]);
 ```
 
-Labels, icons, descriptions, and colors accept values or closures. `color()` defaults to `primary` and accepts a Filament color name, a shade palette such as `Color::Emerald`, or `null`, styling source chips and Builder labels. `schema()` accepts an array of Filament components or a closure receiving the selected `?ConnectionMetadata $object`; `getSchema($object)` returns fresh components for each form. Fluent methods return a new description, leaving the original unchanged.
+Labels, icons, descriptions, and colors accept values or closures. `color()` defaults to `primary` and accepts a Filament color name, a shade palette such as `Color::Emerald`, or `null`, styling source chips and selected Builder block labels. The Add transform picker uses plain labels. `schema()` accepts an array of Filament components or a closure receiving the selected `?ConnectionMetadata $object`; `getSchema($object)` returns fresh components for each form. Fluent methods return a new description, leaving the original unchanged.
 
 `inputSchema()` describes supported values using the same compatibility rules as `FieldMapping`: types, directional formats, string lengths and array items. Alternatively, pass a predicate `fn (JsonSchema $input) => bool` to define custom compatibility checks. Without an input schema, a description accepts any input. `accepts($input)` checks a `Forms\JsonSchema` value object directly, without projecting it to `ColumnType`.
 
@@ -227,11 +229,11 @@ Records missing the field are dropped by `include` and kept by `exclude`. Filter
 
 ### Editing synchronization transforms
 
-The synchronization form configures record transforms in a **Record transforms** Builder above the field mapping. Blocks show their icon, label, optional description, and settings; they can repeat, reorder, or be removed. The form converts native Builder state to the public `key`/`params` format on fill and submission.
+The synchronization form configures record transforms in a **Record transforms** Builder below the field mapping. Blocks show their icon, label, optional description, and settings; they can repeat, reorder, or be removed. The form converts native Builder state to the public `key`/`params` format on fill and submission.
 
 `FieldTransforms` inside `sourceSettings()` provides an **Add transform** menu for compatible registered field transforms. Boolean sources initially offer Cast; casting to string enables Trim, Substring, and Mask. Compatible transforms can repeat. Transforms with settings open their native form; those without settings are added immediately. Chips show execution order: click a configurable label to edit, use its separate remove button to delete, and drag the label or press Alt+Left / Alt+Right to reorder. Existing chips remain editable and removable after an incompatible change; validation rejects the unsupported chain and additions remain unavailable until it is corrected. Settings modals contain no deletion action. These controls work before connecting or binding a source.
 
-`FieldMapping` and `FieldBinding` keep transform settings in `sources[source].transforms`, independently of their connections or bindings. `SyncForm` combines these settings with connected or bound fields on save and restores them on fill; settings for unused sources remain in the editor but are not persisted in the synchronization. Static values have their own mapping controls. Several transforms of one field apply in chip order, and the static mapping checks a connection with the type its source field has after those transforms, so a cast makes a string field connectable to a boolean destination.
+Submitted mappings and bindings include `transforms` in each selected source entry. `SyncForm` saves them on each field mapping and restores them on fill; settings for unused sources remain editor drafts and are excluded from validation and persistence. Static values have their own mapping controls. Transforms apply in chip order, and static connections are checked against the transformed source schema, so casting a string to boolean enables a boolean destination.
 
 ## Kafka Connect connectors
 
@@ -370,7 +372,7 @@ Each factory returns a fresh field named `value`. It can receive the destination
 
 An unconnected destination immediately shows its configured editor and becomes a static value initialized with the field's default. Every visible editor counts as mapped, including an empty one. Its native validation, state casts, and dehydration callbacks run on submission; `required()` can reject an empty editor. Values retain their field's type, including `false`, zero, arrays, and `null` when allowed. Configure the factory's rules for the values your consumer accepts; JSON Schema payload constraints are not inferred.
 
-Livewire uses encoded source and destination keys internally so dots and numeric names remain literal identifiers. Fill the form with the destination-keyed public map; submitted `getState()` uses the same shape and preserves typed values. Editor templates are rendered up front; Alpine mounts or removes them when connections change, without a server request. Connecting a source replaces and hides the static editor. Removing the destination's final connection restores it with the configured default. Native live fields and actions still make their usual requests.
+Livewire uses encoded source and destination keys internally so dots and numeric names remain literal identifiers. Fill the form with the destination-keyed public map; submitted `getState()` uses the same shape and preserves typed values. Editor templates are rendered up front; Alpine mounts or removes them when connections change, without a server request. Connecting a source replaces and hides the static editor. Removing the destination's final connection restores it with a fresh copy of the configured default, so edits to nested values do not change future resets. Native live fields and actions still make their usual requests.
 
 ### Source settings and transforms
 
@@ -404,7 +406,7 @@ Built-in scalar transforms reject arrays and objects; custom descriptions can ac
 
 ### Presentation and assets
 
-Property `title`, `description`, `x-icon`, and `x-color` provide presentation metadata for mapping cards and binding sources. `x-color` accepts a registered Filament color name or a literal hex/RGB color for the icon and title. Cards display the literal property name, required marker, constraint hints, type chips, description and warnings; omitted icons reserve no space. Formats replace the general type label, nullable types add a `null` chip, and enum tooltips list allowed values. `x-badges` accepts a list such as `[['label' => 'Imported', 'color' => 'info']]`; the type chip appears last. For framework schema builders, pass their inline `toArray()` result.
+Property `title`, `description`, `x-name`, `x-icon`, and `x-color` provide presentation metadata for mapping cards and binding sources. `x-name` overrides the technical name shown beside the title without changing the property identifier used in state and connections; it defaults to that identifier. Search includes both names. `x-color` accepts a registered Filament color name or a literal hex/RGB color for the icon and title. Cards display the technical name, required marker, constraint hints, type chips, description and warnings; omitted icons reserve no space. Formats replace the general type label; `ferry-reference` is displayed as `uuid` while retaining its logical reference format for compatibility and transformations. Nullable types add a `null` chip, and enum tooltips list allowed values. `x-badges` accepts a list such as `[['label' => 'Imported', 'color' => 'info']]`; the type chip appears last. For framework schema builders, pass their inline `toArray()` result.
 
 Array chevrons expand item schemas and their scoped constraints, one row per nested level. Field constraints remain in the heading. Details start collapsed and work on connected or disabled cards without changing selection; lines follow card resizing. Source actions appear below the metadata. Colors use Filament's `primary` palette for connections, `warning` for required destinations and `danger` for conflicts, in light and dark themes.
 
