@@ -18,11 +18,11 @@ use PHPinnacle\Ferry\Forms\Concerns\Searchable;
 /**
  * @phpstan-import-type MappingItem from JsonSchema
  * @phpstan-import-type Definition from JsonSchema
- * @phpstan-type SourceEntry array{kind: 'source', source: string}
+ * @phpstan-type SourceEntry array{kind: 'source', source: string}&array<string, mixed>
  * @phpstan-type ValueEntry array{kind: 'value', value: mixed}
  * @phpstan-type Entry SourceEntry|ValueEntry
  * @phpstan-type Targets array<string, Entry|non-empty-list<SourceEntry>>
- * @phpstan-type State array{sources: array<string, array<string, mixed>>, targets: Targets}
+ * @phpstan-type State Targets
  */
 // @mago-expect lint:too-many-properties
 class FieldMapping extends Field
@@ -204,10 +204,30 @@ class FieldMapping extends Field
     ): void {
         $this->hydrateDefaultState($hydratedDefaultState);
         /** @var State $state */
-        $state = $this->getRawState() ?? ['sources' => [], 'targets' => []];
+        $state = $this->getRawState() ?? [];
+        $sources = [];
+        $targets = [];
+        foreach ($state as $target => $mapped) {
+            $collection = array_is_list($mapped);
+            $entries = [];
+            /** @var list<Entry> $mappedEntries */
+            $mappedEntries = $collection ? $mapped : [$mapped];
+            foreach ($mappedEntries as $entry) {
+                if ($entry['kind'] === 'source') {
+                    /** @var array<string, mixed> $settings */
+                    $settings = Arr::except($entry, ['kind', 'source']);
+                    if ($settings !== []) {
+                        $sources[$entry['source']] = $settings;
+                    }
+                    $entry = Arr::only($entry, ['kind', 'source']);
+                }
+                $entries[] = $entry;
+            }
+            $targets[$target] = $collection ? $entries : $entries[0];
+        }
         $encoded = [
-            'sources' => $this->encodeSourceSettings($state['sources']),
-            'targets' => self::rekey($state['targets'], $this->getStateKeys()),
+            'sources' => $this->encodeSourceSettings($sources),
+            'targets' => self::rekey($targets, $this->getStateKeys()),
         ];
         foreach ($this->getStaticDefaults() as $target => $value) {
             $key = self::stateKey((string) $target);
@@ -234,15 +254,26 @@ class FieldMapping extends Field
     }
 
     /**
-     * @param array{sources?: array<string, array<string, mixed>>, targets?: array<string, mixed>}|null $state
-     * @return array{sources: array<string, array<string, mixed>>, targets: array<string, mixed>}
+     * @param array{sources?: array<string, array<string, mixed>>, targets?: Targets}|null $state
+     * @return array<string, mixed>
      */
     private function dehydrateMapping(?array $state): array
     {
-        return [
-            'sources' => $this->decodeSourceSettings($state['sources'] ?? []),
-            'targets' => self::rekey($state['targets'] ?? [], array_flip($this->getStateKeys())),
-        ];
+        $sources = $this->decodeSourceSettings($state['sources'] ?? []);
+        /** @var Targets $targets */
+        $targets = self::rekey($state['targets'] ?? [], array_flip($this->getStateKeys()));
+        foreach ($targets as $target => $mapped) {
+            $collection = array_is_list($mapped);
+            /** @var list<Entry> $mappedEntries */
+            $mappedEntries = $collection ? $mapped : [$mapped];
+            $entries = array_map(
+                fn (array $entry) => $entry['kind'] === 'source' ? $entry + ($sources[$entry['source']] ?? []) : $entry,
+                $mappedEntries,
+            );
+            $targets[$target] = $collection ? $entries : $entries[0];
+        }
+
+        return $targets;
     }
 
     /** @param bool|Closure(): bool $condition */
@@ -383,7 +414,7 @@ class FieldMapping extends Field
         parent::setUp();
 
         $this->schema([]);
-        $this->default(['sources' => [], 'targets' => []]);
+        $this->default([]);
         $this->required(fn () => $this->getRequiredTargets() !== []);
         $this->mutateDehydratedStateUsing($this->dehydrateMapping(...));
         $this->rules(fn () => [
@@ -489,6 +520,32 @@ class FieldMapping extends Field
             'entry' => ['array:kind,' . $kind],
             'entry.' . $kind => $kind === 'source' ? ['required', 'string'] : ['present'],
         ])->passes();
+    }
+
+    public function isSourceUsed(string $source): bool
+    {
+        /** @var array{targets?: mixed}|null $state */
+        $state = $this->getRawState();
+        $targets = $state['targets'] ?? [];
+        if (!is_array($targets)) {
+            return false;
+        }
+        foreach ($targets as $mapped) {
+            if (!is_array($mapped)) {
+                continue;
+            }
+            foreach (array_is_list($mapped) ? $mapped : [$mapped] as $entry) {
+                if (
+                    is_array($entry)
+                    && ($entry['kind'] ?? null) === 'source'
+                    && ($entry['source'] ?? null) === $source
+                ) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     /** @return list<string> */

@@ -32,7 +32,7 @@ class FieldBindingForm extends Component implements HasActions, HasSchemas
     {
         $this->complex = $complex;
         $this->sourceSettings = $sourceSettings;
-        $this->form->fill(['bindings' => ['sources' => [], 'bindings' => $bindings]]);
+        $this->form->fill(['bindings' => MappingState::binding($bindings)]);
     }
 
     public function form(Schema $schema): Schema

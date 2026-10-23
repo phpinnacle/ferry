@@ -31,17 +31,33 @@ final class MappingState
      */
     public static function mapping(array $targets, array $sources = []): array
     {
-        return ['sources' => $sources, 'targets' => $targets];
+        foreach ($targets as $target => $mapped) {
+            $collection = array_is_list($mapped);
+            $entries = array_map(
+                fn (array $entry) => $entry['kind'] === 'source' ? $entry + ($sources[$entry['source']] ?? []) : $entry,
+                $collection ? $mapped : [$mapped],
+            );
+            $targets[$target] = $collection ? $entries : $entries[0];
+        }
+
+        return $targets;
     }
 
     /**
      * @param array<string, mixed> $bindings
      * @param array<string, array<string, mixed>> $sources
-     * @return array{sources: array<string, array<string, mixed>>, bindings: array<string, mixed>}
+     * @return array<string, array<string, mixed>>
      */
     public static function binding(array $bindings, array $sources = []): array
     {
-        return ['sources' => $sources, 'bindings' => $bindings];
+        foreach ($bindings as $source => $value) {
+            $constant = is_array($value) && array_key_exists('value', $value);
+            $bindings[$source] = $constant
+                ? ['kind' => 'value', 'value' => $value]
+                : ['kind' => 'source', 'source' => (string) $source, 'value' => $value] + ($sources[$source] ?? []);
+        }
+
+        return $bindings;
     }
 
     public static function encode(FieldMapping $field, mixed $targets, array $sources = []): mixed

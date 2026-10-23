@@ -99,8 +99,7 @@ it('prepares typed synchronization attributes from its form', function (?string 
     $livewire->data['name'] = 'Renamed';
 
     $dehydrated = $form->getState();
-    expect($dehydrated['schema'][$destination === null ? 'bindings' : 'targets'])
-        ->toEqual($data['schema'][$destination === null ? 'bindings' : 'targets']);
+    expect($dehydrated['schema'])->toEqual($createState['schema']);
     $sync->update(SyncForm::forUpdate(
         $dehydrated,
         $sync,
@@ -132,7 +131,7 @@ it('keeps a static value through creating, filling and updating a static synchro
         'name' => MappingState::source('_description'),
         'is_active' => MappingState::value('true'),
         'tax_number' => MappingState::value('none'),
-    ]);
+    ], ['_description' => ['transforms' => []]]);
 
     $createForm = SyncForm::configure(FormSchema::make($livewire)->statePath('data')->operation('create'));
     $createForm->fill([
@@ -145,8 +144,7 @@ it('keeps a static value through creating, filling and updating a static synchro
     ]);
     $createState = $createForm->getState();
 
-    expect($createState['schema']['targets'] ?? $createState['schema']['bindings'])
-        ->toEqual($state['targets'] ?? $state['bindings']);
+    expect($createState['schema'])->toEqual($state);
 
     $sync = Sync::create(SyncForm::forCreate($createState, $destinations, app(TransformRegistry::class)));
 
@@ -160,7 +158,7 @@ it('keeps a static value through creating, filling and updating a static synchro
     $form = SyncForm::configure(FormSchema::make($livewire)->statePath('data')->record($sync)->operation('edit'));
     $form->fill(SyncForm::fill($sync->fresh()->toArray()));
 
-    expect($form->getState()['schema']['targets'])->toBe($state['targets']);
+    expect($form->getState()['schema'])->toBe($state);
 
     $key = $form->getComponentByStatePath('schema')->getStateKeys()['is_active'];
     $livewire->data['schema']['targets'][$key] = MappingState::value('false');
@@ -184,7 +182,9 @@ it('keeps a typed static value through creating and filling a dynamic synchroniz
     ]);
     $destinations = app(DestinationFactory::class);
     $livewire = SchemaHost::make();
-    $state = MappingState::binding(['_description' => 'title', 'priority' => ['type' => 'integer', 'value' => '5']]);
+    $state = MappingState::binding(['_description' => 'title', 'priority' => ['type' => 'integer', 'value' => '5']], [
+        '_description' => ['transforms' => []],
+    ]);
 
     $createForm = SyncForm::configure(FormSchema::make($livewire)->statePath('data')->operation('create'));
     $createForm->fill([
@@ -197,8 +197,7 @@ it('keeps a typed static value through creating and filling a dynamic synchroniz
     ]);
     $createState = $createForm->getState();
 
-    expect($createState['schema']['targets'] ?? $createState['schema']['bindings'])
-        ->toEqual($state['targets'] ?? $state['bindings']);
+    expect($createState['schema'])->toEqual($state);
 
     $sync = Sync::create(SyncForm::forCreate($createState, $destinations, app(TransformRegistry::class)));
 
@@ -210,7 +209,7 @@ it('keeps a typed static value through creating and filling a dynamic synchroniz
     $form = SyncForm::configure(FormSchema::make($livewire)->statePath('data')->record($sync)->operation('edit'));
     $form->fill(SyncForm::fill($sync->fresh()->toArray()));
 
-    expect($form->getState()['schema']['bindings'])->toEqual($state['bindings']);
+    expect($form->getState()['schema'])->toEqual($state);
 });
 
 it('keeps field and record transforms through creating, filling and updating a synchronization', function () {
@@ -265,7 +264,7 @@ it('keeps field and record transforms through creating, filling and updating a s
         ->and($state)
         ->not
         ->toHaveKey('field_transforms')
-        ->and($state['schema']['sources']['_code']['transforms'])
+        ->and($state['schema']['is_active']['transforms'])
         ->toBe([['key' => 'cast', 'params' => ['type' => 'boolean']]]);
 
     $sync->update(SyncForm::forUpdate($state, $sync, $destinations, app(TransformRegistry::class)));

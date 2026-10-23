@@ -76,8 +76,8 @@ class FieldTransforms extends Field
 
         $this->hiddenLabel();
         $this->default([]);
-        $this->rules(fn () => [
-            $this->validateSettings(...),
+        $this->rules(fn (self $component) => [
+            $component->validateSettings(...),
         ]);
         $this->registerActions([
             fn (self $component, TransformRegistry $transforms) => FieldTransformsAction::make($component, $transforms),

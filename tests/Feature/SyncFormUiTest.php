@@ -121,11 +121,14 @@ it('binds dynamic fields and connects static fields to the declared destination 
         'connection_id' => $connection->id,
         'source' => 'object-0',
         'destination' => 'static:customers',
-        'schema' => MappingState::mapping([], [
-            'property-1' => ['transforms' => [['key' => 'cast', 'params' => ['type' => 'string']]]],
-        ]),
+        'schema' => [],
     ]);
-    expect($schema->getComponentByStatePath('schema')->getConnectionModes()['property-1'])
+    $mapping = $schema->getComponentByStatePath('schema');
+    $key = $mapping->getSourceStateKeys()['property-1'];
+    $schema
+        ->getComponentByStatePath('schema.sources.' . $key . '.transforms')
+        ->state([['key' => 'cast', 'params' => ['type' => 'string']]]);
+    expect($mapping->getConnectionModes()['property-1'])
         ->toBe(['name' => 'whole', 'tax_number' => 'whole']);
 });
 
@@ -161,8 +164,11 @@ it('validates the static mapping against the declared destination fields', funct
     $schema->fill($livewire->data);
 
     if ($valid) {
-        expect($schema->getState()['schema']['targets'])
-            ->toBe($mapping)
+        expect($schema->getState()['schema'])
+            ->toBe(MappingState::mapping($mapping, [
+                '_description' => ['transforms' => []],
+                '_code' => ['transforms' => []],
+            ]))
             ->and(
                 SyncForm::forCreate(
                     $schema->getState(),
@@ -216,7 +222,8 @@ it('validates the bound column names of a dynamic synchronization', function (st
     ]);
 
     if ($valid) {
-        expect($schema->getState()['schema']['bindings'])->toBe(['_idrref' => $column]);
+        expect($schema->getState()['schema'])
+            ->toBe(MappingState::binding(['_idrref' => $column], ['_idrref' => ['transforms' => []]]));
 
         return;
     }

@@ -294,22 +294,19 @@ Required destinations come from the destination object's `required` list. Array 
 
 ### State and connections
 
-State separates source settings from destination mappings. Each destination entry has an explicit `kind`:
+State is a map keyed by destination identifier, without `sources` or `targets` wrappers. Each entry has an explicit `kind`; connected-source settings, such as `transforms`, are included in that entry:
 
 ```php
 [
-    'sources' => [],
-    'targets' => [
-        'contact' => ['kind' => 'source', 'source' => 'name'],
-        'phone_numbers' => ['kind' => 'source', 'source' => 'phones'],
-    ],
+    'contact' => ['kind' => 'source', 'source' => 'name'],
+    'phone_numbers' => ['kind' => 'source', 'source' => 'phones'],
 ]
 ```
 
 An array destination supports two mutually exclusive forms:
 
 - Whole array: `['phone_numbers' => ['kind' => 'source', 'source' => 'phones']]` connects the source array as one value.
-- Individual items: `['phone_numbers' => [['kind' => 'source', 'source' => 'name'], ['kind' => 'source', 'source' => 'email']]]` collects one value from each source, checked against `items`. Settings remain associated with their source, independently of the item collection.
+- Individual items: `['phone_numbers' => [['kind' => 'source', 'source' => 'name'], ['kind' => 'source', 'source' => 'email']]]` collects one value from each source, checked against `items`. Each item entry includes the settings for its own source.
 
 Connecting a whole array replaces the individual items; connecting an item replaces a whole array. Arrays are never flattened. An array source can itself become an item when `items` describes a compatible array. Each source permits at most one connection. Click a line to remove it, or focus it and press Enter or Space.
 
@@ -373,7 +370,7 @@ Each factory returns a fresh field named `value`. It can receive the destination
 
 An unconnected destination immediately shows its configured editor and becomes a static value initialized with the field's default. Every visible editor counts as mapped, including an empty one. Its native validation, state casts, and dehydration callbacks run on submission; `required()` can reject an empty editor. Values retain their field's type, including `false`, zero, arrays, and `null` when allowed. Configure the factory's rules for the values your consumer accepts; JSON Schema payload constraints are not inferred.
 
-Livewire uses encoded source and destination keys internally so dots and numeric names remain literal identifiers. Fill the form with the public `sources`/`targets` state; submitted `getState()` uses the same shape and preserves typed values. Editor templates are rendered up front; Alpine mounts or removes them when connections change, without a server request. Connecting a source replaces and hides the static editor. Removing the destination's final connection restores it with the configured default. Native live fields and actions still make their usual requests.
+Livewire uses encoded source and destination keys internally so dots and numeric names remain literal identifiers. Fill the form with the destination-keyed public map; submitted `getState()` uses the same shape and preserves typed values. Editor templates are rendered up front; Alpine mounts or removes them when connections change, without a server request. Connecting a source replaces and hides the static editor. Removing the destination's final connection restores it with the configured default. Native live fields and actions still make their usual requests.
 
 ### Source settings and transforms
 
@@ -386,7 +383,7 @@ Both `FieldMapping` and `FieldBinding` accept `sourceSettings(array|Closure)`: a
 ])
 ```
 
-Settings are submitted under `sources[source]` and remain there when a connection or binding is removed. `getSourceSettings()` reads current source-keyed settings for callbacks such as `outputSchema()`, before native child dehydration. The components do not interpret settings or move them into their connection entries.
+Settings remain available as editor drafts when a connection or binding is removed. Only settings belonging to selected sources are validated and submitted; unused drafts are ignored. Submitted settings are merged into their source entries, so a configured `FieldTransforms::make('transforms')` produces `transforms` alongside `kind` and `source`. Reserve `kind`, `source`, and `value` for the entry metadata. `getSourceSettings()` reads all current source-keyed drafts for callbacks such as `outputSchema()`, before native child dehydration. The components do not interpret the settings.
 
 For the Ferry transformation editor, use the standalone `FieldTransforms` field:
 
@@ -457,9 +454,9 @@ The path above assumes the theme lives at `resources/css/filament/admin/theme.cs
 
 `FieldBinding` displays separate source and destination cards and supports the presentation options above. Destination forms are always visible. Unbound forms are disabled beneath a translucent overlay with a centered **Bind** icon button and excluded from validation and submission. Click **Bind** to enable an editor. Bound cards have a connecting line styled like `FieldMapping`; click it or focus it and press Enter or Space to unbind. Bind and unbind update locally without a request; the next request validates and submits the selected bindings. Unbind restores the form defaults prepared on page load.
 
-Unbound sources are omitted from `bindings`; their `sources` settings remain available. Disabled fields disable binding controls and child inputs. Inline editors keep their own Livewire update settings. On narrow screens the line runs vertically between stacked cards. Source cards do not show a direction arrow.
+Unbound sources are omitted from the submitted map; their settings remain available as editor drafts. Disabled fields disable binding controls and child inputs. Inline editors keep their own Livewire update settings. On narrow screens the line runs vertically between stacked cards. Source cards do not show a direction arrow.
 
-Use `simple()` with a single Filament field to store source identifiers mapped to non-empty strings:
+Binding state is a flat map keyed by source identifier. Each source entry contains `kind: source`, its `source` identifier, the editor data in `value`, and any configured source settings. Use `simple()` with a single Filament field to store non-empty strings in `value`:
 
 ```php
 use Filament\Forms\Components\TextInput;
@@ -472,7 +469,8 @@ FieldBinding::make('bindings')
     ]])
     ->simple(TextInput::make('destination')->required());
 
-// ['sources' => [], 'bindings' => ['name' => 'customer.name', 'email' => 'contact.email']]
+// ['name' => ['kind' => 'source', 'source' => 'name', 'value' => 'customer.name'],
+//  'email' => ['kind' => 'source', 'source' => 'email', 'value' => 'contact.email']]
 ```
 
 Use `schema()` to store each binding as an associative array whose keys and values are defined by its child components:
@@ -490,12 +488,13 @@ FieldBinding::make('bindings')
         ]),
     ]);
 
-// ['sources' => [], 'bindings' => ['name' => ['destination' => 'customer.name', 'transform' => 'trim']]]
+// ['name' => ['kind' => 'source', 'source' => 'name',
+//             'value' => ['destination' => 'customer.name', 'transform' => 'trim']]]
 ```
 
 Choose `simple()` or `schema()` for a field. Both accept closures and use native Filament child schemas, including defaults, validation, reactive callbacks, relative state reads, and nested `Repeater` or `Builder` components. `destination` is an example field name, not a reserved key. Destination syntax, duplicate destinations, and transformation behavior belong to the consuming application; the component stores the configured data without interpreting paths or executing transformations.
 
-Use `constants()` with `simple()` to add static values: destinations configured without a source field. It takes the child fields (or a closure returning them) of one static value row, which must include a `column` field naming the destination; the remaining fields describe the value. The component lists such rows under the sources with **Add static value** and a remove button, never as fictitious sources, and dehydrates each row as `column => remaining fields` inside `bindings`, next to the source bindings:
+Use `constants()` with `simple()` to add static values: destinations configured without a source field. It takes the child fields (or a closure returning them) of one static value row, which must include a `column` field naming the destination; the remaining fields describe the value. The component lists such rows under the sources with **Add static value** and a remove button, never as fictitious sources, and dehydrates each row as `column => ['kind' => 'value', 'value' => remaining fields]`, next to the source bindings:
 
 ```php
 FieldBinding::make('bindings')
@@ -506,7 +505,8 @@ FieldBinding::make('bindings')
         TextInput::make('value')->required(),
     ]);
 
-// ['sources' => [], 'bindings' => ['name' => 'customer_name', 'status' => ['value' => 'active']]]
+// ['name' => ['kind' => 'source', 'source' => 'name', 'value' => 'customer_name'],
+//  'status' => ['kind' => 'value', 'value' => ['value' => 'active']]]
 ```
 
 Without `constants()` the component rejects such rows on submission, and the bound-sources counter never includes them.
@@ -517,7 +517,7 @@ Use `sourceSettings(fn (string $source) => [Actions::make([...])])` for native s
 
 `jsonSchema(array|Closure)` supplies the source object schema and the same property metadata as `FieldMapping`. Its `required` annotations describe source properties; they do not require the user to bind them. The native `schema()` method continues to describe the per-binding Filament editor. Source identifiers retain their literal identity, including numeric identifiers and dots. `labels(source: 'Source', dest: 'Binding')` sets the headings and accepts closures. Configuration is trusted developer code; source identifiers and binding shapes are validated on submission, while the child fields define the value validation.
 
-`getBindingValues()` reads the current source-keyed bindings and column-keyed constants for callbacks before native child dehydration. Submit the parent schema with `getState()` to run validation and return the public `sources`/`bindings` state. Internal Livewire keys are encoded to preserve dots and numeric identifiers; fill forms using the public state shown above. Package views, theme setup and asset publishing are shared with `FieldMapping` as described above.
+`getBindingValues()` reads the current source-keyed bindings and column-keyed constants for callbacks before native child dehydration. Submit the parent schema with `getState()` to run validation and return the flat public entry map. Internal Livewire keys are encoded to preserve dots and numeric identifiers; fill forms using the public state shown above. Package views, theme setup and asset publishing are shared with `FieldMapping` as described above.
 
 ## Testing
 

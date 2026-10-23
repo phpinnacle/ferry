@@ -4,6 +4,7 @@ All notable changes to `ferry` will be documented in this file.
 
 ## Unreleased
 
+- Mapping and binding state now uses flat entry maps with source settings embedded in each selected entry. Unused source settings remain editor drafts and are excluded from submission and validation.
 - Kafka Connect management through `phpinnacle/franz`: one Debezium PostgreSQL source per connection and one JDBC sink per synchronization, encrypted applied configurations, connector/task status, and policy-backed lifecycle actions.
 - Shared source capture retains active and paused synchronizations. Each sink whitelists its own columns; activation requests incremental snapshots when capture expands to new tables or columns. Editing preserves administrator-requested pauses.
 - Static destinations registered through `FerryPlugin::destinations()`, with declared logical types, required fields, their own connection and primary key, and fixed values. Ferry never changes their tables or propagates source deletions; unavailable destinations block saving and activation and pause affected synchronizations on structure review.

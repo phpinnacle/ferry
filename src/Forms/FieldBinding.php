@@ -20,6 +20,9 @@ use PHPinnacle\Ferry\Forms\Concerns\Searchable;
 /**
  * @phpstan-import-type MappingItem from JsonSchema
  * @phpstan-import-type Definition from JsonSchema
+ * @phpstan-type SourceEntry array{kind: 'source', source: string, value: mixed}&array<string, mixed>
+ * @phpstan-type ValueEntry array{kind: 'value', value: array<string, mixed>}
+ * @phpstan-type Entry SourceEntry|ValueEntry
  */
 class FieldBinding extends Field
 {
@@ -201,9 +204,19 @@ class FieldBinding extends Field
         $this->hydrateDefaultState($hydratedDefaultState);
 
         $bindings = $this->getHydratedBindings();
-        /** @var array{sources?: array<string, array<string, mixed>>} $state */
+        /** @var array<string, Entry> $state */
         $state = $this->getRawState() ?? [];
-        $sources = $this->encodeSourceSettings($state['sources'] ?? []);
+        $sources = [];
+        foreach ($state as $entry) {
+            if ($entry['kind'] === 'source') {
+                /** @var array<string, mixed> $settings */
+                $settings = Arr::except($entry, ['kind', 'source', 'value']);
+                if ($settings !== []) {
+                    $sources[$entry['source']] = $settings;
+                }
+            }
+        }
+        $sources = $this->encodeSourceSettings($sources);
         $bound = array_fill_keys(
             array_filter(array_keys($bindings), fn (string $key) => !self::isConstantKey($key)),
             true,
@@ -328,7 +341,7 @@ class FieldBinding extends Field
         parent::setUp();
 
         $this->schema([]);
-        $this->default(['sources' => [], 'bindings' => []]);
+        $this->default([]);
         $this->rules(fn (self $component) => ['bail', 'array', $component->validateBindings(...)]);
         $this->registerActions([
             fn (self $component) => $component->getBindAction(),
@@ -341,14 +354,19 @@ class FieldBinding extends Field
 
     /**
      * @param array{sources?: array<string, array<string, mixed>>, bindings?: array<string, mixed>, bound?: array<string, bool>, previews?: array<string, mixed>}|null $state
-     * @return array{sources: array<string, array<string, mixed>>, bindings: array<string, mixed>}
+     * @return array<string, array<string, mixed>>
      */
     private function dehydrateBindings(?array $state): array
     {
-        return [
-            'sources' => $this->decodeSourceSettings($state['sources'] ?? []),
-            'bindings' => $this->getDehydratedBindings($state['bindings'] ?? []),
-        ];
+        $sources = $this->decodeSourceSettings($state['sources'] ?? []);
+        $bindings = [];
+        foreach ($this->getDehydratedBindings($state['bindings'] ?? []) as $source => $value) {
+            $bindings[$source] = $this->isSourceUsed((string) $source)
+                ? ['kind' => 'source', 'source' => (string) $source, 'value' => $value] + ($sources[$source] ?? [])
+                : ['kind' => 'value', 'value' => $value];
+        }
+
+        return $bindings;
     }
 
     /** @param array<array-key, mixed> $arguments */
@@ -445,20 +463,21 @@ class FieldBinding extends Field
         $bindings = [];
         $simple = $this->getSimpleField();
 
-        $state = $this->getBindingState();
+        /** @var array<string, Entry> $state */
+        $state = $this->getRawState() ?? [];
 
-        foreach ($state as $source => $binding) {
+        foreach ($state as $source => $entry) {
             $data = [];
-
-            if ($this->hasConstants() && is_array($binding)) {
+            if ($entry['kind'] === 'value') {
                 $bindings[self::CONSTANT_PREFIX . bin2hex((string) $source)] = [
                     'column' => (string) $source,
-                    ...$binding,
+                    ...$entry['value'],
                 ];
 
                 continue;
             }
 
+            $binding = $entry['value'];
             if ($simple !== null) {
                 data_set($data, $simple->getName(), $binding);
             } else {
@@ -499,6 +518,11 @@ class FieldBinding extends Field
         }
 
         return $bindings;
+    }
+
+    public function isSourceUsed(string $source): bool
+    {
+        return in_array($this->getBindingKey($source), $this->getBoundKeys(), true);
     }
 
     /** @return list<string> */

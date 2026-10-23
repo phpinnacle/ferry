@@ -5,6 +5,7 @@ namespace PHPinnacle\Ferry\Forms\Concerns;
 use Closure;
 use Filament\Forms\Components\Field;
 use Filament\Schemas\Components\Component;
+use Filament\Schemas\Components\Group;
 use Filament\Schemas\Schema;
 use PHPinnacle\Ferry\Forms\JsonSchema;
 
@@ -22,6 +23,8 @@ trait HasSourceSettings
 
     /** @return list<MappingItem> */
     abstract public function getSources(): array;
+
+    abstract public function isSourceUsed(string $source): bool;
 
     /** @param array<Component>|Closure $schema */
     public function sourceSettings(array|Closure $schema): static
@@ -65,7 +68,11 @@ trait HasSourceSettings
             $schemas['settings_' . $key] = $this
                 ->makeChildSchema('settings_' . $key)
                 ->statePath('sources.' . $key)
-                ->components($this->evaluate($this->sourceSettingsSchema, ['source' => (string) $source]))
+                ->components([
+                    Group::make($this->evaluate($this->sourceSettingsSchema, ['source' => (string) $source]))
+                        ->dehydrated(fn () => $this->isSourceUsed((string) $source))
+                        ->validatedWhenNotDehydrated(false),
+                ])
                 ->getClone();
         }
 

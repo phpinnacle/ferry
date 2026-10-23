@@ -37,8 +37,8 @@ use PHPinnacle\Rosetta\Enums\MetadataKind;
 /**
  * @phpstan-import-type TransformInput from TransformRegistry
  *
- * @phpstan-type SchemaState array{sources: array<string, array{transforms?: list<TransformRow>}>, bindings: array<string, string|array{value: string, type: string}>}
- * @phpstan-type StaticState array{sources: array<string, array{transforms?: list<TransformRow>}>, targets: array<string, array{kind: 'source', source: string}|array{kind: 'value', value: string}>}
+ * @phpstan-type SchemaState array<string, array{kind: 'source', source: string, value: string, transforms?: list<TransformRow>}|array{kind: 'value', value: array{value: string, type: string}}>
+ * @phpstan-type StaticState array<string, array{kind: 'source', source: string, transforms?: list<TransformRow>}|array{kind: 'value', value: string}>
  * @phpstan-type SettingState array{key: string, params: array<string, string>}
  * @phpstan-type TransformRow array{key: string, params?: array<string, string>}
  * @phpstan-type CreateState array{name: string, connection_id: string, code: string, source: string, destination: string, schema: SchemaState|StaticState, transforms?: array<array-key, TransformRow>}
@@ -55,34 +55,31 @@ class SyncForm
     public static function fill(array $data): array
     {
         $schema = [];
-        $fieldTransforms = [];
         $isStatic = $data['type'] === DestinationType::Static->value;
 
         foreach ($data['schema'] as $mapping) {
             $settings = $mapping['transforms'] ?? [];
-            if ($mapping['source'] !== null && $settings !== []) {
-                $fieldTransforms[$mapping['source']] = $settings;
-            }
-
             if ($isStatic) {
                 $schema[$mapping['column']] = $mapping['source'] === null
                     ? ['kind' => 'value', 'value' => $mapping['constant']['value']]
-                    : ['kind' => 'source', 'source' => $mapping['source']];
+                    : ['kind' => 'source', 'source' => $mapping['source'], 'transforms' => $settings];
                 continue;
             }
 
             if ($mapping['source'] === null) {
-                $schema[$mapping['column']] = $mapping['constant'];
+                $schema[$mapping['column']] = ['kind' => 'value', 'value' => $mapping['constant']];
 
                 continue;
             }
-            $schema[$mapping['source']] = $mapping['column'];
+            $schema[$mapping['source']] = [
+                'kind' => 'source',
+                'source' => $mapping['source'],
+                'value' => $mapping['column'],
+                'transforms' => $settings,
+            ];
         }
 
-        $data['schema'] = [
-            'sources' => array_map(static fn (array $settings) => ['transforms' => $settings], $fieldTransforms),
-            $isStatic ? 'targets' : 'bindings' => $schema,
-        ];
+        $data['schema'] = $schema;
         $data['destination'] = $isStatic ? 'static:' . $data['destination'] : DestinationType::Dynamic->value;
 
         return $data;
@@ -165,28 +162,27 @@ class SyncForm
         if ($destination !== null) {
             /** @var StaticState $schema */
             $schema = $data['schema'];
-            foreach ($schema['targets'] as $column => $entry) {
+            foreach ($schema as $column => $entry) {
                 if ($entry['kind'] === 'value') {
                     $constants[$column] = ['type' => $fields[$column]->type->value, 'value' => $entry['value']];
 
                     continue;
                 }
                 $bindings[$entry['source']] = $column;
+                $fieldTransforms[$entry['source']] = self::settings($entry['transforms'] ?? []);
             }
         } else {
             /** @var SchemaState $schema */
             $schema = $data['schema'];
-            foreach ($schema['bindings'] as $key => $value) {
-                if (is_array($value)) {
-                    $constants[$key] = ['type' => $value['type'], 'value' => $value['value']];
+            foreach ($schema as $key => $entry) {
+                if ($entry['kind'] === 'value') {
+                    $constants[$key] = $entry['value'];
 
                     continue;
                 }
-                $bindings[$key] = $value;
+                $bindings[$entry['source']] = $entry['value'];
+                $fieldTransforms[$entry['source']] = self::settings($entry['transforms'] ?? []);
             }
-        }
-        foreach (array_keys($bindings) as $source) {
-            $fieldTransforms[$source] = self::settings($schema['sources'][$source]['transforms'] ?? []);
         }
 
         return SyncSchema::fromBindings(
