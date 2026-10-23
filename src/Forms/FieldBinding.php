@@ -11,6 +11,7 @@ use Filament\Schemas\Schema;
 use Filament\Support\Concerns\CanBeContained;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Js;
 use Illuminate\Translation\PotentiallyTranslatedString;
 use Illuminate\Validation\Rule;
 use PHPinnacle\Ferry\Forms\Concerns\HasSourceSettings;
@@ -146,6 +147,35 @@ class FieldBinding extends Field
         );
     }
 
+    public function getBindingSchema(string $source): Schema
+    {
+        $key = $this->getBindingKey($source);
+        $bindings = $this->getBindings();
+        if (isset($bindings[$key])) {
+            return $bindings[$key];
+        }
+
+        /** @var Schema $schema The default child schema always exists. */
+        $schema = $this->getChildSchema();
+
+        $schema = $schema
+            ->getClone()
+            ->statePath('bindings.' . $key)
+            ->inlineLabel(false);
+
+        /** @var array{bound: array<string, bool>, bindings: array<string, array<string, mixed>>, previews: array<string, array<string, mixed>>} $state */
+        $state = $this->getRawState();
+        if (!($state['bound'][$key] ?? false) && !array_key_exists($key, $state['bindings'])) {
+            $schema->fill();
+            /** @var array{bindings: array<string, array<string, mixed>>, previews: array<string, array<string, mixed>>} $state */
+            $state = $this->getRawState();
+            $state['previews'][$key] = $state['bindings'][$key];
+            $this->rawState($state);
+        }
+
+        return $schema;
+    }
+
     /** @return array<string, mixed> */
     public function getBindingValues(): array
     {
@@ -174,9 +204,28 @@ class FieldBinding extends Field
         /** @var array{sources?: array<string, array<string, mixed>>} $state */
         $state = $this->getRawState() ?? [];
         $sources = $this->encodeSourceSettings($state['sources'] ?? []);
-        $this->rawState(['sources' => $sources, 'bindings' => $bindings]);
+        $bound = array_fill_keys(
+            array_filter(array_keys($bindings), fn (string $key) => !self::isConstantKey($key)),
+            true,
+        );
+        $this->rawState(['sources' => $sources, 'bindings' => $bindings, 'bound' => $bound, 'previews' => []]);
         $this->clearCachedChildSchemas();
         $this->fillSourceSettingsDefaults($sources);
+
+        foreach ($this->getSources() as $source) {
+            $key = $this->getBindingKey($source['id']);
+            if (isset($bound[$key])) {
+                /** @var Schema $schema The default child schema always exists. */
+                $schema = $this->getChildSchema();
+                $schema
+                    ->getClone()
+                    ->statePath('previews.' . $key)
+                    ->inlineLabel(false)
+                    ->fill();
+            } else {
+                $this->getBindingSchema($source['id']);
+            }
+        }
 
         if ($hydratedDefaultState !== null) {
             $defaults = $hydratedDefaultState;
@@ -228,8 +277,14 @@ class FieldBinding extends Field
     {
         return Action::make('bind')
             ->label(__('phpinnacle-ferry::resources.binding.bind'))
-            ->icon('heroicon-m-plus')
-            ->button()
+            ->icon('heroicon-m-link')
+            ->iconButton()
+            ->size('lg')
+            ->tooltip(__('phpinnacle-ferry::resources.binding.bind'))
+            ->alpineClickHandler(function (array $arguments) {
+                /** @var array{source: string} $arguments */
+                return 'bind(' . Js::from($this->getBindingKey($arguments['source']))->toHtml() . ')';
+            })
             ->disabled(fn (self $component) => $component->isDisabled())
             ->action(fn (array $arguments, self $component) => $component->bindSource($arguments));
     }
@@ -238,9 +293,10 @@ class FieldBinding extends Field
     {
         return Action::make('unbind')
             ->label(__('phpinnacle-ferry::resources.binding.unbind'))
-            ->icon('heroicon-m-x-mark')
-            ->color('gray')
-            ->iconButton()
+            ->alpineClickHandler(function (array $arguments) {
+                /** @var array{source: string} $arguments */
+                return 'unbind(' . Js::from($this->getBindingKey($arguments['source']))->toHtml() . ')';
+            })
             ->disabled(fn (self $component) => $component->isDisabled())
             ->action(fn (array $arguments, self $component) => $component->unbindSource($arguments));
     }
@@ -284,7 +340,7 @@ class FieldBinding extends Field
     }
 
     /**
-     * @param array{sources?: array<string, array<string, mixed>>, bindings?: array<string, mixed>}|null $state
+     * @param array{sources?: array<string, array<string, mixed>>, bindings?: array<string, mixed>, bound?: array<string, bool>, previews?: array<string, mixed>}|null $state
      * @return array{sources: array<string, array<string, mixed>>, bindings: array<string, mixed>}
      */
     private function dehydrateBindings(?array $state): array
@@ -305,12 +361,16 @@ class FieldBinding extends Field
         $key = $this->getBindingKey($this->validateSource($arguments));
         $bindings = $this->getBindingState();
 
-        if (array_key_exists($key, $bindings)) {
+        if (in_array($key, $this->getBoundKeys(), true)) {
             return;
         }
 
         $bindings[$key] = [];
         $this->writeBindingState($bindings);
+        /** @var array{bound: array<string, bool>} $state */
+        $state = $this->getRawState();
+        $state['bound'][$key] = true;
+        $this->rawState($state);
         $this->getBindings()[$key]->fill();
         $this->callAfterStateUpdated();
     }
@@ -323,9 +383,11 @@ class FieldBinding extends Field
         }
 
         $key = $this->getBindingKey($this->validateSource($arguments));
-        $bindings = $this->getBindingState();
-        unset($bindings[$key]);
-        $this->writeBindingState($bindings);
+        /** @var array{bound: array<string, bool>, bindings: array<string, mixed>, previews: array<string, mixed>} $state */
+        $state = $this->getRawState();
+        unset($state['bound'][$key]);
+        $state['bindings'][$key] = $state['previews'][$key];
+        $this->rawState($state);
         $this->callAfterStateUpdated();
     }
 
@@ -417,11 +479,12 @@ class FieldBinding extends Field
     {
         $bindings = [];
         $simple = $this->getSimpleField();
+        $boundKeys = $this->getBoundKeys();
 
         foreach ($this->getSources() as $source) {
             $key = $this->getBindingKey($source['id']);
 
-            if (!array_key_exists($key, $state)) {
+            if (!in_array($key, $boundKeys, true) || !array_key_exists($key, $state)) {
                 continue;
             }
 
@@ -442,13 +505,16 @@ class FieldBinding extends Field
     private function getBoundKeys(): array
     {
         $state = $this->getBindingState();
+        /** @var array{bound?: array<string, bool>}|null $rawState */
+        $rawState = $this->getRawState();
+        $bound = $rawState['bound'] ?? [];
 
         $keys = [];
 
         foreach ($this->getSources() as $source) {
             $key = $this->getBindingKey($source['id']);
 
-            if (is_array($state[$key] ?? null)) {
+            if (($bound[$key] ?? false) === true && is_array($state[$key] ?? null)) {
                 $keys[] = $key;
             }
         }
@@ -488,23 +554,40 @@ class FieldBinding extends Field
         }
 
         $validator = Validator::make(['state' => $value], [
-            'state' => ['array:sources,bindings'],
+            'state' => ['array:sources,bindings,bound,previews'],
             'state.sources' => ['array', Rule::array(array_values($this->getSourceStateKeys()))],
             'state.sources.*' => ['array'],
             'state.bindings' => ['array'],
+            'state.previews' => ['array'],
+            'state.bound' => ['present', 'array', Rule::array(array_values($this->getSourceStateKeys()))],
+            'state.bound.*' => ['boolean:strict'],
         ]);
         if ($validator->fails()) {
             $fail($validator->errors()->first())->translate();
 
             return;
         }
-        /** @var array{state: array{bindings?: array<string, mixed>}} $validated */
+        /** @var array{state: array{bindings?: array<string, mixed>, bound?: array<string, bool>}} $validated */
         $validated = $validator->validated();
         $value = $validated['state']['bindings'] ?? [];
+        $bound = $validated['state']['bound'] ?? [];
+
+        foreach ($bound as $key => $isBound) {
+            if ($isBound && !array_key_exists($key, $value)) {
+                $fail('The :attribute field contains an invalid binding value.')->translate();
+
+                return;
+            }
+        }
+        $value = array_filter(
+            $value,
+            fn (string $key) => self::isConstantKey($key) || ($bound[$key] ?? false),
+            ARRAY_FILTER_USE_KEY,
+        );
 
         $sourceKeys = $this->getSourceStateKeys();
         $keys = array_values($sourceKeys);
-        $outputKeys = array_keys(array_filter($sourceKeys, fn (string $key) => array_key_exists($key, $value)));
+        $outputKeys = array_keys(array_filter($sourceKeys, fn (string $key) => $bound[$key] ?? false));
         $simple = $this->getSimpleField();
 
         foreach ($value as $key => $binding) {
@@ -536,7 +619,7 @@ class FieldBinding extends Field
                 $outputKeys[] = $constant['column'];
             }
 
-            if (!$isConstant && $simple !== null) {
+            if (!$isConstant && ($bound[$key] ?? false) && $simple !== null) {
                 $destination = data_get($binding, $simple->getName());
 
                 if (!is_string($destination) || $destination === '') {

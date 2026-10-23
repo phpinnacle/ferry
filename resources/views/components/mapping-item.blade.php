@@ -1,4 +1,4 @@
-@props(['item', 'presentation' => null, 'multiple' => false, 'warning' => null])
+@props(['item', 'presentation' => null, 'multiple' => false, 'warning' => null, 'compact' => false])
 
 @php
     $presentation ??= $item['presentation'];
@@ -26,7 +26,13 @@
             </span>
         @endif
         <span class="ferry-mapping-names">
-            <span @class(['ferry-mapping-name', 'has-title' => $hasTitle])>{{ $item['label'] }}</span>
+            <span
+                @class(['ferry-mapping-name', 'has-title' => $hasTitle])
+                @if ($compact && $item['description'] !== null)
+                    x-tooltip="{ content: @js($item['description']), theme: $store.theme }"
+                    tabindex="0"
+                @endif
+            >{{ $item['label'] }}</span>
             @if ($item['required'])
                 <span class="ferry-mapping-required"><span aria-hidden="true">*</span><span class="fi-sr-only">{{ __('phpinnacle-ferry::resources.mapping.required') }}</span></span>
             @endif
@@ -67,7 +73,7 @@
             @endif
         </span>
     </span>
-    @if ($item['description'] !== null)
+    @if (! $compact && $item['description'] !== null)
         <span class="ferry-mapping-description" data-mapping-description>{{ $item['description'] }}</span>
     @endif
     @if ($hasItems)

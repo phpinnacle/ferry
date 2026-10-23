@@ -160,6 +160,7 @@ it('only renders mapping search inputs when enabled, including closure configura
 
 it('preserves standalone mapping content and values across presentation options', function (
     bool $contained,
+    bool $dense,
     bool $compact,
 ) {
     $livewire = SchemaHost::make();
@@ -184,6 +185,7 @@ it('preserves standalone mapping content and values across presentation options'
                 ],
             ],
         ])
+        ->dense(fn () => $dense)
         ->compact(fn () => $compact)
         ->columnSpanFull();
     if (!$contained) {
@@ -201,11 +203,18 @@ it('preserves standalone mapping content and values across presentation options'
 
     $text = preg_replace('/\s+/', ' ', strip_tags($html));
     expect($text)->toContain('Required', 'Unique string', 'Imported string');
+    expect(str_contains($text, 'The incoming display name.'))->toBe(!$compact);
+    expect(str_contains($text, 'The destination display name.'))->toBe(!$compact);
+    expect($html)->toContain('The incoming display name.', 'The destination display name.');
+    expect(str_contains($html, 'data-mapping-description'))->toBe(!$compact);
+    expect(str_contains($html, 'x-tooltip="{ content:'))->toBe($compact);
+    expect($html)->toContain($dense ? 'min-h-14' : 'min-h-20');
+    expect($html)->not->toContain($dense ? 'min-h-20' : 'min-h-14');
     expect(str_contains($text, 'Show unmapped'))->toBe($contained);
     expect($html)->toContain('aria-live="polite"');
     expect($html)->toContain(FilamentAsset::getAlpineComponentSrc('field-mapping', FerryServiceProvider::PACKAGE));
     expect($schema->getState()['mapping']['targets'])->toBe(['name' => MappingState::source('title')]);
-})->with([true, false])->with([true, false]);
+})->with([true, false])->with([true, false])->with([true, false]);
 
 it('keeps the mapping toolbar when either side has no fields', function (
     array $sources,

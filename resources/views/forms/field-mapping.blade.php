@@ -22,9 +22,10 @@
     $disabled = $isDisabled();
     $searchable = $isSearchable();
     $contained = $isContained();
+    $dense = $isDense();
     $compact = $isCompact();
     $statePath = $getStatePath();
-    $configurationKey = md5(serialize([$sources, $targets, $outputPresentation, $connectionModes, $multipleTargets, $stateKeys, $staticDefaults, $inverse, $disabled, $searchable, $contained, $compact, $sourceLabel, $targetLabel, $sourceWarnings, $targetWarnings]));
+    $configurationKey = md5(serialize([$sources, $targets, $outputPresentation, $connectionModes, $multipleTargets, $stateKeys, $staticDefaults, $inverse, $disabled, $searchable, $contained, $dense, $compact, $sourceLabel, $targetLabel, $sourceWarnings, $targetWarnings]));
     $panels = ['source' => ['label' => $sourceLabel, 'items' => $sources, 'warnings' => $sourceWarnings], 'target' => ['label' => $targetLabel, 'items' => $targets, 'warnings' => $targetWarnings]];
 
     if ($inverse) {
@@ -37,6 +38,7 @@
         {{ $getExtraAttributeBag()->class([
             'field-mapping isolate',
             'rounded-xl border border-gray-200 bg-white dark:border-white/10 dark:bg-gray-900' => $contained,
+            'fi-dense' => $dense,
             'fi-compact' => $compact,
         ]) }}
         wire:key="{{ $getId() }}-{{ $configurationKey }}"
@@ -58,7 +60,7 @@
         x-on:resize.window="refresh()"
     >
         @if ($contained)
-            <div @class(['flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 dark:border-white/10', 'px-3 py-2' => $compact, 'px-5 py-4' => ! $compact])>
+            <div @class(['flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 dark:border-white/10', 'px-3 py-2' => $dense, 'px-5 py-4' => ! $dense])>
                 <label class="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
                     <input type="checkbox" x-model="unmappedOnly" class="rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-800" />
                     {{ __('phpinnacle-ferry::resources.mapping.show_unmapped') }}
@@ -76,7 +78,7 @@
 
         @foreach ($panels as $panel)
             @foreach ($hasFields ? array_diff_key($panel['warnings'], array_column($panel['items'], null, 'id')) : $panel['warnings'] as $id => $warning)
-                <div @class(['field-mapping-warning', 'px-3 pt-2' => $compact, 'px-5 pt-4' => ! $compact]) role="alert">
+                <div @class(['field-mapping-warning', 'px-3 pt-2' => $dense, 'px-5 pt-4' => ! $dense]) role="alert">
                     <x-filament::icon icon="heroicon-m-exclamation-triangle" />
                     <span>{{ $id }}: {{ $warning }}</span>
                 </div>
@@ -84,7 +86,7 @@
         @endforeach
 
         <div class="overflow-x-auto" x-on:scroll="refresh()">
-            <div @class(['field-mapping-canvas relative grid grid-cols-[minmax(0,1fr)_minmax(72px,0.45fr)_minmax(0,1fr)] gap-0', 'p-3' => $compact, 'px-5 py-5' => ! $compact]) x-ref="canvas" :class="{ 'is-connecting': selected !== null }">
+            <div @class(['field-mapping-canvas relative grid grid-cols-[minmax(0,1fr)_minmax(72px,0.45fr)_minmax(0,1fr)] gap-0', 'p-3' => $dense, 'px-5 py-5' => ! $dense]) x-ref="canvas" :class="{ 'is-connecting': selected !== null }">
                 @if (! $hasFields)
                     <x-filament::empty-state
                         class="col-span-full"
@@ -98,7 +100,7 @@
                             $isLeft = $side === ($inverse ? 'target' : 'source');
                         @endphp
                         <section class="{{ $isLeft ? 'col-start-1' : 'col-start-3' }} row-start-1 min-w-0" aria-label="{{ $panel['label'] }}" wire:key="{{ $getId() }}-{{ $side }}">
-                            <h3 @class(['text-sm font-semibold text-gray-950 dark:text-white', 'mb-2' => $compact, 'mb-3' => ! $compact])>{{ $panel['label'] }}</h3>
+                            <h3 @class(['text-sm font-semibold text-gray-950 dark:text-white', 'mb-2' => $dense, 'mb-3' => ! $dense])>{{ $panel['label'] }}</h3>
                             @if ($searchable)
                                 <x-filament::input.wrapper prefix-icon="heroicon-m-magnifying-glass">
                                     <x-filament::input
@@ -110,7 +112,7 @@
                                 </x-filament::input.wrapper>
                             @endif
 
-                            <div @class(['flex flex-col', 'gap-2' => $compact, 'gap-3' => ! $compact, 'mt-3' => $searchable && $compact, 'mt-5' => $searchable && ! $compact])>
+                            <div @class(['flex flex-col', 'gap-2' => $dense, 'gap-3' => ! $dense, 'mt-3' => $searchable && $dense, 'mt-5' => $searchable && ! $dense])>
                                 @foreach ($panel['items'] as $item)
                                     @php
                                         $plainLabel = strip_tags($item['label']);
@@ -126,8 +128,8 @@
                                     <div
                                         @class([
                                             'field-mapping-row relative flex flex-wrap items-start gap-2 rounded-lg border border-gray-200 bg-white dark:border-white/10 dark:bg-gray-900',
-                                            'min-h-14' => $compact,
-                                            'min-h-20' => ! $compact,
+                                            'min-h-14' => $dense,
+                                            'min-h-20' => ! $dense,
                                             'has-warning' => $warning !== null,
                                         ])
                                         data-mapping-row
@@ -137,7 +139,7 @@
                                     >
                                         <div class="flex w-full items-start">
                                             <div
-                                                @class(['relative flex min-w-0 flex-1 items-start', 'px-3 py-2' => $compact, 'px-4 py-3' => ! $compact])
+                                                @class(['relative flex min-w-0 flex-1 items-start', 'px-3 py-2' => $dense, 'px-4 py-3' => ! $dense])
                                                 x-on:click="if (!$event.target.closest('button')) select(@js($side), @js($item['id']))"
                                             >
                                                 <button
@@ -147,7 +149,7 @@
                                                     aria-label="{{ 'Select '.$plainLabel.' as '.$side }}"
                                                     @disabled($disabled)
                                                 ></button>
-                                                <x-phpinnacle-ferry::mapping-item class="relative" :item="$item" :presentation="$presentation" :multiple="$isMultiple" :warning="$warning">
+                                                <x-phpinnacle-ferry::mapping-item :compact="$compact" class="relative" :item="$item" :presentation="$presentation" :multiple="$isMultiple" :warning="$warning">
                                                     @if ($isMultiple)
                                                         <span class="mt-1 block text-xs text-gray-500 dark:text-gray-400" x-show="isMapped('target', @js($item['id'])) && !isConstant(@js($item['id']))" x-cloak>
                                                             <span x-show="targetMode(@js($item['id'])) === 'whole'">{{ __('phpinnacle-ferry::resources.mapping.whole_array') }}</span>
@@ -178,14 +180,14 @@
                                             </button>
                                         </div>
                                         @if ($side === 'source' && isset($staticSchemas['settings_'.$sourceStateKeys[$item['id']]]))
-                                            <div @class(['w-full', 'px-3 pb-2' => $compact, 'px-4 pb-3' => ! $compact]) data-mapping-source-settings="{{ $item['id'] }}">
+                                            <div @class(['w-full', 'px-3 pb-2' => $dense, 'px-4 pb-3' => ! $dense]) data-mapping-source-settings="{{ $item['id'] }}">
                                                 {{ $staticSchemas['settings_'.$sourceStateKeys[$item['id']]] }}
                                             </div>
                                         @endif
                                         @if ($staticSchema !== null)
                                             {{-- Mount against Livewire's client state so nested field entanglements see their value. --}}
                                             <template x-if="$wire.$get(@js($statePath))?.targets?.[@js($stateKeys[$item['id']])]?.kind === 'value'">
-                                                <div @class(['w-full', 'px-3 pb-2' => $compact, 'px-4 pb-3' => ! $compact]) data-mapping-static-form="{{ $item['id'] }}">
+                                                <div @class(['w-full', 'px-3 pb-2' => $dense, 'px-4 pb-3' => ! $dense]) data-mapping-static-form="{{ $item['id'] }}">
                                                     {{ $staticSchema }}
                                                 </div>
                                             </template>

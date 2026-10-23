@@ -550,7 +550,7 @@ it('confirms removed and retyped dynamic columns when saving the form', function
 
     if ($change === 'removed') {
         $field = $page->form->getComponentByStatePath('schema');
-        unset($page->data['schema']['bindings'][$field->getBindingKey('_description')]);
+        $field->getAction('unbind')(['source' => '_description'])->call();
     }
 
     if ($change === 'renamed') {

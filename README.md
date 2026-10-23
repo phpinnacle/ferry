@@ -92,7 +92,7 @@ A pause requested by an administrator and a pause caused by a broken mapping are
 
 ## Static destinations
 
-A synchronization writes either into a generated `{prefix}{code}` table (dynamic) or into a table the application already owns (static). `DynamicDestination` and `StaticDestination` independently implement the `Destination` interface, which exposes the target table and `connector($sync, $object, $topic, $transforms)`. Dynamic destinations need only their generated table name; static destinations describe the application's target and its mapping fields. Register static destinations on the plugin:
+A synchronization writes either into a generated `{prefix}{code}` table (dynamic) or into a table the application already owns (static). `DynamicDestination` and `StaticDestination` independently implement the `Destination` interface, which exposes the target table and `connector($sync, $object, $topic, $transforms)`. Dynamic destinations use the synchronization's generated table name; static destinations describe the application's target and its mapping fields. Register static destinations on the plugin:
 
 ```php
 use PHPinnacle\Ferry\Data\DestinationField;
@@ -160,7 +160,7 @@ Transformation::make('replace', TransformScope::Field)
 
 Labels, icons, descriptions, and colors accept values or closures. `color()` defaults to `primary` and accepts a Filament color name, a shade palette such as `Color::Emerald`, or `null`, styling source chips and Builder labels. `schema()` accepts an array of Filament components or a closure receiving the selected `?ConnectionMetadata $object`; `getSchema($object)` returns fresh components for each form. Fluent methods return a new description, leaving the original unchanged.
 
-`inputSchema()` describes supported values using the same compatibility rules as `FieldMapping`: types, directional formats, string lengths and array items. It also accepts a predicate `fn (JsonSchema $input) => bool` for additional restrictions. Without an input schema, a description accepts any input. `accepts($input)` checks a `Forms\JsonSchema` value object directly, without projecting it to `ColumnType`.
+`inputSchema()` describes supported values using the same compatibility rules as `FieldMapping`: types, directional formats, string lengths and array items. Alternatively, pass a predicate `fn (JsonSchema $input) => bool` to define custom compatibility checks. Without an input schema, a description accepts any input. `accepts($input)` checks a `Forms\JsonSchema` value object directly, without projecting it to `ColumnType`.
 
 `outputSchema()` declares a fixed JSON Schema array or a callback receiving the full input schema and settings. For example, a string transform that preserves null values can declare:
 
@@ -216,7 +216,7 @@ The built-in `CastTransform` casts a field to a `ColumnType`. `ColumnType::castT
 | Key | Settings form | Kafka Connect class |
 | --- | --- | --- |
 | `trim` | No settings; trims whitespace from both ends of the selected string. | `org.phpinnacle.toblerone.TrimTransform$Value` |
-| `substring` | Required zero-based `start`, optional exclusive `end`, shown side by side on large screens. A blank end is omitted; zero is retained. | `org.phpinnacle.toblerone.SubstringTransform$Value` |
+| `substring` | Required zero-based `start`, optional exclusive `end`. A blank end is omitted; zero is retained. | `org.phpinnacle.toblerone.SubstringTransform$Value` |
 | `mask` | Required `replacement`, default `***`, replacing the entire string. | `org.apache.kafka.connect.transforms.MaskField$Value` |
 
 Trim requires the Toblerone plugin and preserves null field values and tombstones. Substring serializes indexes as `fields=source:start[:end]` and requires the Toblerone plugin on the worker. It uses Java UTF-16 indexes without clamping: indexes must fit every input string. Masking uses Apache's `fields` and `replacement` settings and skips tombstones through the built-in predicate. Other MaskField options keep their Kafka defaults. Forms validate the settings; Ferry does not execute the transformations in PHP.
@@ -438,9 +438,10 @@ Both components support these presentation options:
 | `labels(source: ..., dest: ...)` | Source / Destination or Binding | Set the column headings. |
 | `searchable()` | `false` | Show field search inputs. |
 | `contained()` | `true` | Show the outer border, background, and toolbar with its filter and counters. |
-| `compact()` | `false` | Reduce padding and gaps; use 56 px minimum cards instead of 80 px. |
+| `dense()` | `false` | Reduce padding and gaps; use 56 px minimum cards instead of 80 px. |
+| `compact()` | `false` | Hide field descriptions and show them in title tooltips on hover or focus. |
 
-Labels accept strings or closures; the switches accept booleans or closures. Containment uses Filament's `CanBeContained`, and compact spacing uses `CanBeCompact`. `contained(false)` preserves column headings, optional search, and editors. Neither component has a footer. All combinations preserve form values.
+Labels accept strings or closures; the switches accept booleans or closures. Containment uses Filament's `CanBeContained`, dense spacing uses Filament's `HasGap`, and description visibility uses `CanBeCompact`. `dense()` and `compact()` work independently. `contained(false)` preserves column headings, optional search, and editors. Neither component has a footer. All combinations preserve form values.
 
 Use `warnings(source: [...], dest: [...])` on `FieldMapping` or `warnings([...])` on `FieldBinding` to highlight fields. Both accept closures and retain warnings for unavailable identifiers. Escape cancels mapping selection; keyboard controls and dark mode are supported.
 
@@ -454,7 +455,9 @@ The path above assumes the theme lives at `resources/css/filament/admin/theme.cs
 
 ## Field binding
 
-`FieldBinding` displays configured sources beside their binding editors and supports the presentation options above. Click **Bind** to activate a source and initialize its editor defaults, or **Unbind** to remove it. Unbound sources are omitted from `bindings`; their `sources` settings remain available. Disabled fields disable both actions and their child inputs.
+`FieldBinding` displays separate source and destination cards and supports the presentation options above. Destination forms are always visible. Unbound forms are disabled beneath a translucent overlay with a centered **Bind** icon button and excluded from validation and submission. Click **Bind** to enable an editor. Bound cards have a connecting line styled like `FieldMapping`; click it or focus it and press Enter or Space to unbind. Bind and unbind update locally without a request; the next request validates and submits the selected bindings. Unbind restores the form defaults prepared on page load.
+
+Unbound sources are omitted from `bindings`; their `sources` settings remain available. Disabled fields disable binding controls and child inputs. Inline editors keep their own Livewire update settings. On narrow screens the line runs vertically between stacked cards. Source cards do not show a direction arrow.
 
 Use `simple()` with a single Filament field to store source identifiers mapped to non-empty strings:
 

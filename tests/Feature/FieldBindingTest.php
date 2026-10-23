@@ -26,6 +26,35 @@ require_once __DIR__ . '/../Fixtures/SchemaHost.php';
 
 uses(TestCase::class);
 
+it('renders every unbound form beneath an overlay without validating or submitting it', function (bool $complex) {
+    $page = Livewire::test(FieldBindingForm::class, ['complex' => $complex]);
+    $field = $page->instance()->form->getComponent('bindings');
+    $key = $field->getBindingKey('name');
+
+    expect(substr_count($page->html(), 'class="field-binding-overlay"'))->toBe(6);
+    expect(substr_count($page->html(), 'type="text"'))->toBe(6);
+    expect($page->html())->not->toContain('heroicon-m-arrow-right');
+
+    if ($complex) {
+        expect($field->getBindingSchema('name')->getComponent('trim')->getState())->toBeTrue();
+    }
+
+    $page->call('submit')->assertHasNoErrors()->assertSet('saved.bindings', ['sources' => [], 'bindings' => []]);
+    $page->callAction(TestAction::make('bind')->schemaComponent('bindings', 'form')->arguments(['source' => 'name']));
+
+    $page->assertSet("data.bindings.bound.{$key}", true);
+    $page->call('submit')->assertHasErrors();
+
+    $page
+        ->callAction(TestAction::make('unbind')->schemaComponent('bindings', 'form')->arguments(['source' => 'name']))
+        ->call('submit')
+        ->assertHasNoErrors()
+        ->assertSet('saved.bindings', ['sources' => [], 'bindings' => []]);
+
+    expect(substr_count($page->html(), 'class="field-binding-overlay"'))->toBe(6);
+    expect(substr_count($page->html(), 'type="text"'))->toBe(6);
+})->with([false, true]);
+
 it('binds, edits, validates, and unbinds across Livewire requests', function (bool $complex) {
     $binding = $complex ? ['destination' => 'profile.name', 'trim' => true] : 'profile.name';
 
@@ -33,8 +62,11 @@ it('binds, edits, validates, and unbinds across Livewire requests', function (bo
     $key = $page->instance()->form->getComponent('bindings')->getBindingKey('name');
 
     $page
+        ->assertSee('aria-label="Bind"', false)
         ->callAction(TestAction::make('bind')->schemaComponent('bindings', 'form')->arguments(['source' => 'name']))
         ->assertSee('1 of 6 sources bound')
+        ->assertSee('aria-label="Unbind Customer name"', false)
+        ->assertSee('field-binding-connection')
         ->call('submit')
         ->assertHasErrors()
         ->set("data.bindings.bindings.{$key}.destination", 'profile.name')
@@ -46,6 +78,31 @@ it('binds, edits, validates, and unbinds across Livewire requests', function (bo
         ->call('submit')
         ->assertHasNoErrors()
         ->assertSet('saved.bindings.bindings', []);
+})->with([false, true]);
+
+it('validates deferred bindings and submits only bound forms', function (bool $complex) {
+    $name = $complex ? ['destination' => 'profile.name', 'trim' => true] : 'profile.name';
+    $email = $complex ? ['destination' => 'contact.email', 'trim' => true] : 'contact.email';
+
+    $page = Livewire::test(FieldBindingForm::class, ['complex' => $complex]);
+    $field = $page->instance()->form->getComponent('bindings');
+    $nameKey = $field->getBindingKey('name');
+    $emailKey = $field->getBindingKey('email');
+
+    $page
+        ->set("data.bindings.bindings.{$nameKey}.destination", 'profile.name')
+        ->set("data.bindings.bound.{$nameKey}", true)
+        ->call('submit')
+        ->assertHasNoErrors()
+        ->assertSet('saved.bindings', ['sources' => [], 'bindings' => ['name' => $name]])
+        ->set("data.bindings.bound.{$emailKey}", true)
+        ->call('submit')
+        ->assertHasErrors()
+        ->set("data.bindings.bindings.{$emailKey}.destination", 'contact.email')
+        ->set("data.bindings.bound.{$nameKey}", false)
+        ->call('submit')
+        ->assertHasNoErrors()
+        ->assertSet('saved.bindings', ['sources' => [], 'bindings' => ['email' => $email]]);
 })->with([false, true]);
 
 it('loads existing bindings and edits them across Livewire requests', function (bool $complex) {
@@ -73,6 +130,23 @@ function field_binding_schema(FieldBinding $field, array $state = []): Schema
 
     return $schema;
 }
+
+it('renders accessible local connection controls for every source', function (bool $disabled) {
+    $field = FieldBinding::make('bindings')
+        ->jsonSchema(CustomerMappingField::jsonSchema())
+        ->simple(TextInput::make('destination'))
+        ->disabled($disabled);
+    $schema = field_binding_schema($field, ['name' => 'profile.name']);
+    view()->share('errors', new ViewErrorBag);
+    $html = $schema->toHtml();
+
+    expect(substr_count($html, 'class="field-binding-connection '))->toBe(6);
+    expect(strip_tags($html))->not->toContain('Unbind');
+    preg_match('/<button[^>]*aria-label="Unbind Customer name"[^>]*>/s', $html, $matches);
+    expect($matches)->toHaveCount(1);
+    expect((bool) preg_match('/\sdisabled(?:\s|=|>)/', $matches[0]))->toBe($disabled);
+    expect($matches[0])->toContain('x-on:click="unbind(')->not->toContain('wire:click');
+})->with([false, true]);
 
 it('only filters bindings by search when enabled, including closure configuration', function () {
     $field = FieldBinding::make('bindings')
@@ -196,6 +270,45 @@ it('refreshes available sources without discarding a binding that became unavail
     expect($field->getBindings())->toBe([]);
     expect($field->getRawState())->toBe($state);
     expect($schema->getState(...))->toThrow(ValidationException::class);
+});
+
+it('does not submit drafts for sources that are no longer available', function () {
+    $sources = ['name', 'email'];
+    $field = FieldBinding::make('bindings')
+        ->jsonSchema(function () use (&$sources) {
+            return ['properties' => array_fill_keys($sources, [])];
+        })
+        ->simple(TextInput::make('destination')->required());
+    $schema = field_binding_schema($field);
+    $sources = ['email'];
+
+    expect($schema->getState()['bindings']['bindings'])->toBe([]);
+});
+
+it('prepares defaults for newly available source forms without binding them', function () {
+    $sources = ['name'];
+    $field = FieldBinding::make('bindings')
+        ->jsonSchema(function () use (&$sources) {
+            return ['properties' => array_fill_keys($sources, [])];
+        })
+        ->simple(TextInput::make('destination')->default('profile.email')->required());
+    $schema = field_binding_schema($field);
+    $sources[] = 'email';
+    view()->share('errors', new ViewErrorBag);
+    $schema->toHtml();
+
+    expect($field->getBindingSchema('email')->getComponent('destination')->getState())->toBe('profile.email');
+    expect($schema->getState()['bindings']['bindings'])->toBe([]);
+
+    $field->getAction('bind')(['source' => 'email'])->call();
+
+    expect($schema->getState()['bindings']['bindings'])->toBe(['email' => 'profile.email']);
+
+    $field->getBindingSchema('email')->getComponent('destination')->state('edited.email');
+    $field->getAction('unbind')(['source' => 'email'])->call();
+
+    expect($field->getBindingSchema('email')->getComponent('destination')->getState())->toBe('profile.email');
+    expect($schema->getState()['bindings']['bindings'])->toBe([]);
 });
 
 it('binds simple fields with their supplied names and defaults', function () {
@@ -331,9 +444,10 @@ it('rejects unknown or malformed source action arguments', function (mixed $sour
         ->jsonSchema(['type' => 'object', 'properties' => array_fill_keys(['name'], [])])
         ->simple(TextInput::make('destination'));
     field_binding_schema($field);
+    $state = $field->getRawState();
 
     expect(fn () => $field->getAction('bind')(['source' => $source])->call())->toThrow(ValidationException::class);
-    expect($field->getRawState())->toBe(['sources' => [], 'bindings' => []]);
+    expect($field->getRawState())->toBe($state);
 })->with([
     'unknown source' => ['unknown'],
     'null source' => [null],
@@ -364,6 +478,7 @@ it('rejects forged binding values and unknown sources on submission', function (
     $field->rawState([
         'sources' => [],
         'bindings' => [$field->getBindingKey($source) => $binding],
+        'bound' => [$field->getBindingKey($source) => true],
     ]);
 
     expect($schema->getState(...))->toThrow(ValidationException::class);
@@ -375,13 +490,34 @@ it('rejects forged binding values and unknown sources on submission', function (
     'empty simple value' => ['name', ['destination' => '']],
 ]);
 
+it('rejects forged bound state on submission', function (string $source, mixed $bound, bool $removeBinding) {
+    $field = FieldBinding::make('bindings')
+        ->jsonSchema(['properties' => ['name' => []]])
+        ->simple(TextInput::make('destination'));
+    $schema = field_binding_schema($field);
+    $state = $field->getRawState();
+    $state['bound'] = [$field->getBindingKey($source) => $bound];
+    if ($removeBinding) {
+        $state['bindings'] = [];
+    }
+    $field->rawState($state);
+
+    expect($schema->getState(...))->toThrow(ValidationException::class);
+})->with([
+    'unknown source' => ['unknown', true, false],
+    'non-boolean flag' => ['name', 'true', false],
+    'missing binding' => ['name', true, true],
+]);
+
 it('preserves binding metadata and values across presentation options', function (
     bool $contained,
+    bool $dense,
     bool $compact,
 ) {
     $field = FieldBinding::make('bindings')
         ->jsonSchema(CustomerMappingField::jsonSchema(...))
         ->labels(source: fn () => 'Incoming', dest: 'Output')
+        ->dense(fn () => $dense)
         ->compact(fn () => $compact)
         ->simple(TextInput::make('destination')->required());
     if (!$contained) {
@@ -390,13 +526,20 @@ it('preserves binding metadata and values across presentation options', function
     $schema = field_binding_schema($field, ['name' => 'profile.name']);
     view()->share('errors', new ViewErrorBag);
 
-    $text = preg_replace('/\s+/', ' ', strip_tags($schema->toHtml()));
-    expect($text)->toContain('Customer name', 'The name displayed on the customer profile.', 'Incoming', 'Output');
+    $html = $schema->toHtml();
+    $text = preg_replace('/\s+/', ' ', strip_tags($html));
+    expect($text)->toContain('Customer name', 'Incoming', 'Output');
     expect($text)->toContain('Required', 'Unique string');
+    expect(str_contains($text, 'The name displayed on the customer profile.'))->toBe(!$compact);
+    expect($html)->toContain('The name displayed on the customer profile.');
+    expect(str_contains($html, 'data-mapping-description'))->toBe(!$compact);
+    expect(str_contains($html, 'x-tooltip="{ content:'))->toBe($compact);
+    expect($html)->toContain($dense ? 'min-h-14' : 'min-h-20');
+    expect($html)->not->toContain($dense ? 'min-h-20' : 'min-h-14');
     expect(str_contains($text, 'Show unbound'))->toBe($contained);
     expect(str_contains($text, '1 of 6 sources bound'))->toBe($contained);
     expect($schema->getState()['bindings']['bindings'])->toBe(['name' => 'profile.name']);
-})->with([true, false])->with([true, false]);
+})->with([true, false])->with([true, false])->with([true, false]);
 
 it('keeps the binding toolbar around the empty state', function () {
     $field = FieldBinding::make('bindings')

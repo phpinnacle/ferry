@@ -11,7 +11,6 @@ use PHPinnacle\Ferry\Enums\SyncStatus;
 use PHPinnacle\Ferry\Models\Sync;
 use PHPinnacle\Ferry\Rules\SyncSchema;
 use PHPinnacle\Ferry\Services\SyncTableManager;
-use PHPinnacle\Ferry\Services\TransformFactory;
 use PHPinnacle\Ferry\Services\TransformRegistry;
 use PHPinnacle\Ferry\Tests\TestCase;
 use PHPinnacle\Rosetta\Data\MetadataProperty;
@@ -27,8 +26,6 @@ uses(TestCase::class);
 
 beforeEach(function () {
     Queue::fake();
-
-    $this->factory = $this->app->make(TransformFactory::class);
 });
 
 it('rolls back a synchronization and its table when creation fails', function () {

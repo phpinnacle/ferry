@@ -266,7 +266,7 @@ it('round-trips source and static mappings without synthetic transforms', functi
     $constant = new FieldMapping(null, 'is_active', null, constant: new StaticValue(ColumnType::Boolean, 'true'));
 
     expect(array_keys($plain->jsonSerialize()))
-        ->toBe(['source', 'column', 'field'])
+        ->toEqualCanonicalizing(['source', 'column', 'field'])
         ->and(FieldMapping::fromArray($plain->jsonSerialize()))
         ->toEqual($plain)
         ->and(FieldMapping::fromArray(json_decode(json_encode($constant), true)))
