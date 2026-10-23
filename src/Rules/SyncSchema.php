@@ -124,28 +124,26 @@ readonly class SyncSchema
                 }
             }
 
-            if ($settings !== [] && $column !== null) {
-                $type = ColumnType::fromJsonSchema($schema);
-                if ($type === null) {
-                    throw ValidationException::withMessages([
-                        'data.transforms' => __('phpinnacle-ferry::resources.sync.errors.transform_field_unsupported', [
-                            'transform' => $registry->getOrFail($settings[array_key_last($settings)]->key)->getLabel(),
-                            'field' => $source,
-                        ]),
-                    ]);
-                }
+            $result = $settings === [] ? null : ColumnType::fromJsonSchema($schema);
+            if ($settings !== [] && $column !== null && $result === null) {
+                throw ValidationException::withMessages([
+                    'data.transforms' => __('phpinnacle-ferry::resources.sync.errors.transform_field_unsupported', [
+                        'transform' => $registry->getOrFail($settings[array_key_last($settings)]->key)->getLabel(),
+                        'field' => $source,
+                    ]),
+                ]);
             }
 
             if ($destination !== null && $column !== null) {
                 self::assertNotKeyField($object, $source);
-                self::assertCompatibleWithDestination($fields, $column, $type);
+                self::assertCompatibleWithDestination($fields, $column, $result ?? $type);
             }
 
             $mappings[] = new FieldMapping(
                 $source,
                 $column,
                 $field,
-                $settings === [] ? null : ColumnType::fromJsonSchema($schema),
+                $result,
                 $settings,
             );
         }
@@ -235,7 +233,7 @@ readonly class SyncSchema
             ]);
         }
 
-        if ($field->type !== $type) {
+        if ($type === null || !$type->canMapTo($field->type)) {
             throw ValidationException::withMessages([
                 'data.schema' => __('phpinnacle-ferry::resources.sync.errors.incompatible_destination_field', [
                     'field' => $field->label,

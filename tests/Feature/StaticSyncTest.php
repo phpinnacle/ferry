@@ -104,10 +104,18 @@ it('prepares typed synchronization attributes from its form', function (?string 
         ->toBe('Renamed')
         ->and($sync->fresh()->type)
         ->toBe($destination === null ? DestinationType::Dynamic : DestinationType::Static)
-        ->and(array_column($sync->fresh()->schema, 'target', 'source'))
+        ->and(array_column(
+            array_filter($sync->fresh()->schema, fn (FieldMapping $mapping) => $mapping->source !== null),
+            'target',
+            'source',
+        ))
         ->toEqual(['_description' => 'name', '_code' => 'tax_number'])
         ->and(Schema::hasTable('ferry_sync_customers_sync'))
         ->toBe($destination === null);
+
+    if ($destination !== null) {
+        expect($sync->fresh()->constantColumns())->toBe([]);
+    }
 })->with(['dynamic' => [null], 'static' => ['customers']]);
 
 it('keeps a static value through creating, filling and updating a static synchronization', function () {
@@ -155,8 +163,7 @@ it('keeps a static value through creating, filling and updating a static synchro
 
     expect($form->getState()['schema'])->toEqual($state);
 
-    $key = $form->getComponentByStatePath('schema')->getStateKeys()['is_active'];
-    $livewire->data['schema']['targets'][$key] = MappingState::value(false);
+    $livewire->data['schema']['constants']['static_1']['static'] = false;
     $sync->update(SyncForm::forUpdate(
         $form->getState(),
         $sync,
@@ -337,7 +344,7 @@ it('validates transform parameters through their native form schemas', function 
             '_description' => ['transforms' => [['key' => 'cast', 'params' => ['type' => 'reference']]]],
         ]),
     ]],
-    'missing filter value' => [[
+    'missing filter condition' => [[
         'schema' => MappingState::binding(['_description' => 'title'], [
             '_description' => ['transforms' => [['key' => 'filter', 'params' => ['mode' => 'exclude']]]],
         ]),
@@ -345,15 +352,19 @@ it('validates transform parameters through their native form schemas', function 
 ]);
 
 it('allows repeated transforms on submission', function () {
-    $setting = ['key' => 'cast', 'params' => ['type' => 'string']];
+    $settings = [
+        ['key' => 'cast', 'params' => ['type' => 'integer']],
+        ['key' => 'cast', 'params' => ['type' => 'string']],
+        ['key' => 'cast', 'params' => ['type' => 'integer']],
+    ];
     $schema = FormSchema::make(SchemaHost::make())
         ->statePath('data')
         ->components([
             \PHPinnacle\Ferry\Forms\FieldTransforms::make('transforms')->inputSchema(['type' => 'string']),
         ]);
-    $schema->fill(['transforms' => [$setting, $setting]]);
+    $schema->fill(['transforms' => $settings]);
 
-    expect($schema->getState()['transforms'])->toBe([$setting, $setting]);
+    expect($schema->getState()['transforms'])->toBe($settings);
 });
 
 it('persists and restores transforms on every source independently of its target', function () {
@@ -641,4 +652,49 @@ it('rejects creating a static synchronization for an unregistered destination', 
         ->toThrow(LogicException::class);
 
     expect(Sync::query()->count())->toBe(0);
+});
+
+it('creates a static source and persists its cast through the synchronization form', function () {
+    $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
+    TestCase::makeMetadata($connection, ['system' => [
+        '_description' => new StringField(length: 100, fixed: false),
+        '_code' => new StringField(length: 11, fixed: true),
+    ]]);
+    $livewire = SchemaHost::make();
+    $form = SyncForm::configure(FormSchema::make($livewire)->statePath('data')->operation('create'));
+    $form->fill([
+        'connection_id' => $connection->id,
+        'name' => 'Static source',
+        'code' => 'static_source',
+        'source' => 'object-0',
+        'destination' => 'static:customers',
+        'schema' => MappingState::mapping([
+            'name' => MappingState::source('_description'),
+            'tax_number' => MappingState::source('_code'),
+        ]),
+    ]);
+    $mapping = $form->getComponentByStatePath('schema');
+    $mapping->getAction('addConstant')->call();
+    expect($mapping->getConnectionModes()['static_1'])->not->toHaveKey('is_active');
+    $mapping->getConstantValueSchema('static_1')->getComponent('static')->state('false');
+    $sourceKey = $mapping->getSourceStateKeys()['static_1'];
+    $form->getComponentByStatePath('schema.sources.' . $sourceKey . '.transforms')->state([
+        ['key' => 'cast', 'params' => ['type' => 'boolean']],
+    ]);
+    expect($mapping->getConnectionModes()['static_1']['is_active'])->toBe('whole');
+    $livewire->data['schema']['targets'][$mapping->getStateKeys()['is_active']] = MappingState::source('static_1');
+    $state = $form->getState();
+    $constant = collect($state['schema'])->firstWhere('kind', 'static');
+    expect($constant)->toBe([
+        'kind' => 'static',
+        'target' => 'is_active',
+        'static' => 'false',
+        'result' => 'boolean',
+        'transforms' => [['key' => 'cast', 'params' => ['type' => 'boolean']]],
+    ]);
+    $sync = Sync::create(SyncForm::forCreate($state, app(DestinationFactory::class)));
+    expect(collect($sync->schema)->firstWhere('target', 'is_active')->type())->toBe(ColumnType::Boolean);
+    $edit = SyncForm::configure(FormSchema::make($livewire)->statePath('data')->record($sync)->operation('edit'));
+    $edit->fill(SyncForm::fill($sync->fresh()->toArray()));
+    expect($edit->getState()['schema'])->toEqual($state['schema']);
 });

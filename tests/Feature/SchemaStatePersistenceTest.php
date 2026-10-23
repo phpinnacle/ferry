@@ -21,6 +21,7 @@ uses(TestCase::class);
 it('stores and restores the exact native schema emitted by the form', function (
     string|int|float|bool $value,
     string $type,
+    array $transforms = [],
 ) {
     Queue::fake();
     $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
@@ -44,10 +45,18 @@ it('stores and restores the exact native schema emitted by the form', function (
                 'source' => '_marked',
                 'target' => null,
                 'transforms' => [
-                    ['key' => 'filter', 'params' => ['mode' => 'exclude', 'value' => 'true', 'type' => 'boolean']],
+                    [
+                        'key' => 'filter',
+                        'params' => [
+                            'mode' => 'exclude',
+                            'condition' => '@ == true',
+                            'missing_or_null_behavior' => 'include',
+                        ],
+                    ],
                 ],
             ],
-            ['kind' => 'static', 'target' => 'constant', 'static' => $value],
+            ['kind' => 'static', 'target' => 'constant', 'static' => $value]
+                + ($transforms === [] ? [] : ['transforms' => $transforms]),
         ],
     ]);
     $state = $form->getState();
@@ -75,4 +84,5 @@ it('stores and restores the exact native schema emitted by the form', function (
     'zero' => [0, 'integer'],
     'whole decimal' => [1.0, 'decimal'],
     'string true' => ['true', 'string'],
+    'transformed string' => ['10', 'integer', [['key' => 'cast', 'params' => ['type' => 'integer']]]],
 ]);

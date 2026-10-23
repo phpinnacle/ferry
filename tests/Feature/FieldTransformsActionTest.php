@@ -1,6 +1,7 @@
 <?php
 
 use Filament\Actions\Action;
+use Filament\Forms\Components\Textarea;
 use Filament\Schemas\Schema;
 use Illuminate\Validation\ValidationException;
 use PHPinnacle\Ferry\Forms\FieldTransforms;
@@ -64,6 +65,7 @@ it('uses description colors for configurable and settings-free badges', function
         'Remove Trim whitespace',
         'Remove Mask field',
     );
+    expect($html)->toContain('fieldTransforms(')->not->toContain('@js(');
 });
 
 it('adds repeated transforms and edits only the selected instance', function () {
@@ -214,25 +216,25 @@ it('offers only transforms that accept the output of the current chain', functio
         ['key' => 'trim', 'params' => []],
     ]);
 
-    ($this->action)(['transform' => 'cast', 'index' => 0])->data(['params' => ['type' => 'boolean']])->call();
+    ($this->action)(['transform' => 'cast', 'index' => 0])->data(['params' => ['type' => 'integer']])->call();
     expect($this->field->getContainer()->getState(...))->toThrow(ValidationException::class);
     expect($this->field->getAvailableTransforms($registry))->toBe([]);
     expect(($this->action)([])->toHtml())->toContain('Remove Trim whitespace');
     ($this->action)(['transform' => 'trim', 'index' => 1, 'remove' => true])->call();
     expect($this->field->getContainer()->getState()['transforms'])->toBe([
-        ['key' => 'cast', 'params' => ['type' => 'boolean']],
+        ['key' => 'cast', 'params' => ['type' => 'integer']],
     ]);
     expect(array_keys($this->field->getAvailableTransforms($registry)))->toBe(['cast', 'filter']);
 });
 
-it('validates each transform input after reordering or removing a preceding cast', function () {
+it('rejects incompatible reordering and validates removal of a preceding cast', function () {
     $this->field->inputSchema(['type' => 'boolean'])->state([
         ['key' => 'cast', 'params' => ['type' => 'string']],
         ['key' => 'trim', 'params' => []],
     ]);
-    ($this->action)(['order' => [1, 0]])->call();
-    expect($this->field->getContainer()->getState(...))->toThrow(ValidationException::class);
-    ($this->action)(['order' => [1, 0]])->call();
+    $original = $this->field->getSettings();
+    expect(fn () => ($this->action)(['order' => [1, 0]])->call())->toThrow(ValidationException::class);
+    expect($this->field->getSettings())->toBe($original);
     expect($this->field->getContainer()->getState()['transforms'])->toHaveCount(2);
 
     ($this->action)(['transform' => 'cast', 'index' => 0, 'remove' => true])->call();
@@ -273,15 +275,15 @@ it('preserves dedicated logical types for their declared formats', function (str
     $this->field->inputSchema(['type' => ['string', 'null'], 'format' => $format]);
 
     expect(array_keys($this->field->getAvailableTransforms(app(TransformRegistry::class))))
-        ->toBe($format === 'date-time' ? ['cast'] : ['cast', 'filter']);
+        ->toBe(['cast', 'filter']);
     $this->field->state([['key' => 'trim', 'params' => []]]);
     expect($this->field->getContainer()->getState(...))->toThrow(ValidationException::class);
 })->with(['date-time', 'ferry-reference']);
 
-it('does not offer scalar transforms for array or object inputs', function (array $input) {
+it('offers JSONPath filtering for array and object inputs', function (array $input) {
     $this->field->inputSchema($input);
-    expect($this->field->getAvailableTransforms(app(TransformRegistry::class)))->toBe([]);
-    expect(($this->action)([])->toHtml())->not->toContain('Add transform');
+    expect(array_keys($this->field->getAvailableTransforms(app(TransformRegistry::class))))->toBe(['filter']);
+    expect(($this->action)([])->toHtml())->toContain('Filter records', 'fi-dropdown');
     $this->field->state([['key' => 'cast', 'params' => ['type' => 'string']]]);
     expect($this->field->getContainer()->getState(...))->toThrow(ValidationException::class);
 })->with([
@@ -311,7 +313,7 @@ it('validates stored parameters through the description form without configured 
 
 it('casts a union of scalar types without losing nullability', function () {
     $this->field->inputSchema(['type' => ['string', 'number', 'null']]);
-    expect(array_keys($this->field->getAvailableTransforms(app(TransformRegistry::class))))->toBe(['cast']);
+    expect(array_keys($this->field->getAvailableTransforms(app(TransformRegistry::class))))->toBe(['cast', 'filter']);
 
     ($this->action)(['transform' => 'cast'])->data(['params' => ['type' => 'string']])->call();
     expect($this->field->getContainer()->getState()['transforms'])->toBe([
@@ -327,7 +329,7 @@ it('lets a custom array transform participate in the same schema chain', functio
     $field = FieldTransforms::make('transforms')->inputSchema(['type' => 'array', 'items' => ['type' => 'string']]);
     Schema::make(SchemaHost::make())->statePath('data')->components([$field])->fill();
     $action = $field->getAction('fieldTransforms');
-    expect(array_keys($field->getAvailableTransforms($registry)))->toBe(['join']);
+    expect(array_keys($field->getAvailableTransforms($registry)))->toBe(['filter', 'join']);
 
     $action(['transform' => 'join'])->data([])->call();
     expect(array_keys($field->getAvailableTransforms($registry)))->toBe(['cast', 'filter', 'trim', 'mask']);
@@ -341,13 +343,97 @@ it('lets a custom array transform participate in the same schema chain', functio
     ]])?->toArray())->toBe(['type' => 'string', 'maxLength' => 20]);
 });
 
-it('derives a filter comparison type from the current preceding cast', function () {
+it('preserves JSONPath predicates when a preceding cast changes type', function (string $type) {
+    $params = ['mode' => 'exclude', 'condition' => '@ != null', 'missing_or_null_behavior' => 'fail'];
+    $this->field->inputSchema(['type' => 'string'])->state([
+        ['key' => 'cast', 'params' => ['type' => 'integer']],
+        ['key' => 'filter', 'params' => $params],
+    ]);
+    ($this->action)(['transform' => 'cast', 'index' => 0])->data(['params' => ['type' => $type]])->call();
+
+    expect($this->field->getContainer()->getState()['transforms'][1]['params'])->toBe($params);
+})->with(['boolean', 'integer', 'decimal']);
+
+it('uses the preceding cast output for the filter example', function () {
+    $this->field->inputSchema(['type' => 'boolean']);
+    $condition = fn () => collect(
+        ($this->action)(['transform' => 'filter'])
+            ->getSchema(Schema::make($this->field->getLivewire()))->getFlatComponents(),
+    )
+        ->first(fn ($component) => $component instanceof Textarea && $component->getName() === 'condition');
+
+    expect($condition()->getPlaceholder())->toBe('@ == true');
+    $this->field->state([['key' => 'cast', 'params' => ['type' => 'decimal']]]);
+    expect($condition()->getPlaceholder())->toBe('@ >= 100.5');
+});
+
+it('rejects casting to the effective type after each preceding cast', function () {
+    ($this->action)(['transform' => 'cast'])->data(['params' => ['type' => 'integer']])->call();
+    ($this->action)(['transform' => 'cast'])->data(['params' => ['type' => 'integer']])->call();
+    expect($this->field->getContainer()->getState(...))->toThrow(ValidationException::class);
+    ($this->action)(['transform' => 'cast', 'index' => 1, 'remove' => true])->call();
+    ($this->action)(['transform' => 'cast'])->data(['params' => [
+        'type' => 'boolean',
+        'replace_null_with_default' => 'false',
+    ]])->call();
+
+    expect($this->field->getContainer()->getState()['transforms'])->toBe([
+        ['key' => 'cast', 'params' => ['type' => 'integer']],
+        ['key' => 'cast', 'params' => ['type' => 'boolean', 'replace_null_with_default' => 'false']],
+    ]);
+});
+
+it('calculates allowed moves using the complete type chain and refreshes them after parameters change', function () {
+    $registry = app(TransformRegistry::class);
     $this->field->inputSchema(['type' => 'boolean'])->state([
         ['key' => 'cast', 'params' => ['type' => 'string']],
-        ['key' => 'filter', 'params' => ['mode' => 'exclude', 'value' => 'true', 'type' => 'string']],
+        ['key' => 'filter', 'params' => ['condition' => '@ != null']],
+        ['key' => 'trim', 'params' => []],
     ]);
-    ($this->action)(['transform' => 'cast', 'index' => 0])->data(['params' => ['type' => 'boolean']])->call();
+    expect($this->field->getAllowedMoves($registry))->toBe([[0, 1], [0, 1, 2], [1, 2]]);
+    ($this->action)(['order' => [1, 0, 2]])->call();
+    expect(array_column($this->field->getSettings(), 'key'))->toBe(['filter', 'cast', 'trim']);
+    expect($this->field->getAllowedMoves($registry))->toBe([[0, 1, 2], [0, 1], [2]]);
 
-    expect($this->field->getContainer()->getState()['transforms'][1]['params'])
-        ->toBe(['mode' => 'exclude', 'value' => 'true', 'type' => 'boolean']);
+    $this->field->inputSchema(['type' => 'string'])->state([
+        ['key' => 'cast', 'params' => ['type' => 'integer']],
+        ['key' => 'trim', 'params' => []],
+    ]);
+    expect($this->field->getAllowedMoves($registry))->toBe([[1], [0]]);
+    $this->field->state([
+        ['key' => 'cast', 'params' => ['type' => 'string']],
+        ['key' => 'trim', 'params' => []],
+    ]);
+    expect($this->field->getAllowedMoves($registry))->toBe([[0, 1], [0, 1]]);
+});
+
+it('uses transformation schema callbacks when deciding whether a move is allowed', function () {
+    $registry = app(TransformRegistry::class);
+    $registry->register(
+        Transformation::make('make_object')
+            ->inputSchema(['type' => 'string'])
+            ->outputSchema(['type' => 'object']),
+        Transformation::make('read_object')
+            ->inputSchema(fn (JsonSchema $schema) => $schema->singleType() === 'object')
+            ->outputSchema(fn (JsonSchema $schema, array $params) => ['type' => $params['type']]),
+    );
+    $this->field->state([
+        ['key' => 'make_object', 'params' => []],
+        ['key' => 'read_object', 'params' => ['type' => 'string']],
+        ['key' => 'trim', 'params' => []],
+    ]);
+    expect($this->field->getAllowedMoves($registry))->toBe([[0], [1], [0, 2]]);
+});
+
+it('checks the current input type again before applying a reordered chain', function () {
+    $registry = app(TransformRegistry::class);
+    $settings = [
+        ['key' => 'cast', 'params' => ['type' => 'string']],
+        ['key' => 'trim', 'params' => []],
+    ];
+    $this->field->state($settings);
+    expect($this->field->getAllowedMoves($registry))->toBe([[0, 1], [0, 1]]);
+    $this->field->inputSchema(['type' => 'boolean']);
+    expect(fn () => ($this->action)(['order' => ['1', '0']])->call())->toThrow(ValidationException::class);
+    expect($this->field->getSettings())->toBe($settings);
 });

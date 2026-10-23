@@ -1,6 +1,7 @@
 <?php
 
 use Filament\Forms\Components\Select;
+use Filament\Forms\Components\Textarea;
 use Filament\Schemas\Schema as FilamentSchema;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Queue;
@@ -54,6 +55,71 @@ $selects = function (array $state) {
         ->keyBy(fn (Select $field) => $field->getName());
 };
 
+it('defaults to the first available connection and object with a dynamic destination', function () {
+    TestCase::makeConnection(['code' => 'inactive', 'name' => 'A inactive', 'is_active' => false]);
+    TestCase::makeConnection(['code' => 'preparing', 'name' => 'A preparing']);
+    TestCase::makeConnection(['code' => 'later', 'name' => 'Z connection'], ['status' => StructureStatus::Ready]);
+    $connection = TestCase::makeConnection(['name' => 'B connection'], [
+        'status' => StructureStatus::Ready,
+        'generation' => 1,
+    ]);
+    TestCase::makeMetadata($connection, ['title' => 'Z object']);
+    $first = TestCase::makeMetadata($connection, [
+        'external_id' => 'first',
+        'name' => '_reference1',
+        'title' => 'A object',
+    ]);
+    app(DestinationFactory::class)->register(customers_destination());
+
+    $livewire = SchemaHost::make();
+    $form = SyncForm::configure(FilamentSchema::make($livewire)->statePath('data')->operation('create'));
+    $form->fill();
+
+    expect($livewire->data)->toMatchArray([
+        'connection_id' => $connection->id,
+        'source' => $first->external_id,
+        'destination' => DestinationType::Dynamic->value,
+    ]);
+    foreach (['connection_id', 'source', 'destination'] as $name) {
+        expect($form->getComponent($name)->canSelectPlaceholder())->toBeFalse();
+    }
+});
+
+it('leaves unavailable connections and objects unselected', function () {
+    $livewire = SchemaHost::make();
+    $form = SyncForm::configure(FilamentSchema::make($livewire)->statePath('data')->operation('create'));
+    $form->fill();
+
+    expect($livewire->data)->toMatchArray([
+        'connection_id' => null,
+        'source' => null,
+        'destination' => DestinationType::Dynamic->value,
+    ]);
+});
+
+it('selects the first object and clears mappings when changing connections', function (bool $hasObjects) {
+    $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
+    TestCase::makeMetadata($connection);
+    $next = TestCase::makeConnection(['code' => 'next'], ['status' => StructureStatus::Ready, 'generation' => 1]);
+    if ($hasObjects) {
+        TestCase::makeMetadata($next, ['external_id' => 'next-object']);
+    }
+    $livewire = SchemaHost::make();
+    $form = SyncForm::configure(FilamentSchema::make($livewire)->statePath('data')->operation('create'));
+    $form->fill([
+        'connection_id' => $connection->id,
+        'source' => 'object-0',
+        'destination' => DestinationType::Dynamic->value,
+        'schema' => MappingState::binding(['_idrref' => 'external_id']),
+    ]);
+
+    $form->getComponent('connection_id')->state($next->id)->callAfterStateUpdated();
+
+    expect($livewire->data['source'])->toBe($hasObjects ? 'next-object' : null);
+    $mapping = $form->getComponentByStatePath('schema');
+    expect($mapping->isSourceUsed('_idrref'))->toBeFalse();
+})->with([true, false]);
+
 it('binds dynamic fields and connects static fields to the declared destination fields', function () {
     app(DestinationFactory::class)->register(customers_destination());
 
@@ -96,16 +162,19 @@ it('binds dynamic fields and connects static fields to the declared destination 
     /** @var FieldMapping $mapping */
     $mapping = $form('customers')->getComponentByStatePath('schema');
 
+    expect($mapping->hasStaticValues())->toBeTrue();
+    expect($mapping->hasStaticForms())->toBeFalse();
+
     expect(array_column($binding->getSources(), 'label', 'id'))
         ->toBe([
             '_idrref' => __('phpinnacle-ferry::resources.sync.system_fields._idrref'),
             '_description' => __('phpinnacle-ferry::resources.sync.system_fields._description'),
-            'property-1' => 'Title 1',
+            '_fld1' => 'Title 1',
         ])
         ->and(array_column($binding->getSources(), 'name', 'id'))
-        ->toBe(['_idrref' => '_idrref', '_description' => '_description', 'property-1' => '_fld1'])
+        ->toBe(['_idrref' => '_idrref', '_description' => '_description', '_fld1' => '_fld1'])
         ->and(array_column($mapping->getSources(), 'type', 'id'))
-        ->toBe(['_description' => 'string', 'property-1' => 'string'])
+        ->toBe(['_description' => 'string', '_fld1' => 'string'])
         ->and(array_column($mapping->getTargets(), 'required', 'id'))
         ->toBe(['name' => true, 'tax_number' => true, 'is_active' => false])
         ->and(array_column($mapping->getTargets(), 'type', 'id'))
@@ -115,7 +184,7 @@ it('binds dynamic fields and connects static fields to the declared destination 
         ->and($form('customers')->getComponentByStatePath('schema'))
         ->toBeInstanceOf(FieldMapping::class);
 
-    expect($mapping->getConnectionModes()['property-1'] ?? [])->toBe([]);
+    expect($mapping->getConnectionModes()['_fld1'] ?? [])->toBe([]);
 
     $schema = $form('customers');
     $schema->fill([
@@ -125,11 +194,11 @@ it('binds dynamic fields and connects static fields to the declared destination 
         'schema' => [],
     ]);
     $mapping = $schema->getComponentByStatePath('schema');
-    $key = $mapping->getSourceStateKeys()['property-1'];
+    $key = $mapping->getSourceStateKeys()['_fld1'];
     $schema
         ->getComponentByStatePath('schema.sources.' . $key . '.transforms')
         ->state([['key' => 'cast', 'params' => ['type' => 'string']]]);
-    expect($mapping->getConnectionModes()['property-1'])
+    expect($mapping->getConnectionModes()['_fld1'])
         ->toBe(['name' => 'whole', 'tax_number' => 'whole']);
 });
 
@@ -259,11 +328,13 @@ it('creates every parameter of a chosen transform so that live inputs can bind t
     $action = $field->getAction('fieldTransforms')(['transform' => 'filter']);
     $components = $action->getSchema(FilamentSchema::make($livewire))->getFlatComponents();
     $value = collect($components)->first(
-        fn ($component) => $component instanceof Select && $component->getName() === 'value',
+        fn ($component) => $component instanceof Textarea && $component->getName() === 'condition',
     );
 
-    expect($value->getOptions())
-        ->toBe(['true' => 'Yes', 'false' => 'No'])
+    expect($value)
+        ->toBeInstanceOf(Textarea::class)
+        ->and($value->getPlaceholder())
+        ->toBe('@ == true')
         ->and(collect($components)->contains(
             fn ($component) => method_exists($component, 'getName') && $component->getName() === 'column',
         ))
@@ -456,8 +527,8 @@ it('warns on a changed source used only by a filter', function () {
             new SchemaMapping('_marked', null, new ScalarField(FieldType::Boolean), transforms: [
                 new \PHPinnacle\Ferry\Data\TransformSetting('filter', [
                     'mode' => 'exclude',
-                    'type' => 'boolean',
-                    'value' => 'true',
+                    'condition' => '@ == true',
+                    'missing_or_null_behavior' => 'include',
                 ]),
             ]),
         ],
@@ -469,3 +540,67 @@ it('warns on a changed source used only by a filter', function () {
 
     expect($form->getComponentByStatePath('schema')->getWarnings())->toHaveKey('_marked');
 });
+
+it('edits physical source names while keeping metadata identities through column renames', function (DestinationType $type) {
+    app(DestinationFactory::class)->register(customers_destination());
+    $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
+    $property = new MetadataProperty(
+        id: '63e1c829-8a21-4ac1-b2a0-353d38184fb0',
+        name: '_fld17',
+        code: 17,
+        kind: PropertyKind::Field,
+        label: 'Email',
+        title: 'Email',
+        field: new StringField(length: 100, fixed: false),
+    );
+    $object = TestCase::makeMetadata($connection, [
+        'system' => ['_code' => new StringField(length: 11, fixed: true)],
+        'properties' => [$property],
+    ]);
+    $transforms = [[
+        'key' => 'filter',
+        'params' => [
+            'mode' => 'exclude',
+            'condition' => "@ == 'blocked'",
+            'missing_or_null_behavior' => 'include',
+        ],
+    ]];
+    $livewire = SchemaHost::make();
+    $form = SyncForm::configure(FilamentSchema::make($livewire)->statePath('data')->operation('create'));
+    $form->fill([
+        'connection_id' => $connection->id,
+        'source' => $object->external_id,
+        'destination' => $type === DestinationType::Dynamic ? 'dynamic' : 'static:customers',
+        'name' => 'Physical names',
+        'code' => 'physical_names',
+        'schema' => [
+            ['kind' => 'source', 'source' => '_fld17', 'target' => 'name', 'transforms' => $transforms],
+            ['kind' => 'source', 'source' => '_code', 'target' => 'tax_number', 'transforms' => []],
+        ],
+    ]);
+    $state = $form->getState();
+    $attributes = SyncForm::forCreate($state, app(DestinationFactory::class));
+    expect(array_column($state['schema'], 'source'))->toContain('_fld17')->not->toContain($property->id);
+    expect(array_column($attributes['schema'], 'source'))->toContain($property->id)->not->toContain('_fld17');
+    $sync = Sync::create($attributes);
+    $stored = $sync->fresh()->toArray()['schema'];
+
+    $object->properties = [new MetadataProperty(
+        id: $property->id,
+        name: '_fld18',
+        code: 18,
+        kind: $property->kind,
+        label: $property->label,
+        title: $property->title,
+        field: $property->field,
+    )];
+    $object->save();
+    $edit = SyncForm::configure(FilamentSchema::make($livewire)->statePath('data')->record($sync)->operation('edit'));
+    $edit->fill(SyncForm::fill($sync->fresh()->toArray()));
+    $edited = $edit->getState();
+    expect(array_column($edited['schema'], 'source'))->toContain('_fld18')->not->toContain('_fld17', $property->id);
+    expect(SyncForm::forUpdate($edited, $sync, app(DestinationFactory::class))['schema'])
+        ->toEqual($stored)
+        ->and($sync->columnMap($object)['_fld18'])
+        ->toBe('name');
+})->with([DestinationType::Dynamic, DestinationType::Static]);

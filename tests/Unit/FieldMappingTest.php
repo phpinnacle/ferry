@@ -258,8 +258,8 @@ it('uses configured schema constraints for connection modes and server validatio
             ->compatibility($compatibility);
         $value = ['target' => $multiple ? [MappingState::source('source')] : MappingState::source('source')];
 
-        expect($field->getConnectionModes()['source']['target'] ?? null)
-            ->toBe($allowed ? ($multiple ? 'item' : 'whole') : null);
+        $mode = $multiple ? 'item' : 'whole';
+        expect($field->getConnectionModes()['source']['target'] ?? null)->toBe($allowed ? $mode : null);
         expect(
             $validator
                 ->make(['mapping' => MappingState::encode($field, $value)], [
@@ -273,6 +273,18 @@ it('uses configured schema constraints for connection modes and server validatio
     'long string rejected' => [
         ['type' => 'string', 'maxLength' => 255],
         ['type' => 'string', 'maxLength' => 64],
+        SchemaCompatibility::make(),
+        false,
+    ],
+    'integer to number accepted' => [
+        ['type' => 'integer'],
+        ['type' => 'number'],
+        SchemaCompatibility::make(),
+        true,
+    ],
+    'number to integer rejected' => [
+        ['type' => 'number'],
+        ['type' => 'integer'],
         SchemaCompatibility::make(),
         false,
     ],
@@ -431,3 +443,33 @@ it('rejects source settings for identifiers outside the source schema', function
             ->passes(),
     )->toBeFalse();
 });
+
+it('uses enum compatibility for connection availability and submitted mappings in both orientations', function (bool $inverse) {
+    $field = FieldMapping::make('mapping')
+        ->inverse($inverse)
+        ->jsonSchema(
+            source: [
+                'properties' => [
+                    'date' => ['type' => 'string', 'format' => 'date'],
+                    'status' => ['type' => 'string', 'enum' => ['draft', 'active']],
+                    'narrow' => ['type' => 'string', 'enum' => ['active']],
+                    'wide' => ['type' => 'string', 'enum' => ['draft', 'active', 'blocked']],
+                ],
+            ],
+            dest: ['properties' => ['status' => ['type' => 'string', 'enum' => ['draft', 'active']]]],
+        );
+    $modes = $field->getConnectionModes();
+    $validator = new Factory(new Translator(new ArrayLoader, 'en'));
+    foreach (['date' => false, 'status' => true, 'narrow' => true, 'wide' => false] as $source => $allowed) {
+        expect($modes[$source]['status'] ?? null)->toBe($allowed ? 'whole' : null);
+        expect(
+            $validator
+                ->make(
+                    ['mapping' => MappingState::encode($field, ['status' => MappingState::source($source)])],
+                    ['mapping' => $field->getValidationRules()],
+                )
+                ->passes(),
+        )
+            ->toBe($allowed);
+    }
+})->with([false, true]);

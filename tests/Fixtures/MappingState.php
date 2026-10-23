@@ -42,7 +42,7 @@ final class MappingState
             }
         }
         foreach ($sources as $source => $settings) {
-            if (!isset($used[$source])) {
+            if (!array_key_exists($source, $used)) {
                 $rows[] = ['kind' => 'source', 'source' => (string) $source, 'target' => null] + $settings;
             }
         }

@@ -128,6 +128,22 @@ it('compares declared unions, nullability, formats and nested array types', func
     expect(JsonSchema::fromArray($source)->compatible(JsonSchema::fromArray($target)))->toBe($compatible);
 })->with([
     'matching scalar' => [['type' => 'string'], ['type' => 'string'], true],
+    'integer fits number' => [['type' => 'integer'], ['type' => 'number'], true],
+    'number does not fit integer' => [['type' => 'number'], ['type' => 'integer'], false],
+    'nullable integer fits nullable number' => [['type' => ['integer', 'null']], ['type' => ['number', 'null']], true],
+    'numeric widening preserves nullability' => [['type' => ['integer', 'null']], ['type' => 'number'], false],
+    'numeric widening in unions' => [['type' => ['integer', 'string']], ['type' => ['number', 'string']], true],
+    'numeric widening does not accept other types' => [['type' => ['integer', 'boolean']], ['type' => 'number'], false],
+    'integer array fits number array' => [
+        ['type' => 'array', 'items' => ['type' => 'integer']],
+        ['type' => 'array', 'items' => ['type' => 'number']],
+        true,
+    ],
+    'number array does not fit integer array' => [
+        ['type' => 'array', 'items' => ['type' => 'number']],
+        ['type' => 'array', 'items' => ['type' => 'integer']],
+        false,
+    ],
     'unknown source' => [[], ['type' => 'string'], true],
     'unknown target' => [['type' => 'string'], [], true],
     'nullable target' => [['type' => 'string'], ['type' => ['string', 'null']], true],
@@ -310,10 +326,111 @@ it('projects composed property metadata and required names', function () {
         ->toBe('string');
 });
 
-it('uses a technical display name without changing the property identifier', function () {
-    $items = JsonSchema::fromArray(['properties' => ['property-1' => ['x-name' => '_fld11']]])->toMappingItems();
+it('uses property keys as technical names and titles as labels', function () {
+    $items = JsonSchema::fromArray([
+        'properties' => [
+            'property-1' => ['title' => 'Property title'],
+            '0' => [],
+        ],
+    ])->toMappingItems();
 
     expect($items[0]['id'])->toBe('property-1');
-    expect($items[0]['name'])->toBe('_fld11');
-    expect($items[0]['label'])->toBe('_fld11');
+    expect($items[0]['name'])->toBe('property-1');
+    expect($items[0]['label'])->toBe('Property title');
+    expect($items[1])->toMatchArray(['id' => '0', 'name' => '0', 'label' => '0']);
 });
+
+it('requires source enum values to fit the destination enum', function (
+    array $source,
+    array $target,
+    bool $compatible,
+) {
+    expect(JsonSchema::fromArray($source)->compatible(JsonSchema::fromArray($target)))->toBe($compatible);
+})->with([
+    'date into status' => [
+        ['type' => 'string', 'format' => 'date'],
+        ['type' => 'string', 'enum' => ['draft', 'active', 'blocked']],
+        false,
+    ],
+    'unrestricted string' => [['type' => 'string'], ['type' => 'string', 'enum' => ['active']], false],
+    'unknown source' => [[], ['enum' => ['active']], false],
+    'matching enum' => [
+        ['type' => 'string', 'enum' => ['draft', 'active']],
+        ['type' => 'string', 'enum' => ['active', 'draft']],
+        true,
+    ],
+    'subset' => [['enum' => ['active']], ['enum' => ['draft', 'active']], true],
+    'superset' => [['enum' => ['draft', 'active']], ['enum' => ['active']], false],
+    'disjoint' => [['enum' => ['blocked']], ['enum' => ['active']], false],
+    'unrestricted destination' => [['type' => 'string', 'enum' => ['active']], ['type' => 'string'], true],
+    'nullable subset' => [
+        ['type' => ['string', 'null'], 'enum' => ['active', null]],
+        ['type' => ['string', 'null'], 'enum' => ['draft', 'active', null]],
+        true,
+    ],
+    'null outside destination enum' => [
+        ['type' => ['string', 'null'], 'enum' => ['active', null]],
+        ['type' => ['string', 'null'], 'enum' => ['active']],
+        false,
+    ],
+    'numbers compare by value' => [['enum' => [1]], ['enum' => [1.0]], true],
+    'integer enum fits number enum' => [
+        ['type' => 'integer', 'enum' => [1]],
+        ['type' => 'number', 'enum' => [1.0, 2.5]],
+        true,
+    ],
+    'numeric widening preserves enum restrictions' => [
+        ['type' => 'integer', 'enum' => [2]],
+        ['type' => 'number', 'enum' => [1.0, 2.5]],
+        false,
+    ],
+    'negative zero' => [['enum' => [0]], ['enum' => [-0.0]], true],
+    'string is not number' => [['enum' => ['1']], ['enum' => [1]], false],
+    'boolean is not number' => [['enum' => [false]], ['enum' => [0]], false],
+    'integer precision' => [['enum' => [9_007_199_254_740_993]], ['enum' => [9_007_199_254_740_992.0]], false],
+    'object property order' => [
+        ['type' => 'object', 'enum' => [['a' => 1, 'b' => false]]],
+        ['type' => 'object', 'enum' => [['b' => false, 'a' => 1.0]]],
+        true,
+    ],
+    'object representation' => [['enum' => [(object) ['a' => 1]]], ['enum' => [['a' => 1]]], true],
+    'empty object is not array' => [['enum' => [new stdClass]], ['enum' => [[]]], false],
+    'array values' => [['type' => 'array', 'enum' => [[1, 'a']]], ['type' => 'array', 'enum' => [[1.0, 'a']]], true],
+    'array order' => [['type' => 'array', 'enum' => [[1, 2]]], ['type' => 'array', 'enum' => [[2, 1]]], false],
+    'nested value types' => [['enum' => [['value' => false]]], ['enum' => [['value' => 'false']]], false],
+    'source intersection' => [
+        ['type' => 'string', 'enum' => ['draft', 'active'], 'allOf' => [['enum' => ['active', 'blocked']]]],
+        ['type' => 'string', 'enum' => ['active']],
+        true,
+    ],
+    'target intersection' => [
+        ['type' => 'string', 'enum' => ['draft']],
+        ['type' => 'string', 'enum' => ['draft', 'active'], 'allOf' => [['enum' => ['active', 'blocked']]]],
+        false,
+    ],
+    'source alternatives' => [
+        ['anyOf' => [['type' => 'string', 'enum' => ['draft']], ['type' => 'string', 'enum' => ['active']]]],
+        ['type' => 'string', 'enum' => ['draft', 'active']],
+        true,
+    ],
+    'source alternative outside enum' => [
+        ['anyOf' => [['type' => 'string', 'enum' => ['draft']], ['type' => 'string', 'enum' => ['blocked']]]],
+        ['type' => 'string', 'enum' => ['draft', 'active']],
+        false,
+    ],
+    'matching target alternative' => [
+        ['type' => 'string', 'enum' => ['active']],
+        ['type' => 'string', 'anyOf' => [['enum' => ['draft']], ['enum' => ['active', 'blocked']]]],
+        true,
+    ],
+    'array item enum' => [
+        ['type' => 'array', 'items' => ['type' => 'string']],
+        ['type' => 'array', 'items' => ['type' => 'string', 'enum' => ['active']]],
+        false,
+    ],
+    'matching array item enum' => [
+        ['type' => 'array', 'items' => ['type' => 'string', 'enum' => ['active']]],
+        ['type' => 'array', 'items' => ['type' => 'string', 'enum' => ['active', 'draft']]],
+        true,
+    ],
+]);

@@ -78,22 +78,61 @@ class FieldTransforms extends Field
         return $this->getRawState() ?? [];
     }
 
+    /** @param list<Transform> $settings */
+    public function hasCompatibleTypes(array $settings, TransformRegistry $transforms): bool
+    {
+        return (
+            $transforms->resultSchema(
+                JsonSchema::fromArray($this->evaluate($this->inputSchema)),
+                $settings,
+            ) !== null
+        );
+    }
+
+    /** @return list<list<int>> */
+    public function getAllowedMoves(TransformRegistry $transforms): array
+    {
+        $settings = $this->getSettings();
+        $allowed = [];
+        foreach ($settings as $from => $setting) {
+            $positions = [];
+            $remaining = $settings;
+            array_splice($remaining, $from, 1);
+            foreach (array_keys($settings) as $to) {
+                $candidate = $remaining;
+                array_splice($candidate, $to, 0, [$setting]);
+                if ($this->hasCompatibleTypes($candidate, $transforms)) {
+                    $positions[] = $to;
+                }
+            }
+            $allowed[] = $positions;
+        }
+
+        return $allowed;
+    }
+
     protected function setUp(): void
     {
         parent::setUp();
 
         $this->hiddenLabel();
         $this->default([]);
-        $this->mutateDehydratedStateUsing(function (self $component, array $state) {
-            /** @var list<Transform> $state */
-            return $component->dehydrateSettings($state);
-        });
+        $this->mutateDehydratedStateUsing(self::dehydrateFieldSettings(...));
         $this->rules(fn (self $component) => [
             $component->validateSettings(...),
         ]);
         $this->registerActions([
-            fn (self $component, TransformRegistry $transforms) => FieldTransformsAction::make($component, $transforms),
+            FieldTransformsAction::make(...),
         ]);
+    }
+
+    /**
+     * @param list<Transform> $state
+     * @return list<Transform>
+     */
+    private static function dehydrateFieldSettings(self $component, array $state): array
+    {
+        return $component->dehydrateSettings($state);
     }
 
     /**

@@ -107,13 +107,11 @@ class Sync extends Model
     public function brokenColumns(?ConnectionMetadata $object, ?array $destinationFields = null): array
     {
         if ($object === null || $this->type === DestinationType::Static && $destinationFields === null) {
-            /** @var list<string> $columns */
-            $columns = array_map(
+            /** @var list<string> */
+            return array_map(
                 static fn (FieldMapping $mapping) => $mapping->target ?? $mapping->source,
                 array_values(array_filter($this->schema, static fn (FieldMapping $mapping) => $mapping->isUsed())),
             );
-
-            return $columns;
         }
 
         $fields = array_column($destinationFields ?? [], null, 'id');
@@ -135,12 +133,11 @@ class Sync extends Model
                 }
             }
 
-            if (
-                $mapping->target !== null
-                && $destinationFields !== null
-                && ($fields[$mapping->target] ?? null)?->type !== $type
-            ) {
-                $destinationColumns[] = $mapping->target;
+            if ($mapping->target !== null && $destinationFields !== null) {
+                $destinationField = $fields[$mapping->target] ?? null;
+                if ($destinationField === null || $type === null || !$type->canMapTo($destinationField->type)) {
+                    $destinationColumns[] = $mapping->target;
+                }
             }
 
             if ($mapping->target !== null) {

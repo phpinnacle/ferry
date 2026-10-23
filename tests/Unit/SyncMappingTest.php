@@ -1,12 +1,19 @@
 <?php
 
+use Illuminate\Validation\ValidationException;
+use PHPinnacle\Ferry\Data\DestinationField;
 use PHPinnacle\Ferry\Data\FieldMapping;
+use PHPinnacle\Ferry\Destinations\StaticDestination;
+use PHPinnacle\Ferry\Enums\ColumnType;
 use PHPinnacle\Ferry\Enums\DestinationType;
 use PHPinnacle\Ferry\Enums\SyncStatus;
 use PHPinnacle\Ferry\Models\ConnectionMetadata;
 use PHPinnacle\Ferry\Models\Connector;
 use PHPinnacle\Ferry\Models\Sync;
+use PHPinnacle\Ferry\Rules\SyncSchema;
+use PHPinnacle\Ferry\Services\TransformRegistry;
 use PHPinnacle\Rosetta\Enums\FieldType;
+use PHPinnacle\Rosetta\Fields\NumberField;
 use PHPinnacle\Rosetta\Fields\ScalarField;
 use PHPinnacle\Rosetta\Fields\StringField;
 use Tests\TestCase;
@@ -86,3 +93,44 @@ it('ignores removed unused sources during structure review', function () {
 
     expect($sync->hasValidSchema($object))->toBeTrue();
 });
+
+it('uses directional numeric compatibility when saving and reviewing static synchronizations', function (
+    ColumnType $source,
+    ColumnType $target,
+    bool $allowed,
+) {
+    $field = new NumberField(precision: 10, scale: $source === ColumnType::Integer ? 0 : 2, unsigned: false);
+    $object = new ConnectionMetadata(['system' => ['amount' => $field], 'properties' => []]);
+    $destination = new StaticDestination('totals', 'Totals', 'totals', 'id', [
+        new DestinationField('amount', 'Amount', $target, required: true),
+    ]);
+    $mappings = [new FieldMapping('amount', 'amount', $field)];
+
+    if ($allowed) {
+        $mappings = SyncSchema::fromBindings(
+            $object,
+            ['amount' => 'amount'],
+            app(TransformRegistry::class),
+            $destination,
+        );
+        SyncSchema::assertValid($mappings, $destination);
+        expect($mappings[0]->type())->toBe($source)->and($mappings[0]->transforms)->toBe([]);
+    } else {
+        expect(fn () => SyncSchema::fromBindings(
+            $object,
+            ['amount' => 'amount'],
+            app(TransformRegistry::class),
+            $destination,
+        ))
+            ->toThrow(ValidationException::class);
+        expect(fn () => SyncSchema::assertValid($mappings, $destination))->toThrow(ValidationException::class);
+    }
+
+    $sync = new Sync(['type' => DestinationType::Static, 'destination' => 'totals', 'schema' => $mappings]);
+    expect($sync->brokenColumns($object, $destination->fields))->toBe($allowed ? [] : ['amount']);
+})->with([
+    'integer to number' => [ColumnType::Integer, ColumnType::Decimal, true],
+    'number to integer' => [ColumnType::Decimal, ColumnType::Integer, false],
+    'integer to integer' => [ColumnType::Integer, ColumnType::Integer, true],
+    'number to number' => [ColumnType::Decimal, ColumnType::Decimal, true],
+]);

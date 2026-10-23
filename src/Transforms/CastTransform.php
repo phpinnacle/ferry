@@ -13,6 +13,11 @@ final class CastTransform implements TransformHandler
             $name => [
                 'type' => 'org.apache.kafka.connect.transforms.Cast$Value',
                 'spec' => sprintf('%s:%s', $field, ColumnType::from($params['type'])->castType()),
+                ...(
+                    array_key_exists('replace_null_with_default', $params)
+                        ? ['replace.null.with.default' => $params['replace_null_with_default']]
+                        : []
+                ),
             ],
         ];
     }

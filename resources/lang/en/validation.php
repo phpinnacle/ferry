@@ -2,6 +2,7 @@
 
 return [
     'transform_input_type' => 'The ":transform" transform does not support its input type.',
+    'transform_order' => 'Transforms cannot be applied in this order because their input types are incompatible.',
     'sync_schema' => [
         'format' => 'The field mapping must be a list of rows',
         'empty' => 'Add at least one field mapping',

@@ -67,12 +67,18 @@ trait HasSourceSettings
                 ->makeChildSchema('settings_' . $key)
                 ->statePath('sources.' . $key)
                 ->components([
-                    Group::make($this->evaluate($this->sourceSettingsSchema, ['source' => (string) $source])),
+                    Group::make($this->getSourceSettingsComponents((string) $source)),
                 ])
                 ->getClone();
         }
 
         return $schemas;
+    }
+
+    /** @return array<Component> */
+    protected function getSourceSettingsComponents(string $source): array
+    {
+        return $this->evaluate($this->sourceSettingsSchema, ['source' => $source, 'inputSchema' => null]);
     }
 
     protected function areSourceSettingsSchemasFresh(): bool

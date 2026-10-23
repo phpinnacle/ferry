@@ -1,5 +1,6 @@
 @php
     use Filament\Support\Facades\FilamentAsset;
+    use Illuminate\Support\Str;
     use PHPinnacle\Ferry\FerryServiceProvider;
 
     $sources = $getSources();
@@ -14,11 +15,12 @@
     $contained = $isContained();
     $dense = $isDense();
     $compact = $isCompact();
+    $columnSpans = $getColumnSpans();
     $disabled = $isDisabled();
     $statePath = $getStatePath();
     $warnings = $getWarnings();
     $unavailableWarnings = array_diff_key($warnings, array_column($sources, null, 'id'));
-    $configurationKey = md5(serialize([$sources, $disabled, $searchable, $dense, $compact, $contained, $sourceLabel, $targetLabel]));
+    $configurationKey = md5(serialize([$sources, $disabled, $searchable, $dense, $compact, $contained, $columnSpans, $sourceLabel, $targetLabel]));
 @endphp
 
 <x-dynamic-component :component="$getFieldWrapperView()" :field="$field">
@@ -28,6 +30,10 @@
             'rounded-xl border border-gray-200 bg-white dark:border-white/10 dark:bg-gray-900' => $contained,
             'fi-dense' => $dense,
             'fi-compact' => $compact,
+        ])->style([
+            '--ferry-left-column: '.$columnSpans['source'].'fr',
+            '--ferry-gap-column: '.$columnSpans['gap'].'fr',
+            '--ferry-right-column: '.$columnSpans['target'].'fr',
         ]) }}
         wire:key="{{ $getId() }}-{{ $configurationKey }}"
         x-load
@@ -59,7 +65,7 @@
                     :contained="false"
                 />
             @else
-                <div @class(['grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_minmax(72px,0.45fr)_minmax(0,2fr)]', 'gap-y-3' => $dense, 'gap-y-5' => ! $dense, 'pb-1' => $searchable && $dense, 'pb-2' => $searchable && ! $dense])>
+                <div @class(['field-binding-columns grid grid-cols-1', 'gap-y-3' => $dense, 'gap-y-5' => ! $dense, 'pb-1' => $searchable && $dense, 'pb-2' => $searchable && ! $dense])>
                     <div class="min-w-0">
                         <h3 @class(['text-sm font-semibold text-gray-950 dark:text-white', 'mb-2' => $searchable && $dense, 'mb-3' => $searchable && ! $dense])>{{ $sourceLabel }}</h3>
                         @if ($searchable)
@@ -79,7 +85,7 @@
                         $searchText = strip_tags($source['label'].' '.($source['description'] ?? '')).' '.$source['id'].' '.$source['name'].' '.$source['presentation']['type'];
                     @endphp
                     <div
-                        class="grid grid-cols-1 items-stretch md:grid-cols-[minmax(0,1fr)_minmax(72px,0.45fr)_minmax(0,2fr)] md:gap-0"
+                        class="field-binding-columns grid grid-cols-1 items-stretch md:gap-0"
                         :class="{ 'gap-2': @js($dense) && !isBound(@js($key)), 'gap-3': @js(! $dense) && !isBound(@js($key)) }"
                         wire:key="{{ $getId() }}-{{ $key }}"
                         data-binding-source="{{ $source['id'] }}"
@@ -91,7 +97,7 @@
                     >
                         <div @class([
                             'field-mapping-row relative flex min-w-0 flex-wrap items-start rounded-lg border border-gray-200 bg-white dark:border-white/10 dark:bg-gray-900',
-                            'min-h-14 gap-2 px-3 py-2' => $dense,
+                            'min-h-14 gap-1 px-3 py-2' => $dense,
                             'min-h-20 gap-3 px-4 py-3' => ! $dense,
                             'is-mapped' => $binding !== null,
                             'has-warning' => $warning !== null,
@@ -111,7 +117,7 @@
                         @endphp
                         <button
                             type="button"
-                            class="field-binding-connection flex h-6 w-full items-center justify-center self-center md:col-start-2 md:h-4"
+                            class="field-binding-connection field-connection-control relative flex h-8 w-full items-center justify-center self-center md:col-start-2"
                             aria-label="{{ $unbindLabel }}"
                             title="{{ $unbindLabel }}"
                             x-show="isBound(@js($key))"
@@ -123,10 +129,13 @@
                                 <path class="field-mapping-line" d="M 0 8 H 100" vector-effect="non-scaling-stroke" />
                                 <path class="field-mapping-hit" d="M 0 8 H 100" vector-effect="non-scaling-stroke" />
                             </svg>
-                            <svg class="h-6 w-4 md:hidden" viewBox="0 0 16 100" preserveAspectRatio="none" aria-hidden="true">
+                            <svg class="h-8 w-4 md:hidden" viewBox="0 0 16 100" preserveAspectRatio="none" aria-hidden="true">
                                 <path class="field-mapping-line" d="M 8 0 V 100" vector-effect="non-scaling-stroke" />
                                 <path class="field-mapping-hit" d="M 8 0 V 100" vector-effect="non-scaling-stroke" />
                             </svg>
+                            <span class="field-connection-indicator" aria-hidden="true">
+                                <x-filament::icon icon="heroicon-m-x-mark" />
+                            </span>
                         </button>
                         <div @class(['relative flex min-w-0 items-start rounded-lg border border-gray-200 bg-white dark:border-white/10 dark:bg-gray-900 md:col-start-3', 'min-h-14 gap-2 px-3 py-2' => $dense, 'min-h-20 gap-3 px-4 py-3' => ! $dense])>
                             <fieldset class="min-w-0 flex-1" :inert="!isBound(@js($key))" :disabled="disabled || !isBound(@js($key))" @if ($binding === null) inert disabled @endif>
@@ -140,16 +149,46 @@
                 @endforeach
             @endif
 
-            @if ($hasConstants())
+            @if ($hasStaticValues())
                 <div @class(['space-y-2' => $dense, 'space-y-3' => ! $dense]) data-binding-constants>
-                    <h3 class="text-sm font-semibold text-gray-950 dark:text-white">{{ __('phpinnacle-ferry::resources.binding.constants') }}</h3>
                     @foreach ($constants as $key => $constant)
-                        <div
-                            @class(['flex items-start rounded-lg border border-gray-200 bg-white dark:border-white/10 dark:bg-gray-900', 'gap-2 px-3 py-2' => $dense, 'gap-3 px-4 py-3' => ! $dense])
-                            wire:key="{{ $getId() }}-{{ $key }}"
-                        >
-                            <div class="min-w-0 flex-1">{{ $constant }}</div>
-                            {{ ($getAction('removeConstant'))(['constant' => $key]) }}
+                        @php
+                            $property = $getConstantTarget($key);
+                            $remove = ($getAction('removeConstant'))(['constant' => $key]);
+                            $removeLabel = $remove->getLabel().' '.$property;
+                        @endphp
+                        <div class="field-binding-columns grid grid-cols-1 items-stretch gap-y-2 md:gap-0" wire:key="{{ $getId() }}-{{ $key }}" data-binding-constant="{{ $key }}" x-show="!unboundOnly">
+                            <div @class(['field-mapping-row is-mapped relative min-w-0 space-y-2 rounded-lg border border-gray-200 bg-white dark:border-white/10 dark:bg-gray-900', 'px-3 py-2' => $dense, 'px-4 py-3' => ! $dense])>
+                                <div class="ferry-mapping-heading">
+                                    <span class="ferry-mapping-names">
+                                        <span class="ferry-mapping-name has-title">{{ Str::headline($property) }}</span>
+                                        <span class="ferry-mapping-property">{{ $property }}</span>
+                                    </span>
+                                    <span class="ferry-mapping-types">
+                                        <span class="ferry-mapping-type">{{ $getConstantInputSchema($key)->singleType() }}</span>
+                                    </span>
+                                </div>
+                                {{ $constant->getComponent('input') }}
+                            </div>
+                            <button
+                                type="button"
+                                class="field-binding-connection field-connection-control relative flex h-8 w-full items-center justify-center self-center md:col-start-2"
+                                aria-label="{{ $removeLabel }}"
+                                title="{{ $removeLabel }}"
+                                wire:click="{{ $remove->getLivewireClickHandler() }}"
+                                wire:loading.attr="disabled"
+                                wire:target="{{ $remove->getLivewireClickHandler() }}"
+                                @disabled($remove->isDisabled())
+                            >
+                                <svg class="hidden h-4 w-full md:block" viewBox="0 0 100 16" preserveAspectRatio="none" aria-hidden="true"><path class="field-mapping-line" d="M 0 8 H 100" vector-effect="non-scaling-stroke" /></svg>
+                                <svg class="h-8 w-4 md:hidden" viewBox="0 0 16 100" preserveAspectRatio="none" aria-hidden="true"><path class="field-mapping-line" d="M 8 0 V 100" vector-effect="non-scaling-stroke" /></svg>
+                                <span class="field-connection-indicator" aria-hidden="true">
+                                    <x-filament::icon :icon="$remove->getIcon()" />
+                                </span>
+                            </button>
+                            <div @class(['flex min-w-0 items-start rounded-lg border border-gray-200 bg-white dark:border-white/10 dark:bg-gray-900 md:col-start-3', 'gap-2 px-3 py-2' => $dense, 'gap-3 px-4 py-3' => ! $dense])>
+                                <div class="min-w-0 flex-1">{{ $constant->getComponent('output') }}</div>
+                            </div>
                         </div>
                     @endforeach
                     <div>{{ $getAction('addConstant') }}</div>

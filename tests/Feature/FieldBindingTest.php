@@ -28,6 +28,25 @@ require_once __DIR__ . '/../Fixtures/SchemaHost.php';
 
 uses(TestCase::class);
 
+it('applies matching column spans to binding headings and rows without changing bindings', function () {
+    $field = FieldBinding::make('bindings')
+        ->jsonSchema(['properties' => ['title' => ['type' => 'string']]])
+        ->simple(TextInput::make('destination')->required());
+    $schema = Schema::make(SchemaHost::make())->statePath('data')->components([$field]);
+    $schema->fill(['bindings' => MappingState::binding(['title' => 'contact.title'])]);
+    view()->share('errors', new ViewErrorBag);
+    $state = $schema->getState();
+
+    expect($field->getColumnSpans())->toBe(['source' => 5, 'target' => 5, 'gap' => 2]);
+    expect($schema->toHtml())
+        ->toContain('--ferry-left-column: 5fr', '--ferry-gap-column: 2fr', '--ferry-right-column: 5fr');
+    $field->columnSpans(source: 4, target: 7, gap: 1);
+    $html = $schema->toHtml();
+    expect($html)->toContain('--ferry-left-column: 4fr', '--ferry-gap-column: 1fr', '--ferry-right-column: 7fr');
+    expect(substr_count($html, 'field-binding-columns'))->toBe(2);
+    expect($schema->getState())->toBe($state);
+});
+
 it('renders unbound forms without submitting their editor drafts', function (bool $complex) {
     $page = Livewire::test(FieldBindingForm::class, ['complex' => $complex]);
     $field = $page->instance()->form->getComponent('bindings');
@@ -48,7 +67,7 @@ it('renders unbound forms without submitting their editor drafts', function (boo
     $page->callAction(TestAction::make('bind')->schemaComponent('bindings', 'form')->arguments(['source' => 'name']));
 
     $page->assertSet("data.bindings.bound.{$key}", true);
-    $page->call('submit')->assertHasErrors();
+    $page->set("data.bindings.bindings.{$key}.destination", '')->call('submit')->assertHasErrors();
 
     $page
         ->callAction(TestAction::make('unbind')->schemaComponent('bindings', 'form')->arguments(['source' => 'name']))
@@ -72,6 +91,7 @@ it('binds, edits, validates, and unbinds across Livewire requests', function (bo
         ->assertSee('1 of 6 sources bound')
         ->assertSee('aria-label="Unbind Customer name"', false)
         ->assertSee('field-binding-connection')
+        ->set("data.bindings.bindings.{$key}.destination", '')
         ->call('submit')
         ->assertHasErrors()
         ->set("data.bindings.bindings.{$key}.destination", 'profile.name')
@@ -113,6 +133,7 @@ it('validates deferred bindings and submits only bound forms', function (bool $c
             array_column($field->getSources(), 'id'),
         ))
         ->set("data.bindings.bound.{$emailKey}", true)
+        ->set("data.bindings.bindings.{$emailKey}.destination", '')
         ->call('submit')
         ->assertHasErrors()
         ->set("data.bindings.bindings.{$emailKey}.destination", 'contact.email')
@@ -361,6 +382,52 @@ it('prepares defaults for newly available source forms without binding them', fu
         ->toBe(MappingState::binding([], [], array_column($field->getSources(), 'id')));
 });
 
+it('defaults simple bindings to source property keys while preserving saved values', function () {
+    $field = FieldBinding::make('bindings')
+        ->jsonSchema([
+            'properties' => [
+                'name' => ['title' => 'Display name'],
+                'customer.email' => [],
+                '0' => [],
+            ],
+        ])
+        ->simple(TextInput::make('routing.path')->required());
+    $schema = field_binding_schema($field);
+
+    foreach (['name', 'customer.email', '0'] as $source) {
+        expect($field->getBindingSchema($source)->getComponent('routing.path')->getState())->toBe($source);
+        $field->getAction('bind')(['source' => $source])->call();
+        expect($field->getBindingSchema($source)->getComponent('routing.path')->getDefaultState())->toBe($source);
+    }
+
+    expect($schema->getState()['bindings'])
+        ->toBe(MappingState::binding([
+            'name' => 'name',
+            'customer.email' => 'customer.email',
+            '0' => '0',
+        ]));
+
+    $schema->fill(['bindings' => MappingState::binding(['name' => 'custom.name'])]);
+    expect($field->getBindingSchema('name')->getComponent('routing.path')->getState())->toBe('custom.name');
+    $field->getAction('unbind')(['source' => 'name'])->call();
+    $field->getAction('bind')(['source' => 'name'])->call();
+    expect($field->getBindingSchema('name')->getComponent('routing.path')->getState())->toBe('name');
+});
+
+it('preserves explicit defaults for simple binding fields', function (mixed $default, ?string $expected) {
+    $field = FieldBinding::make('bindings')
+        ->jsonSchema(['properties' => ['name' => []]])
+        ->simple(TextInput::make('destination')->default($default));
+    field_binding_schema($field);
+
+    expect($field->getBindingSchema('name')->getComponent('destination')->getState())->toBe($expected);
+})->with([
+    'null' => [null, null],
+    'empty' => ['', null],
+    'custom' => ['custom.name', 'custom.name'],
+    'callback' => [fn () => 'callback.name', 'callback.name'],
+]);
+
 it('binds simple fields with their supplied names and defaults', function () {
     $field = FieldBinding::make('bindings')
         ->jsonSchema(['type' => 'object', 'properties' => array_fill_keys(['name'], [])])
@@ -455,7 +522,7 @@ it('keeps callbacks and relative reads isolated between bindings', function () {
         'name' => ['destination' => 'profile.name', 'suffix' => 'required'],
         'email' => ['destination' => 'profile.email', 'suffix' => null],
     ]);
-    $nameSchema = $field->getBindings()[$field->getBindingKey('name')];
+    $nameSchema = $field->getBindingSchema('name');
     $nameSchema->getComponent('destination')->callAfterStateUpdated();
 
     expect($schema->getState()['bindings'])
@@ -507,7 +574,7 @@ it('disables bind and unbind actions and child inputs for a disabled component',
 
     expect($field->getRawState())->toBe($state);
     expect($field->getAction('bind')->isDisabled())->toBeTrue();
-    expect($field->getBindings()[$field->getBindingKey('name')]->getComponent('destination')->isDisabled())->toBeTrue();
+    expect($field->getBindingSchema('name')->getComponent('destination')->isDisabled())->toBeTrue();
 });
 
 it('rejects unknown or malformed source action arguments', function (mixed $source) {
@@ -638,10 +705,7 @@ function field_binding_constants(): FieldBinding
     return FieldBinding::make('bindings')
         ->jsonSchema(['type' => 'object', 'properties' => array_fill_keys(['name', 'email'], [])])
         ->simple(TextInput::make('destination')->required())
-        ->constants(fn () => [
-            TextInput::make('target')->required(),
-            TextInput::make('static')->required(),
-        ]);
+        ->staticValues();
 }
 
 it('round trips static values beside bindings without treating them as sources', function () {
@@ -669,8 +733,8 @@ it('adds, edits and removes a static value', function () {
     $field->getAction('addConstant')([])->call();
 
     $key = array_key_first($field->getConstants());
-    $field->getConstants()[$key]->getComponent('target')->state('status');
-    $field->getConstants()[$key]->getComponent('static')->state('active');
+    $field->getConstants()[$key]->getComponent('output.destination')->state('status');
+    $field->getConstants()[$key]->getComponent('input.static')->state('active');
 
     expect($schema->getState()['bindings'])
         ->toBe(MappingState::binding(
@@ -690,23 +754,23 @@ it('adds, edits and removes a static value', function () {
 it('validates every static value field', function () {
     $field = field_binding_constants();
     $schema = field_binding_schema($field, ['status' => ['value' => 'active']]);
-    $field->getConstants()[array_key_first($field->getConstants())]->getComponent('static')->state('');
+    $field->getConstants()[array_key_first($field->getConstants())]->getComponent('input.static')->state('');
 
     expect($schema->getState(...))->toThrow(ValidationException::class);
 });
 
-it('rejects static value keys that would overwrite bindings or other static values', function (string $column) {
+it('rejects duplicate static targets without changing the binding state', function () {
     $field = field_binding_constants();
     $schema = field_binding_schema($field, ['name' => 'profile.name', 'status' => ['value' => 'active']]);
     $field->getAction('addConstant')([])->call();
     $constant = $field->getConstants()[array_key_last($field->getConstants())];
-    $constant->getComponent('target')->state($column);
-    $constant->getComponent('static')->state('replacement');
+    $constant->getComponent('output.destination')->state('status');
+    $constant->getComponent('input.static')->state('replacement');
     $state = $field->getRawState();
 
     expect($schema->getState(...))->toThrow(ValidationException::class);
     expect($field->getRawState())->toBe($state);
-})->with(['status']);
+});
 
 it('rejects static values unless the component enables them', function () {
     $field = FieldBinding::make('bindings')
@@ -744,7 +808,9 @@ it('renders the static value controls and counts only bound sources', function (
 
     expect($schema->toHtml())
         ->toContain('1 of 2 sources bound')
+        ->not
         ->toContain('Static values')
+        ->toContain('Status', 'ferry-mapping-property')
         ->toContain('Add static value');
 
     $plain = field_binding_schema(
@@ -820,12 +886,61 @@ it('keeps a static target that shares a source identifier as a separate row', fu
     $schema = field_binding_schema($field, ['name' => 'profile.name']);
     $field->getAction('addConstant')([])->call();
     $constant = $field->getConstants()[array_key_last($field->getConstants())];
-    $constant->getComponent('target')->state('name');
-    $constant->getComponent('static')->state('fixed');
+    $constant->getComponent('output.destination')->state('name');
+    $constant->getComponent('input.static')->state('fixed');
 
     expect($schema->getState()['bindings'])->toBe([
         ['kind' => 'source', 'source' => 'name', 'target' => 'profile.name'],
         ['kind' => 'source', 'source' => 'email', 'target' => null],
         ['kind' => 'static', 'target' => 'name', 'static' => 'fixed'],
     ]);
+});
+
+it('creates connected static pairs with unused names and preserves native settings', function () {
+    $field = field_binding_constants()
+        ->simple(TextInput::make('routing.path')->required())
+        ->sourceSettings(fn () => [
+            TextInput::make('note')->default('native setting'),
+        ]);
+    $schema = field_binding_schema($field, ['name' => 'static_1']);
+    $field->getAction('addConstant')([])->call();
+    $first = array_key_first($field->getConstants());
+    expect($field->getConstantTarget($first))
+        ->toBe('static_2')
+        ->and($field->getConstantInputSchema($first)->singleType())
+        ->toBe('string');
+    $field->getConstants()[$first]->getComponent('input.static')->state('10');
+    $field->getAction('addConstant')([])->call();
+    $second = array_key_last($field->getConstants());
+    expect($field->getConstantTarget($second))->toBe('static_3');
+    $field->getConstants()[$second]->getComponent('input.static')->state('20');
+    $field->getConstants()[$first]->getComponent('output.routing.path')->state('discount');
+    expect(array_slice($schema->getState()['bindings'], -2))
+        ->toBe([
+            ['kind' => 'static', 'target' => 'discount', 'static' => '10', 'note' => 'native setting'],
+            ['kind' => 'static', 'target' => 'static_3', 'static' => '20', 'note' => 'native setting'],
+        ])
+        ->and(array_key_first($field->getConstants()))
+        ->toBe($first);
+});
+
+it('disables adding static pairs explicitly', function () {
+    $field = field_binding_constants()->staticValues(false);
+    $schema = field_binding_schema($field);
+    $state = $field->getRawState();
+    expect($field->hasStaticValues())->toBeFalse()->and($field->getAction('addConstant')->isDisabled())->toBeTrue();
+    $field->getAction('addConstant')([])->call();
+    expect($field->getRawState())
+        ->toBe($state)
+        ->and($field->getConstants())
+        ->toBe([])
+        ->and($schema->getState()['bindings'])
+        ->toHaveCount(2);
+});
+
+it('rejects non-scalar input in the built-in static value editor', function () {
+    $field = field_binding_constants()->staticValues(true);
+    $schema = field_binding_schema($field, ['status' => ['value' => 'active']]);
+    $field->getConstants()[array_key_first($field->getConstants())]->getComponent('input.static')->state(['bad']);
+    expect($schema->getState(...))->toThrow(ValidationException::class);
 });

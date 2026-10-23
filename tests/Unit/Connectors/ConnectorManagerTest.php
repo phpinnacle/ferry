@@ -278,7 +278,11 @@ it('requests an incremental snapshot when an unbound field filter adds a capture
             null,
             new ScalarField(FieldType::Boolean),
             transforms: [
-                new TransformSetting('filter', ['mode' => 'exclude', 'type' => 'boolean', 'value' => 'true']),
+                new TransformSetting('filter', [
+                    'mode' => 'exclude',
+                    'condition' => '@ == true',
+                    'missing_or_null_behavior' => 'include',
+                ]),
             ],
         )],
     ], ['status' => SyncStatus::Active]);

@@ -273,6 +273,7 @@ test('line endpoints follow visible anchors when their centers differ from the p
     component.refresh();
 
     assert.match(component.connections[0].path, /^M 88 32 .*388 32$/);
+    assert.deepEqual(component.connections[0].midpoint, { x: 238, y: 32 });
     component.port('target', 'name').querySelector = () => ({
         getBoundingClientRect: () => ({ left: 0, top: 0, width: 0, height: 0 }),
     });
@@ -397,6 +398,7 @@ for (const inverse of [false, true]) {
         component.refresh();
         assert.equal(component.connections.length, 2);
         assert.match(component.connections[1].path, inverse ? /^M 88 48 .*388 128$/ : /^M 88 128 .*388 48$/);
+        assert.deepEqual(component.connections[1].midpoint, { x: 238, y: 88 });
     });
 
     test(`${mode}: conflicts are checked for every source in a multiple destination`, () => {
@@ -541,3 +543,84 @@ for (const inverse of [false, true]) {
         });
     }
 }
+
+
+for (const inverse of [false, true]) {
+    test(`${inverse ? 'inverse' : 'forward'}: hover and focus highlight only the connection endpoints`, () => {
+        const component = editor({ name: [sourceEntry('title'), sourceEntry('email')] }, false, { inverse, connectionModes: itemModes });
+        component.refresh();
+        component.hoveredConnection = component.connections[0];
+        assert.equal(component.rowClasses('source', 'title', false)['is-disconnecting'], true);
+        assert.equal(component.rowClasses('target', 'name', false)['is-disconnecting'], true);
+        assert.equal(component.rowClasses('source', 'email', false)['is-disconnecting'], false);
+        assert.equal(component.rowClasses('target', 'contact', false)['is-disconnecting'], false);
+        component.focusedConnection = component.connections[1];
+        component.hoveredConnection = null;
+        assert.equal(component.rowClasses('source', 'title', false)['is-disconnecting'], false);
+        assert.equal(component.rowClasses('source', 'email', false)['is-disconnecting'], true);
+        component.refresh();
+        assert.equal(component.rowClasses('source', 'email', false)['is-disconnecting'], true);
+        component.remove('name', 'email');
+        component.refresh();
+        assert.equal(component.focusedConnection, null);
+        assert.equal(component.rowClasses('source', 'email', false)['is-disconnecting'], false);
+    });
+}
+
+test('disabled connections never highlight their endpoints', () => {
+    const component = editor({ name: sourceEntry('title') }, true);
+    component.refresh();
+    component.hoveredConnection = component.connections[0];
+    component.focusedConnection = component.connections[0];
+    assert.equal(component.rowClasses('source', 'title', false)['is-disconnecting'], false);
+    assert.equal(component.rowClasses('target', 'name', false)['is-disconnecting'], false);
+});
+
+
+for (const inverse of [false, true]) {
+    for (const firstSide of ['source', 'target']) {
+        test(`${inverse ? 'inverse' : 'forward'}: empty card footer connects ${firstSide} first without capturing controls`, () => {
+            const component = editor({}, false, { inverse });
+            const currentTarget = { contains: () => true };
+            const emptySpace = { currentTarget, target: { closest: () => null } };
+            const control = { currentTarget, target: { closest: () => ({}) } };
+            const firstId = firstSide === 'source' ? 'email' : 'contact';
+            const secondSide = firstSide === 'source' ? 'target' : 'source';
+            const secondId = firstSide === 'source' ? 'contact' : 'email';
+            component.selectFromCard(control, firstSide, firstId);
+            assert.equal(component.selected, null);
+            component.selectFromCard(emptySpace, firstSide, firstId);
+            assert.deepEqual(component.selected, { side: firstSide, id: firstId });
+            component.selectFromCard(control, secondSide, secondId);
+            assert.deepEqual(component.selected, { side: firstSide, id: firstId });
+            assert.deepEqual(component.state.targets, {});
+            component.selectFromCard(emptySpace, secondSide, secondId);
+            assert.equal(component.selected, null);
+            assert.deepEqual(component.state.targets, { contact: sourceEntry('email') });
+        });
+    }
+}
+
+
+test('an interactive group outside the card does not block empty card clicks', () => {
+    const component = editor();
+    component.selectFromCard({
+        target: { closest: () => ({}) },
+        currentTarget: { contains: () => false },
+    }, 'source', 'email');
+    assert.deepEqual(component.selected, { side: 'source', id: 'email' });
+});
+
+test('static source cards use local connections and retain their values and settings after disconnecting', () => {
+    const component = editor({}, false, { sourceSettings: { encoded_static: { transforms: [] } } });
+    component.state.constants = { title: { static: 'Customer' } };
+    component.connect('title', 'name');
+    assert.deepEqual(component.state.targets, { name: sourceEntry('title') });
+    assert.deepEqual(component.state.constants, { title: { static: 'Customer' } });
+    component.remove('name', 'title');
+    assert.deepEqual(component.state.targets, {});
+    assert.deepEqual(component.state.constants, { title: { static: 'Customer' } });
+    assert.deepEqual(component.state.sources, { encoded_static: { transforms: [] } });
+    component.connect('title', 'contact');
+    assert.deepEqual(component.state.targets, { contact: sourceEntry('title') });
+});

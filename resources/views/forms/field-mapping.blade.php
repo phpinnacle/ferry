@@ -4,12 +4,13 @@
     use PHPinnacle\Ferry\Forms\JsonSchema;
 
     $sources = $getSources();
+    $constants = $getConstants();
     $targets = $getTargets();
     $outputPresentation = array_map(fn (JsonSchema $property) => $property->presentation(), JsonSchema::fromArray($getOutputSchema())->properties());
     $connectionModes = $getConnectionModes();
     $sourceLabel = $getSourceLabel();
     $targetLabel = $getTargetLabel();
-    $hasFields = $sources !== [] && $targets !== [];
+    $hasFields = ($sources !== [] || $hasStaticValues()) && $targets !== [];
     $sourceWarnings = $getSourceWarnings();
     $targetWarnings = $getTargetWarnings();
     $requiredTargets = array_column(array_filter($targets, fn (array $target) => $target['required']), 'id');
@@ -24,8 +25,9 @@
     $contained = $isContained();
     $dense = $isDense();
     $compact = $isCompact();
+    $columnSpans = $getColumnSpans();
     $statePath = $getStatePath();
-    $configurationKey = md5(serialize([$sources, $targets, $outputPresentation, $connectionModes, $multipleTargets, $stateKeys, $staticDefaults, $inverse, $disabled, $searchable, $contained, $dense, $compact, $sourceLabel, $targetLabel, $sourceWarnings, $targetWarnings]));
+    $configurationKey = md5(serialize([$sources, $targets, $outputPresentation, $connectionModes, $multipleTargets, $stateKeys, $staticDefaults, $inverse, $disabled, $searchable, $contained, $dense, $compact, $columnSpans, $sourceLabel, $targetLabel, $sourceWarnings, $targetWarnings]));
     $panels = ['source' => ['label' => $sourceLabel, 'items' => $sources, 'warnings' => $sourceWarnings], 'target' => ['label' => $targetLabel, 'items' => $targets, 'warnings' => $targetWarnings]];
 
     if ($inverse) {
@@ -40,9 +42,13 @@
             'rounded-xl border border-gray-200 bg-white dark:border-white/10 dark:bg-gray-900' => $contained,
             'fi-dense' => $dense,
             'fi-compact' => $compact,
+        ])->style([
+            '--ferry-left-column: '.$columnSpans[$inverse ? 'target' : 'source'].'fr',
+            '--ferry-gap-column: '.$columnSpans['gap'].'fr',
+            '--ferry-right-column: '.$columnSpans[$inverse ? 'source' : 'target'].'fr',
         ]) }}
         wire:key="{{ $getId() }}-{{ $configurationKey }}"
-        @if (! $hasStaticForms() && ! $hasSourceSettings())
+        @if (! $hasStaticForms() && ! $hasSourceSettings() && ! $hasStaticValues())
             wire:ignore
         @endif
         x-load
@@ -86,7 +92,7 @@
         @endforeach
 
         <div class="overflow-x-auto" x-on:scroll="refresh()">
-            <div @class(['field-mapping-canvas relative grid grid-cols-[minmax(0,1fr)_minmax(72px,0.45fr)_minmax(0,1fr)] gap-0', 'p-3' => $dense, 'px-5 py-5' => ! $dense]) x-ref="canvas" :class="{ 'is-connecting': selected !== null }">
+            <div @class(['field-mapping-canvas relative grid gap-0', 'p-3' => $dense, 'px-5 py-5' => ! $dense]) x-ref="canvas" :class="{ 'is-connecting': selected !== null }">
                 @if (! $hasFields)
                     <x-filament::empty-state
                         class="col-span-full"
@@ -124,23 +130,24 @@
                                         $staticSchema = $side === 'target' && array_key_exists($item['id'], $staticDefaults)
                                             ? ($staticSchemas[$stateKeys[$item['id']]] ?? $getStaticFormSchema($item['id']))
                                             : null;
+                                        $hasSourceFooter = $side === 'source' && (isset($staticSchemas['settings_'.$sourceStateKeys[$item['id']]]) || isset($constants[$item['id']]));
                                     @endphp
                                     <div
                                         @class([
-                                            'field-mapping-row relative flex flex-wrap items-start gap-2 rounded-lg border border-gray-200 bg-white dark:border-white/10 dark:bg-gray-900',
-                                            'min-h-14' => $dense,
-                                            'min-h-20' => ! $dense,
+                                            'field-mapping-row relative flex flex-wrap items-start rounded-lg border border-gray-200 bg-white dark:border-white/10 dark:bg-gray-900',
+                                            'min-h-14 gap-1' => $dense,
+                                            'min-h-20 gap-2' => ! $dense,
                                             'has-warning' => $warning !== null,
                                         ])
                                         data-mapping-row
+                                        x-on:click="selectFromCard($event, @js($side), @js($item['id']))"
                                         wire:key="{{ $getId() }}-{{ $side }}-{{ $item['id'] }}"
                                         x-show="isVisible(@js($side), @js($item['id']), @js($searchText))"
                                         :class="rowClasses(@js($side), @js($item['id']), @js($item['required']))"
                                     >
                                         <div class="flex w-full items-start">
                                             <div
-                                                @class(['relative flex min-w-0 flex-1 items-start', 'px-3 py-2' => $dense, 'px-4 py-3' => ! $dense])
-                                                x-on:click="if (!$event.target.closest('button')) select(@js($side), @js($item['id']))"
+                                                @class(['relative flex min-w-0 flex-1 items-start', 'px-3 pt-2' => $dense, 'pb-2' => $dense && ! $hasSourceFooter, 'px-4 py-3' => ! $dense])
                                             >
                                                 <button
                                                     type="button"
@@ -178,9 +185,21 @@
                                                 </span>
                                             </button>
                                         </div>
-                                        @if ($side === 'source' && isset($staticSchemas['settings_'.$sourceStateKeys[$item['id']]]))
-                                            <div @class(['w-full', 'px-3 pb-2' => $dense, 'px-4 pb-3' => ! $dense]) data-mapping-source-settings="{{ $item['id'] }}">
-                                                {{ $staticSchemas['settings_'.$sourceStateKeys[$item['id']]] }}
+                                        @if ($side === 'source' && isset($constants[$item['id']]))
+                                            <div @class(['w-full', 'px-3 pb-2' => $dense, 'px-4 pb-3' => ! $dense]) data-mapping-static-source="{{ $item['id'] }}">
+                                                {{ $staticSchemas['constant_'.$item['id']] }}
+                                            </div>
+                                        @endif
+                                        @if ($hasSourceFooter)
+                                            <div @class(['field-mapping-source-footer flex w-full items-start gap-2', 'px-3 pb-2' => $dense, 'px-4 pb-3' => ! $dense])>
+                                                <div class="min-w-0 flex-1" data-mapping-source-settings="{{ $item['id'] }}">
+                                                    {{ $staticSchemas['settings_'.$sourceStateKeys[$item['id']]] ?? null }}
+                                                </div>
+                                                @if (isset($constants[$item['id']]))
+                                                    <div class="field-mapping-static-remove shrink-0 p-2" :class="{ 'invisible': isMapped('source', @js($item['id'])) }">
+                                                        {{ ($getAction('removeConstant'))(['constant' => $item['id']])->label(__('phpinnacle-ferry::resources.binding.remove_constant').' '.$item['id']) }}
+                                                    </div>
+                                                @endif
                                             </div>
                                         @endif
                                         @if ($staticSchema !== null)
@@ -193,6 +212,9 @@
                                         @endif
                                     </div>
                                 @endforeach
+                                @if ($side === 'source' && $hasStaticValues())
+                                    <div>{{ $getAction('addConstant') }}</div>
+                                @endif
                             </div>
                         </section>
                     @endforeach
@@ -200,17 +222,27 @@
                     <div class="field-mapping-lines absolute inset-0">
                         <template x-for="connection in connections" :key="connection.source">
                             <svg class="absolute inset-0 size-full" :viewBox="`0 0 ${width} ${height}`" role="group" aria-label="Field connection">
-                                <path class="field-mapping-line" :d="connection.path" />
-                                <path
-                                    class="field-mapping-hit"
-                                    :d="connection.path"
+                                <g
+                                    class="field-connection-control"
                                     :aria-label="connection.label"
+                                    :aria-disabled="disabled"
                                     :tabindex="disabled ? -1 : 0"
                                     role="button"
+                                    x-on:mouseenter="hoveredConnection = connection"
+                                    x-on:mouseleave="hoveredConnection = null"
+                                    x-on:focus="focusedConnection = connection"
+                                    x-on:blur="focusedConnection = null"
                                     x-on:click="remove(connection.target, connection.source)"
                                     x-on:keydown.enter.prevent="remove(connection.target, connection.source)"
                                     x-on:keydown.space.prevent="remove(connection.target, connection.source)"
-                                />
+                                >
+                                    <path class="field-mapping-line" :d="connection.path" />
+                                    <path class="field-mapping-hit" :d="connection.path" />
+                                    <g class="field-connection-indicator" :transform="`translate(${connection.midpoint.x}, ${connection.midpoint.y})`" aria-hidden="true">
+                                        <circle class="field-connection-disc" r="12" />
+                                        <path class="field-connection-cross" d="M -4 -4 L 4 4 M -4 4 L 4 -4" />
+                                    </g>
+                                </g>
                             </svg>
                         </template>
                     </div>

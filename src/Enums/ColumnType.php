@@ -48,15 +48,15 @@ enum ColumnType: string implements HasLabel
 
     public static function fromJsonSchema(JsonSchema $schema): ?self
     {
-        return match (array_values(array_diff($schema->types(), ['null']))) {
-            ['string'] => match ($schema->annotation('format')) {
+        return match ($schema->singleType()) {
+            'string' => match ($schema->annotation('format')) {
                 'ferry-reference' => self::Reference,
                 'date-time' => self::DateTime,
                 default => self::String,
             },
-            ['integer'] => self::Integer,
-            ['number'] => self::Decimal,
-            ['boolean'] => self::Boolean,
+            'integer' => self::Integer,
+            'number' => self::Decimal,
+            'boolean' => self::Boolean,
             default => null,
         };
     }
@@ -114,5 +114,16 @@ enum ColumnType: string implements HasLabel
     public function getLabel(): string
     {
         return __('phpinnacle-ferry::enums.column_type.' . $this->value);
+    }
+
+    public function canMapTo(self $target): bool
+    {
+        $sourceSchema = JsonSchema::fromArray($this->jsonSchema());
+        $targetSchema = JsonSchema::fromArray($target->jsonSchema());
+
+        return (
+            $sourceSchema->annotation('format') === $targetSchema->annotation('format')
+            && $sourceSchema->compatible($targetSchema)
+        );
     }
 }

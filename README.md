@@ -120,11 +120,11 @@ The readonly `key` identifies the destination in the persisted synchronization. 
 
 `Sync.type` explicitly selects `DestinationType::Static` or `DestinationType::Dynamic` (the default). `Sync.destination` stores the registered key for static synchronizations or the generated table name for dynamic ones. `DestinationFactory::get($key)` returns the registered destination or `null`. Use `getOrFail($key)` when a static destination is required. `DestinationFactory::resolve($sync)` returns the registered static destination or a `DynamicDestination` for its generated table. `fieldsFor($sync)` returns the registered static destination's fields, or `null` for a dynamic or unavailable destination. `SyncObserver` initializes only a dynamic record's destination table name when created; static records retain their registered destination key.
 
-Saving a static synchronization accepts only declared destination fields whose logical `ColumnType` matches the transformed source or static value (`Reference` covers 1C references and identifiers). Every required field must be mapped, no destination may be mapped twice, and the source key cannot be remapped: it always feeds the configured primary key. Ferry never creates, alters or drops a static table, and its sink connector upserts rows without propagating source deletions. Removing a registered destination causes the next structure review to pause its synchronizations and report their mappings as out of date; saving and activation remain blocked until it is registered again.
+Saving a static synchronization accepts only declared destination fields whose logical `ColumnType` accepts the transformed source or static value: types must match, except that `Integer` can feed `Decimal` without a Cast (`Reference` covers 1C references and identifiers). Saving and structure review use the same directional compatibility. Every required field must be mapped, no destination may be mapped twice, and the source key cannot be remapped: it always feeds the configured primary key. Ferry never creates, alters or drops a static table, and its sink connector upserts rows without propagating source deletions. Removing a registered destination causes the next structure review to pause its synchronizations and report their mappings as out of date; saving and activation remain blocked until it is registered again.
 
-The synchronization form has one destination select: Dynamic followed by the registered static destinations. Selecting a different destination clears the field mapping; the saved synchronization keeps its explicit type and destination key. A dynamic synchronization lists every mappable 1C field with its title and technical column and binds it to a column name with `FieldBinding`; a static one connects 1C fields to the fields declared by the destination with `FieldMapping`, which shows the logical types and required marks and refuses incompatible connections.
+The synchronization form has one destination select: Dynamic followed by the registered static destinations. Selecting a different destination clears the field mapping; the saved synchronization keeps its explicit type and destination key. A dynamic synchronization lists every mappable 1C field with its title and physical column name and binds it to a column name with `FieldBinding`; a static one connects 1C fields to the fields declared by the destination with `FieldMapping`, which shows the logical types and required marks and refuses incompatible connections. Static destination mappings enable `staticValues()` to add unconnected string source cards with a full-width input showing Value as its placeholder and transforms. Connect each card to a declared destination; use Cast for numeric or Boolean destinations. Existing typed constants retain their native values when reopening the form. Unconnected static cards remain drafts and are excluded from submitted mappings. Synchronization constants remain subject to the synchronization schema's scalar value and destination type requirements.
 
-Both synchronization mapping editors use `dense()` for reduced spacing and `compact()` to show descriptions in title tooltips.
+The connection, object, and destination selectors use native browser selects with unselectable placeholders. New synchronizations default to Dynamic, the first active connection with a ready structure in name order, and its first object in the displayed order. Changing the connection selects its first available object and clears the mapping. Empty option lists leave the corresponding selection unset. Both synchronization mapping editors use `dense()` for reduced spacing and `compact()` to show descriptions in title tooltips. Dense mode reserves one row for transforms so adding the first transform does not increase the card height; wrapped transforms can expand the card.
 
 The static synchronization form adds an exact-format connection condition to preserve its logical `ColumnType` contract: references and dates require an explicit Cast before connecting to a plain string destination. The reusable `FieldMapping` component keeps its more general directional format compatibility described below.
 
@@ -161,7 +161,7 @@ Transformation::make('replace')
 
 Labels, icons, descriptions, and colors accept values or closures. `color()` defaults to `primary` and accepts a Filament color name, a shade palette such as `Color::Emerald`, or `null`, styling source chips. The Add transform picker uses plain labels. `schema()` accepts an array of Filament components or a closure receiving the selected `?ConnectionMetadata $object` and the preceding `?JsonSchema $input`; `getSchema($object, $input)` returns fresh components for each form. Fluent methods return a new description, leaving the original unchanged.
 
-`inputSchema()` describes supported values using the same compatibility rules as `FieldMapping`: types, directional formats, string lengths and array items. Alternatively, pass a predicate `fn (JsonSchema $input) => bool` to define custom compatibility checks. Without an input schema, a description accepts any input. `accepts($input)` checks a `Forms\JsonSchema` value object directly, without projecting it to `ColumnType`.
+`inputSchema()` describes supported values using the same compatibility rules as `FieldMapping`: types, enums, directional formats, string lengths and array items. Alternatively, pass a predicate `fn (JsonSchema $input) => bool` to define custom compatibility checks. Without an input schema, a description accepts any input. `accepts($input)` checks a `Forms\JsonSchema` value object directly, without projecting it to `ColumnType`.
 
 `outputSchema()` declares a fixed JSON Schema array or a callback receiving the full input schema and settings. For example, a string transform that preserves null values can declare:
 
@@ -206,13 +206,17 @@ Custom handlers implement `Contracts\TransformHandler`: `connector(string $name,
 
 `TransformFactory::handler($key)` and `handlerOrFail($key)` resolve handlers from configuration independently of the UI registry. The factory also builds connector pipelines and checks their runtime availability. Input validation in `SyncSchema` uses only `TransformRegistry`. Workers can execute saved transforms without resolving the UI registry or booting a Filament panel. Hiding a transform from the editor does not disable its saved pipelines; remove its handler configuration to make it unavailable at runtime.
 
-Transform settings are ordered `['key' => 'mask', 'params' => ['replacement' => '***']]` entries; parameter values are strings, and `params` may be omitted when empty. Each source row in `Sync.schema` stores its ordered transforms and logical `result` type. There is one transform catalog, without scopes or a separate synchronization-level chain. Native Filament forms validate parameters and type chains; `SyncSchema` checks destination compatibility. The sink applies source chains in schema order, after `unwrap` and before renames. Static values are inserted after renames. Saving refreshes the sink connector; the shared source connector changes only when its capture configuration changes. Structure review pauses synchronizations with unavailable handlers or required source columns, and connector activation refuses them.
+Transform settings are ordered `['key' => 'mask', 'params' => ['replacement' => '***']]` entries; parameter values are strings, and `params` may be omitted when empty. Each source row in `Sync.schema` stores its ordered transforms and logical `result` type. There is one transform catalog, without scopes or a separate synchronization-level chain. Native Filament forms validate parameters and type chains; `SyncSchema` checks destination compatibility. The sink applies source chains in schema order, after `unwrap` and before renames. Static values are inserted after renames, followed immediately by each constant’s transforms on its target field. Saving refreshes the sink connector; the shared source connector changes only when its capture configuration changes. Structure review pauses synchronizations with unavailable handlers or required source columns, and connector activation refuses them.
 
 ### Built-in transforms
 
-The built-in `CastTransform` casts a field to a `ColumnType`. `ColumnType::castType()` exposes its Kafka Connect type and is `null` for references and dates, which Kafka Connect cannot cast. Static values use rows with `kind: static`, a required `target`, and a native string, boolean, integer or float in `static`. Their type comes from the native value; `1.0` stays a float through JSON serialization. They compile to `InsertField` plus a cast when needed, without registering a transform handler. Numeric sources can be cast to any supported target type.
+The built-in `CastTransform` casts a field to a `ColumnType`. `ColumnType::castType()` exposes its Kafka Connect type and is `null` for references and dates, which Kafka Connect cannot cast. The native Cast selector disables the current type using the output of preceding transforms, including nullable scalar inputs. Unknown inputs or unions with several non-null types keep every supported target available. Repeated casts can alternate between types.
 
-`TrimTransform`, `SubstringTransform`, and `MaskFieldTransform` are optional field transforms, offered in the editor explicitly rather than enabled there for every installation. All accept string inputs and preserve their logical type. The selected source field is supplied by the mapping; administrators do not enter a second field name.
+**Replace null with default** controls Kafka's `replace.null.with.default`: it defaults to Yes and uses the default declared in the field schema, preserving null when no default exists. Choosing No stores `replace_null_with_default: "false"`; the default Yes remains implicit. The output schema remains nullable when the input is nullable, because a Kafka field default is not guaranteed.
+
+Static values use rows with `kind: static`, a required `target`, and a native string, boolean, integer or float in `static`. Their type comes from the native value; `1.0` stays a float through JSON serialization. They compile to `InsertField` plus a cast when the native value requires it. Optional `transforms` run next on `target`; their resulting logical type is stored in `result`, like source chains. No separate source name or rename is needed.
+
+Register the optional Trim, Substring, and Mask editor descriptions as shown above. The mapping supplies the selected source field; administrators do not enter a second field name.
 
 | Key | Settings form | Kafka Connect class |
 | --- | --- | --- |
@@ -222,14 +226,19 @@ The built-in `CastTransform` casts a field to a `ColumnType`. `ColumnType::castT
 
 Trim requires the Toblerone plugin and preserves null field values and tombstones. Substring serializes indexes as `fields=source:start[:end]` and requires the Toblerone plugin on the worker. It uses Java UTF-16 indexes without clamping: indexes must fit every input string. Masking uses Apache's `fields` and `replacement` settings and skips tombstones through the built-in predicate. Other MaskField options keep their Kafka defaults. Forms validate the settings; Ferry does not execute the transformations in PHP.
 
-`FilterTransform` keeps (`include`) or drops (`exclude`) entire records whose current string, reference or boolean field equals a value. Its field comes from the owning source row, including sources without a target. It runs in the field's ordered chain, so `Trim → Filter` compares trimmed values and `Cast → Filter` compares the cast output. The native form offers Yes/No for boolean inputs and text otherwise; it derives the comparison type from the preceding schema during dehydration. It uses Confluent's `Filter$Value` with a JSON Path condition. The source connector captures fields with a target or transforms; unbound filter fields are excluded from destination writes by the sink whitelist.
-Records missing the field are dropped by `include` and kept by `exclude`. Filters skip tombstones through the negated `RecordIsTombstone` predicate, preserving Debezium deletions. The form resets source settings when the connection, object or destination changes.
+`FilterTransform` keeps (`include`) or drops (`exclude`) entire records using a JSONPath predicate scoped to the owning source field, including sources without a target. Enter the predicate body: `@ == true`, `@ >= 100`, or `@.price > 100`. `@` denotes the selected field; `$` also refers to that field as the local root. Nested `[?()]` filters retain their `@` item scope. Quoted values and regular expressions are preserved. For example, `@ >= 100` on `_amount` becomes `$[?(@['_amount'] >= 100)]`. Numbers remain literal text, preserving decimal precision.
+
+The predicate runs at its position in the ordered chain, so preceding Trim or Cast transforms affect the value it reads. Filter accepts every input type and preserves its schema. The condition placeholder and hint follow its effective input type: string equality, numeric comparison, Boolean equality, nonempty arrays, or an object child comparison. Nullable types use their non-null type; null-only inputs use `@ == null`, and unknown or mixed inputs use `@ != null`. Changing the input type updates these examples without changing the saved predicate.
+
+The form stores `condition`, `mode`, and `missing_or_null_behavior` (`include`, `exclude`, or `fail`; default `include`). These settings configure [Confluent's `Filter$Value`](https://docs.confluent.io/kafka-connectors/transforms/current/filter-confluent.html). Kafka Connect checks JSONPath syntax; Ferry validates the required expression and enum settings. Confluent applies missing/null behavior to paths outside predicates; missing or null references inside `[?()]` are treated as undefined and do not match. Ferry emits a predicate, so those native predicate semantics apply. Filters skip tombstones through the negated `RecordIsTombstone` predicate, preserving Debezium deletions.
+
+The source connector captures fields with a target or transforms; unbound filter fields are excluded from destination writes by the sink whitelist. The form resets source settings when the connection, object or destination changes. Saved filters using the former `type`/`value` comparison parameters must be reconfigured as predicates; there is no automatic conversion of stored settings.
 
 ### Editing synchronization transforms
 
-`FieldTransforms` inside `sourceSettings()` provides an **Add transform** menu for compatible registered transforms. Boolean sources initially offer Cast and Filter; casting to string enables Trim, Substring, and Mask. Compatible transforms can repeat. Transforms with settings open their native form; those without settings are added immediately. Chips show execution order: click a configurable label to edit, use its separate remove button to delete, and drag the label or press Alt+Left / Alt+Right to reorder. Existing chips remain editable and removable after an incompatible change; validation rejects the unsupported chain and additions remain unavailable until it is corrected. Settings modals contain no deletion action. These controls work before connecting or binding a source.
+Synchronization source cards use the reusable [FieldTransforms editor](#source-settings-and-transforms), including before a source is connected or bound. Boolean sources initially offer Cast and Filter; casting to string enables the optional Trim, Substring, and Mask descriptions when registered.
 
-Submitted mappings and bindings contain every offered source, including its `transforms` and nullable `target`. Ferry saves the emitted list directly in `Sync.schema` and restores the same format. Its native source settings also emit the original `field` snapshot and resulting `result` column type for structure review and table creation. Source settings are validated even without a target. Rows with neither a target nor transforms do not participate in capture, execution or structure compatibility checks. Static values have their own mapping controls. Transforms apply in chip order, and static connections are checked against the transformed source schema, so casting a string to boolean enables a boolean destination.
+Submitted mappings and bindings contain every offered source, including its `transforms` and nullable `target`. The synchronization editor uses physical source column names such as `_fld17` as JSON Schema property keys. At the form boundary, Ferry translates those names to stable metadata IDs for `Sync.schema` and back when loading; saved bindings and transforms therefore survive physical column renames. The source/static row format and native values stay unchanged. Its native source settings also emit the original `field` snapshot and resulting `result` column type for structure review and table creation. Source settings are validated even without a target. Rows with neither a target nor transforms do not participate in capture, execution or structure compatibility checks. Static values have their own mapping controls. Transforms apply in chip order, and static connections are checked against the transformed source schema, so casting a string to boolean enables a boolean destination.
 
 ## Kafka Connect connectors
 
@@ -310,7 +319,7 @@ Connecting a whole array replaces the individual items; connecting an item repla
 
 ### Compatibility and output schemas
 
-Schema compatibility is directional: declared source values must fit the destination's supported constraints. Checks include types, nullability, formats, string lengths, alternatives, and nested array items. An omitted type imposes no type restriction; other supported constraints still apply. Type names match exactly, so numeric widening requires an explicit transformation. A formatted string can connect to an unrestricted string. A destination with a format requires the same source format: UUID cannot connect to `date` or `date-time`, and `date` cannot connect to `date-time`.
+Schema compatibility is directional: declared source values must fit the destination's supported constraints. Checks include types, nullability, formats, string lengths, alternatives, and nested array items. An omitted type imposes no type restriction; other supported constraints still apply. An `integer` source can connect to a `number` destination without a Cast; the reverse requires an explicit transformation. This also applies to unions and nested array items, preserving nullability and enum restrictions. Other type names must match. A formatted string can connect to an unrestricted string. A destination with a format requires the same source format: UUID cannot connect to `date` or `date-time`, and `date` cannot connect to `date-time`.
 
 String bounds use JSON Schema's `minLength` and `maxLength`. A source maximum of 255 cannot connect to a destination maximum of 64; 64 can connect to 255 or an unbounded destination. A missing source maximum is unbounded, and a missing minimum is zero. Formats do not imply length bounds. Composed `allOf` bounds intersect; every source alternative must fit a destination alternative.
 
@@ -340,15 +349,51 @@ use PHPinnacle\Ferry\Forms\JsonSchema;
 
 The callback receives effective source and destination property schemas, or the destination item schema for an item connection. It runs only after the configured checks pass and cannot override their rejection. `toArray()` exposes each inline definition, including application metadata. The same server-computed connection modes drive client availability and form validation.
 
-The component projects inline `type`, `format`, `minLength`, `maxLength`, `items`, `required`, `properties`, `allOf`, `anyOf`, and `oneOf` definitions. It does not resolve `$ref`, validate runtime payloads, or prove arbitrary JSON Schema containment. Other constraints such as `enum`, `pattern`, numeric bounds, item counts, and uniqueness are displayed as metadata but are not enforced by connection compatibility; native static editors remain responsible for their value validation.
+The component projects inline `type`, `format`, `minLength`, `maxLength`, `enum`, `items`, `required`, `properties`, `allOf`, `anyOf`, and `oneOf` definitions. An enum destination requires an explicit source enum whose values are a subset of its allowed values; an unrestricted string or date cannot connect to a Status enum. `allOf` intersects enum constraints, and array items use the same checks. Enum equality preserves JSON value types, compares numbers by value, and ignores object property order. It does not resolve `$ref`, validate runtime payloads, or prove arbitrary JSON Schema containment. Other constraints such as `pattern`, numeric bounds, item counts, and uniqueness are displayed as metadata but are not enforced by connection compatibility; native static editors remain responsible for their value validation.
 
 Use `outputSchema(array|Closure)` for the effective source object schema after applying source settings. It replaces the input schema for source type chips, constraint hints and compatibility checks. Declare only formats and bounds guaranteed by the transformation: a logical string output alone does not preserve an email/UUID format or establish a length limit. The consumer supplies this schema; the field does not execute transforms or infer their guarantees.
 
 ### Static values
 
-Static values use rows such as `['kind' => 'static', 'target' => 'contact', 'static' => 'Customer']`. Without a matching `staticForms()` editor, non-empty scalar values are accepted. With an editor, its native rules and casts define accepted values. Static values count as mapped without a source or line in either orientation; the consumer owns domain validation.
+Use `FieldMapping::staticValues()` to add static source cards and connect them manually to existing destinations. The default is disabled; `staticValues(false)` disables the mode. **Add static value** creates an unconnected `static_N` card titled `Static N`, with a full-width string input, Value placeholder, and accessible hidden label. Existing scalar values retain their native types. These cards use the usual compatibility checks, support Inverse mode, and accept the configured `sourceSettings()` schema.
 
-Use `staticForms()` to assign an inline Filament editor to a JSON Schema type:
+Disconnecting retains the card as a draft. While disconnected, a gray trash action on the right of the footer removes it; the action is hidden while connected. It aligns with the first row of source settings, reserving space so transforms do not shift or overlap it. It appears on card hover or keyboard focus and stays visible on devices without hover. Only connected cards appear in submitted rows, so an empty unconnected Value does not require validation. Connected values must be non-empty scalars.
+
+```php
+FieldMapping::make('mapping')
+    ->jsonSchema(source: $sourceSchema, dest: $destinationSchema)
+    ->staticValues();
+```
+
+Static source settings receive the generated identifier as `$source` and a `Closure(): JsonSchema` as `$inputSchema`; normal source settings receive `null` for `$inputSchema`. Pass `fn () => $inputSchema()->toArray()` to `FieldTransforms::inputSchema()`. An `outputSchema()` callback should start from `$component->getSourceSchema()`, which includes the static cards, and apply the supplied settings to determine compatibility. The field does not execute or infer transforms. Submitted static rows retain `kind`, `target`, and `static`, plus their validated source settings; there is no extra source identifier or rename in the public row.
+
+The static-source mode replaces destination-side `staticForms()` editors while enabled. Without `staticValues()`, static values use rows such as `['kind' => 'static', 'target' => 'contact', 'static' => 'Customer']`. Without a matching `staticForms()` editor, non-empty scalar values are accepted. With an editor, its native rules and casts define accepted values. These destination-side static values count as mapped without a source or line in either orientation; the consumer owns domain validation.
+
+Use `withBuiltinStaticForms()` to register standard Filament editors:
+
+```php
+FieldMapping::make('mapping')
+    ->jsonSchema(source: $sourceSchema, dest: $destinationSchema)
+    ->withBuiltinStaticForms();
+```
+
+| JSON Schema type or format | Editor |
+| --- | --- |
+| `string` | `TextInput`; string enums use `Select` |
+| `uuid`, `ferry-reference` | `TextInput` with UUID validation |
+| `phone`, `email` | Telephone or email `TextInput` |
+| `date`, `time`, `date-time` | `DatePicker`, `TimePicker`, `DateTimePicker` |
+| `integer`, `number` | Integer or numeric `TextInput` |
+| `boolean` | `Toggle`; nullable booleans use a three-state `Select` |
+| `array` with string, numeric, or Boolean `items` | Simple `Repeater` with the item's string, numeric, enum, date/time, or Boolean editor |
+| Other arrays, nullable arrays, `object` | No built-in editor; register a custom `staticForms()` factory |
+| `null` | Read-only null value |
+
+The built-in fields follow destination `required` and nullable types, string length limits, and numeric minimum/maximum bounds. Dates serialize as `Y-m-d`, times as `H:i:s`, and date-times as `Y-m-d\TH:i:sP`. Repeaters use `items` to select and validate each field, apply `minItems` and `maxItems`, and use Filament's distinct validation for string and numeric `uniqueItems`. Boolean items use a Select. Empty arrays are allowed unless `minItems` requires entries. Existing custom type factories take precedence when `withBuiltinStaticForms()` is called after `staticForms()`.
+
+There are no built-in JSON editors. Objects, arrays without a supported scalar item type, and nullable arrays offer connections only unless a custom factory is registered. The installed Filament simple repeater cannot hydrate composite items without changing their values or preserve `null` separately from `[]`.
+
+Use `staticForms()` to assign custom inline Filament editors to JSON Schema types:
 
 ```php
 use Filament\Forms\Components\TextInput;
@@ -362,11 +407,11 @@ FieldMapping::make('mapping')
     ]);
 ```
 
-Each factory returns a fresh field named `value`. It can receive the destination identifier as `$target` and the matched schema type as `$type`. The component selects the non-null type of a nullable property. Every destination with a matching factory shows an editor; unregistered types and unions with several non-null types offer connections only. There is no fallback text editor or static-value checkbox.
+Each factory returns a fresh field named `value`, or `null` when the property is unsupported. It can receive the destination identifier as `$target`, the matched schema type as `$type`, and the `FieldMapping` as `$component`. The component selects the non-null type of a nullable property; a null-only property matches the `null` factory. Every destination whose factory returns a field shows an editor; unavailable factories, unregistered types, and unions with several non-null types offer connections only. There is no fallback text editor or static-value checkbox.
 
-An unconnected destination immediately shows its configured editor and becomes a static value initialized with the field's default. Every visible editor counts as mapped, including an empty one. Its native validation, state casts, and dehydration callbacks run on submission; `required()` can reject an empty editor. Values retain their field's type, including `false`, zero, arrays, and `null` when allowed. Configure the factory's rules for the values your consumer accepts; JSON Schema payload constraints are not inferred.
+An unconnected destination immediately shows its configured editor and becomes a static value initialized with the field's default. Every visible editor counts as mapped, including an empty one. Its native validation, state casts, and dehydration callbacks run on submission; `required()` can reject an empty editor. Values retain their field's type, including `false`, zero, arrays, and `null` when allowed. Custom factories must declare their own value validation.
 
-Livewire uses encoded source and destination keys internally so dots and numeric names remain literal identifiers. Fill the form with the public row list; submitted `getState()` uses the same shape and preserves typed values. Editor templates are rendered up front; Alpine mounts or removes them when connections change, without a server request. Connecting a source replaces and hides the static editor. Removing the destination's final connection restores it with a fresh copy of the configured default, so edits to nested values do not change future resets. Native live fields and actions still make their usual requests.
+Livewire uses encoded source and destination keys internally so dots and numeric names remain literal identifiers. Fill the form with the public row list; submitted `getState()` uses the same shape and preserves typed values. Editor templates are rendered up front; Alpine mounts or removes them when connections change, without a server request. Connecting a source replaces and hides the static editor. Removing the destination's final connection restores it with a fresh copy of the configured default, so edits to nested values do not change future resets. Native live fields and actions still make their usual requests. Native child actions, including Repeater Add, work on their first request after local connection changes.
 
 ### Source settings and transforms
 
@@ -396,11 +441,15 @@ use PHPinnacle\Ferry\Forms\FieldTransforms;
 
 `object()` accepts the selected `?ConnectionMetadata`, which is passed to transformation forms. `inputSchema(array|Closure)` supplies the original source property definition. The field passes this complete schema through `TransformRegistry::resultSchema()` to determine compatible additions. Mapping consumers use the same result in their `outputSchema()` callbacks for hints and connection checks.
 
-Built-in scalar transforms reject arrays and objects; custom descriptions can accept them through their input schemas. Cast accepts unions of scalar types, including null. The built-in string transforms require a known string type, optionally nullable, and reject logical date/reference formats. `FieldTransforms` owns the ordered `key`/`params` state, native parameter validation, schema compatibility checks, menus, chips and ordering described above. Neither mapping component interprets this format or requires a transformation registry.
+An empty editor shows a muted `+ Transform` aligned with the source title, without a frame, shadow, background, or hover tooltip. Source-card hover or editor focus emphasizes the text. Only that control opens the catalog; the rest of the empty footer is inactive. With transforms, a native Filament input frame contains a persistent `+` button and compact chips; its free space also opens the catalog. One row is reserved so the first chip does not change the input height. Further chips wrap while the add button stays on the first row. The Add transform button stays visible but disabled when no compatible transforms are available.
+
+Transforms can repeat. Those with settings open a native form; others are added immediately. Click a configurable chip label to edit, its separate remove button to delete, and drag the label or press Alt+Left / Alt+Right to reorder. Settings modals contain no deletion action. Ordering blocks positions that make the complete schema chain incompatible, refreshing allowed positions after parameter or input changes. Hovering and rejected moves make no request; accepted orders are checked again on the server before state changes. Existing chips remain editable and removable after an incompatible change, but submission rejects the chain and additions remain unavailable until it is corrected. Native parameter forms retain their validation.
+
+Built-in scalar value transforms reject arrays and objects; Filter accepts every input type because its predicate can inspect nested values. Custom descriptions can declare their input schemas. Cast accepts unions of scalar types, including null. The built-in string transforms require a known string type, optionally nullable, and reject logical date/reference formats. `FieldTransforms` owns the ordered `key`/`params` state, native parameter validation, schema compatibility checks, menus, chips and ordering described above. Neither mapping component interprets this format or requires a transformation registry.
 
 ### Presentation and assets
 
-Property `title`, `description`, `x-name`, `x-icon`, and `x-color` provide presentation metadata for mapping cards and binding sources. `x-name` overrides the technical name shown beside the title without changing the property identifier used in state and connections; it defaults to that identifier. Search includes both names. `x-color` accepts a registered Filament color name or a literal hex/RGB color for the icon and title. Cards display the technical name, required marker, constraint hints, type chips, description and warnings; omitted icons reserve no space. Formats replace the general type label; `ferry-reference` is displayed as `uuid` while retaining its logical reference format for compatibility and transformations. Nullable types add a `null` chip, and enum tooltips list allowed values. `x-badges` accepts a list such as `[['label' => 'Imported', 'color' => 'info']]`; the type chip appears last. For framework schema builders, pass their inline `toArray()` result.
+Property `title`, `description`, `x-icon`, and `x-color` provide presentation metadata for mapping cards and binding sources. The property key is the technical name shown beside its title and the identifier used in state and connections. Search includes both the title and property key. `x-color` accepts a registered Filament color name or a literal hex/RGB color for the icon and title. Cards display the technical name, required marker, constraint hints, type chips, description and warnings; omitted icons reserve no space. Formats replace the general type label; `ferry-reference` is displayed as `uuid` while retaining its logical reference format for compatibility and transformations. Nullable types add a `null` chip, and enum tooltips list allowed values. `x-badges` accepts a list such as `[['label' => 'Imported', 'color' => 'info']]`; the type chip appears last. For framework schema builders, pass their inline `toArray()` result.
 
 Array chevrons expand item schemas and their scoped constraints, one row per nested level. Field constraints remain in the heading. Details start collapsed and work on connected or disabled cards without changing selection; lines follow card resizing. Source actions appear below the metadata. Colors use Filament's `primary` palette for connections, `warning` for required destinations and `danger` for conflicts, in light and dark themes.
 
@@ -422,19 +471,22 @@ use Filament\Schemas\Components\Actions;
 
 Capture `$source` in your callback or pass it through `arguments()`. Native action visibility, icons and tooltips remain available. Use the same schema for source settings fields and actions; there is no separate source-action registry.
 
-During selection, compatible candidates highlight with a check; incompatible cards and their editors dim with a cross, and existing lines fade. Compatible destinations can replace an existing connection or static value. Unavailable clicks preserve the selection and mappings without an error. Outside selection, connected cards retain full contrast and existing incompatible connections remain visible for correction.
+During selection, compatible candidates highlight with a check; incompatible cards and their editors dim with a cross, and existing lines fade. Compatible destinations can replace an existing connection or static value. Unavailable clicks preserve the selection and mappings without an error. Connection lines reveal a cross and use danger colors on hover or keyboard focus, together with both endpoint dots; activate the line to disconnect. This custom focus feedback replaces the browser's rectangular outline. Empty card space, including the source-settings footer, selects the card; native buttons and editors keep their own actions. Outside selection, connected cards retain full contrast and existing incompatible connections remain visible for correction.
 
 Both components support these presentation options:
 
 | Option | Default | Behavior |
 | --- | --- | --- |
 | `labels(source: ..., dest: ...)` | Source / Destination or Binding | Set the column headings. |
+| `columnSpans(source: ..., target: ..., gap: ...)` | `5, 5, 2` | Set relative widths for sources, targets, and the connection area between them. |
 | `searchable()` | `false` | Show field search inputs. |
 | `contained()` | `true` | Show the outer border, background, and toolbar with its filter and counters. |
 | `dense()` | `false` | Reduce padding and gaps; use 56 px minimum cards instead of 80 px. |
 | `compact()` | `false` | Hide field descriptions and show them in title tooltips on hover or focus. |
 
-Labels accept strings or closures; the switches accept booleans or closures. Containment uses Filament's `CanBeContained`, dense spacing uses Filament's `HasGap`, and description visibility uses `CanBeCompact`. `dense()` and `compact()` work independently. `contained(false)` preserves column headings, optional search, and editors. Neither component has a footer. All combinations preserve form values.
+Labels accept strings or closures; the switches accept booleans or closures. Column spans are positive integers. For example, `->columnSpans(source: 4, target: 7, gap: 1)` gives the target more space while narrowing the connection area. In `FieldMapping::inverse()`, each width follows its source or target side. `FieldBinding` uses the same proportions for headings and rows, and still stacks them on narrow screens. Filament's `columnSpan()` continues to control the whole field's span in its parent form.
+
+`dense()` and `compact()` work independently. Dense source cards use a 4 px gap before source settings. Compact descriptions reserve no layout space. `contained(false)` preserves column headings, optional search, and editors. All combinations preserve form values.
 
 Use `warnings(source: [...], dest: [...])` on `FieldMapping` or `warnings([...])` on `FieldBinding` to highlight fields. Both accept closures and retain warnings for unavailable identifiers. Escape cancels mapping selection; keyboard controls and dark mode are supported.
 
@@ -448,11 +500,13 @@ The path above assumes the theme lives at `resources/css/filament/admin/theme.cs
 
 ## Field binding
 
-`FieldBinding` displays separate source and destination cards and supports the presentation options above. Destination forms are always visible. Unbound forms are disabled beneath a translucent overlay with a centered **Bind** icon button and excluded from validation and submission. Click **Bind** to enable an editor. Bound cards have a connecting line styled like `FieldMapping`; click it or focus it and press Enter or Space to unbind. Bind and unbind update locally without a request; the next request validates and submits the selected bindings. Unbind restores the form defaults prepared on page load.
+`FieldBinding` displays separate source and destination cards and supports the presentation options above. Destination forms are always visible. Unbound forms are disabled beneath a translucent overlay with a centered **Bind** icon button and excluded from validation and submission. Click **Bind** to enable an editor. Bound cards have a connecting line with endpoint dots styled like `FieldMapping`. Hover or focus the line to reveal a cross and highlight it and both dots in danger; click it or press Enter or Space to unbind. Bind and unbind update locally without a request; the next request validates and submits the selected bindings. Unbind restores the form defaults prepared on page load.
 
-Unbound sources are submitted with `target: null` and retain their validated source settings. Their disabled destination editor drafts are excluded. Disabled fields disable binding controls and child inputs. Inline editors keep their own Livewire update settings. On narrow screens the line runs vertically between stacked cards. Source cards do not show a direction arrow.
+Unbound sources are submitted with `target: null` and retain their validated source settings. Their disabled destination editor drafts are excluded. Disabled fields disable binding controls and child inputs. Inline editors keep their own Livewire update settings. On narrow screens the line runs vertically between stacked cards. Source cards do not show a direction arrow. Connection controls remain visible on devices without hover. Hover and focus feedback starts after 100 ms and fades over 180 ms; leaving has no delay. Reduced-motion preferences disable the fade while retaining the short activation delay.
 
-Binding state is the same flat row list. Each source row contains `kind: source`, its `source` identifier, the editor data in `target` or null when unbound, and any configured source settings. Use `simple()` with a single Filament field to store non-empty strings in `target`:
+Binding state is the same flat row list. Each source row contains `kind: source`, its `source` identifier, the editor data in `target` or null when unbound, and any configured source settings. Use `simple()` with a single Filament field to store non-empty strings in `target`. Without an explicit field `default()`, each editor defaults to its literal source property key. Explicit defaults (including `null`), saved bindings, and edited values retain their native Filament behavior. Defaults do not bind sources automatically. Custom `schema()` forms keep their own defaults.
+
+For example:
 
 ```php
 use Filament\Forms\Components\TextInput;
@@ -491,23 +545,22 @@ FieldBinding::make('bindings')
 
 Choose `simple()` or `schema()` for a field. Both accept closures and use native Filament child schemas, including defaults, validation, reactive callbacks, relative state reads, and nested `Repeater` or `Builder` components. `destination` is an example field name, not a reserved key. Destination syntax, duplicate destinations, and transformation behavior belong to the consuming application; the component stores the configured data without interpreting paths or executing transformations.
 
-Use `constants()` with `simple()` to add static rows without a source. Its native schema must contain a `target` field naming the destination and a `static` field holding the value. Other fields can control the editor, but are not part of the serialized row. The component lists static rows below the sources with **Add static value** and a remove button:
+Use `staticValues()` with `simple()` to enable static pairs. The default is disabled; pass `staticValues(false)` to disable them explicitly. The component supplies a full-width native input with a Value placeholder and an accessible hidden label; it accepts scalar values. **Add static value** creates an immediately connected pair with the first unused `static_N` destination. The source card shows a readable title (`Static 1`) alongside the technical property (`static_1`), without a separate section heading. The right card reuses the `simple()` field without changing its name or rules. Hover or focus the connecting line to reveal a danger trash button, which removes the pair including its value and settings.
 
 ```php
 FieldBinding::make('bindings')
     ->jsonSchema(['properties' => ['name' => ['type' => 'string'], 'email' => ['type' => 'string']]])
     ->simple(TextInput::make('destination')->required())
-    ->constants(fn () => [
-        TextInput::make('target')->required(),
-        TextInput::make('static')->required(),
-    ]);
+    ->staticValues();
 
 // [['kind' => 'source', 'source' => 'name', 'target' => 'customer_name'],
 //  ['kind' => 'source', 'source' => 'email', 'target' => null],
 //  ['kind' => 'static', 'target' => 'status', 'static' => 'active']]
 ```
 
-Without `constants()` the component rejects such rows on submission, and the bound-sources counter never includes them.
+`sourceSettings()` also supplies settings after Value in static cards. Its callback may accept `?Closure $inputSchema = null`: static cards receive a closure returning their current input `JsonSchema`, while ordinary sources leave this argument null. For a static card, `$source` is its stable internal row key. Use the supplied closure in a transform editor's `inputSchema()` callback; existing native scalar values retain their types. Native dehydrated settings are included in the static row, alongside `static` and `target`.
+
+Without `staticValues()` the component rejects static rows on submission, and the bound-sources counter never includes them. This replaces the former `constants([...])` schema registration.
 
 Source bindings and static values share one serialized list. Static targets must be unique. A static target may share a source identifier because their rows have explicit kinds; no value is overwritten. Uniqueness of actual destinations across source and static rows remains the consumer's responsibility.
 

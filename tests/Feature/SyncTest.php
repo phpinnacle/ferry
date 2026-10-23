@@ -295,7 +295,11 @@ it('pauses synchronizations whose transforms no longer apply to the published st
     $sync = TestCase::makeSync([
         'connection_id' => $connection->id,
         'schema' => [new FieldMapping('_marked', null, new ScalarField(FieldType::Boolean), transforms: [
-            new TransformSetting($key, ['mode' => 'exclude', 'type' => 'boolean', 'value' => 'true']),
+            new TransformSetting($key, [
+                'mode' => 'exclude',
+                'condition' => '@ == true',
+                'missing_or_null_behavior' => 'include',
+            ]),
         ])],
     ], ['status' => SyncStatus::Active]);
 

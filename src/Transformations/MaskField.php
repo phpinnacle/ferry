@@ -22,10 +22,8 @@ final class MaskField
                     ->required(),
             ])
             ->inputSchema(
-                fn (JsonSchema $input) => (
-                    array_values(array_diff($input->types(), ['null'])) === ['string']
-                    && !in_array($input->annotation('format'), ['date-time', 'ferry-reference'], true)
-                ),
+                fn (JsonSchema $input) => $input->singleType() === 'string'
+                && !in_array($input->annotation('format'), ['date-time', 'ferry-reference'], true),
             )
             ->outputSchema(fn (JsonSchema $input) => [
                 'type' => in_array('null', $input->types(), true) ? ['string', 'null'] : 'string',

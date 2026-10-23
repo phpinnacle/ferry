@@ -182,6 +182,30 @@ it('only renders mapping search inputs when enabled, including closure configura
         ));
 });
 
+it('applies column spans to their source and target sides without changing mappings', function (bool $inverse) {
+    $field = FieldMapping::make('mapping')
+        ->jsonSchema(source: ['properties' => ['title' => ['type' => 'string']]], dest: [
+            'properties' => ['name' => ['type' => 'string']],
+        ])
+        ->inverse($inverse);
+    $schema = Schema::make(SchemaHost::make())->statePath('data')->components([$field]);
+    $schema->fill(['mapping' => MappingState::mapping(['name' => MappingState::source('title')])]);
+    view()->share('errors', new ViewErrorBag);
+    $state = $schema->getState();
+
+    expect($field->getColumnSpans())->toBe(['source' => 5, 'target' => 5, 'gap' => 2]);
+    expect($schema->toHtml())
+        ->toContain('--ferry-left-column: 5fr', '--ferry-gap-column: 2fr', '--ferry-right-column: 5fr');
+    $field->columnSpans(source: 4, target: 7, gap: 1);
+    expect($schema->toHtml())
+        ->toContain(
+            '--ferry-left-column: ' . ($inverse ? 7 : 4) . 'fr',
+            '--ferry-gap-column: 1fr',
+            '--ferry-right-column: ' . ($inverse ? 4 : 7) . 'fr',
+        );
+    expect($schema->getState())->toBe($state);
+})->with([false, true]);
+
 it('preserves standalone mapping content and values across presentation options', function (
     bool $contained,
     bool $dense,
@@ -463,7 +487,7 @@ it('persists and validates source settings independently of connections', functi
         [],
     ] as $targets) {
         $schema->fill(['mapping' => MappingState::mapping($targets, $settings)]);
-        if (isset($targets['name']) && $targets['name']['kind'] === 'source') {
+        if (array_key_exists('name', $targets) && $targets['name']['kind'] === 'source') {
             expect($field->getSourceSettings()['first.part'])->toBe($settings['first.part']);
         }
         expect($schema->getState()['mapping'])->toBe(MappingState::mapping($targets, $settings));
@@ -474,7 +498,7 @@ it('persists and validates source settings independently of connections', functi
         '0' => ['alias' => '0', 'enabled' => true],
     ]);
     $key = $field->getSourceStateKeys()['first.part'];
-    $field->getChildSchemas()['settings_' . $key]->getComponent('alias')->state('');
+    $schema->getComponentByStatePath('mapping.sources.' . $key . '.alias')->state('');
     expect($schema->getState(...))->toThrow(ValidationException::class);
     $schema->fill(['mapping' => MappingState::mapping(['name' => MappingState::source('first.part')], ['first.part' => [
         'alias' => '',
@@ -557,7 +581,7 @@ it('validates transform settings on unconnected sources', function (
     $schema = Schema::make(SchemaHost::make())->statePath('data')->components([$field]);
     $schema->fill(['widget' => []]);
     $settingsKey = $field->getSourceStateKeys()['input'];
-    $field->getChildSchemas()['settings_' . $settingsKey]->getComponent('transforms')->state($transforms);
+    $schema->getComponentByStatePath('widget.sources.' . $settingsKey . '.transforms')->state($transforms);
 
     expect($schema->getState(...))->toThrow(ValidationException::class);
 
@@ -575,9 +599,9 @@ it('validates transform settings on unconnected sources', function (
     'missing parameters' => ['string', [['key' => 'mask', 'params' => []]]],
 ]);
 
-it('shows the technical display name separately while retaining the source identifier', function (bool $binding) {
+it('shows the property key separately from its title and preserves mapping state', function (bool $binding) {
     $sourceId = '63e1c289-8a21-4ac1-bfb0-353d38184bfd';
-    $sourceSchema = ['properties' => [$sourceId => ['type' => 'string', 'title' => 'Email', 'x-name' => '_fld11']]];
+    $sourceSchema = ['properties' => [$sourceId => ['type' => 'string', 'title' => 'Email']]];
     $field = $binding
         ? FieldBinding::make('widget')
             ->jsonSchema($sourceSchema)
@@ -595,8 +619,144 @@ it('shows the technical display name separately while retaining the source ident
 
     $html = $schema->toHtml();
     preg_match('/<span class="ferry-mapping-property">([^<]+)<\/span>/', $html, $technicalName);
-    expect($technicalName[1])->toBe('_fld11');
+    expect($technicalName[1])->toBe($sourceId);
     expect($field->getSources()[0]['id'])->toBe($sourceId);
     expect($field->getSources()[0]['label'])->toBe('Email');
     expect($schema->getState()['widget'])->toBe($state);
 })->with([false, true]);
+
+/** @param list<array<string, mixed>> $rows */
+function static_source_mapping_schema(array $rows = [], bool $disabled = false): Schema
+{
+    $field = FieldMapping::make('mapping')
+        ->staticValues()
+        ->disabled($disabled)
+        ->jsonSchema(source: ['properties' => ['static_1' => ['type' => 'string']]], dest: [
+            'properties' => [
+                'name.part' => ['type' => 'string'],
+                'count' => ['type' => 'integer'],
+                'tags' => ['type' => 'array', 'items' => ['type' => 'string']],
+            ],
+        ])
+        ->sourceSettings(fn (?Closure $inputSchema) => [
+            TextInput::make('alias')->default('default'),
+            FieldTransforms::make('transforms')->inputSchema(
+                $inputSchema === null ? ['type' => 'string'] : fn () => $inputSchema()->toArray(),
+            ),
+        ])
+        ->outputSchema(function (FieldMapping $component, TransformRegistry $registry) {
+            $schema = $component->getSourceSchema();
+            foreach ($component->getSourceSettings() as $source => $settings) {
+                $schema['properties'][$source] = $registry
+                    ->resultSchema(
+                        \PHPinnacle\Ferry\Forms\JsonSchema::fromArray($schema['properties'][$source]),
+                        $settings['transforms'] ?? [],
+                    )
+                    ?->toArray() ?? [];
+            }
+
+            return $schema;
+        });
+    $schema = Schema::make(SchemaHost::make())->statePath('data')->components([$field]);
+    $schema->fill(['mapping' => $rows]);
+
+    return $schema;
+}
+
+it('adds unconnected static source drafts and connects them without changing the public row format', function () {
+    $schema = static_source_mapping_schema();
+    $field = $schema->getComponent('mapping');
+    $field->getAction('addConstant')->call();
+    $field->getAction('addConstant')->call();
+    expect(array_keys($field->getConstants()))->toBe(['static_2', 'static_3']);
+    expect($schema->getState()['mapping'])->toBe([
+        ['kind' => 'source', 'source' => 'static_1', 'target' => null, 'alias' => 'default', 'transforms' => []],
+    ]);
+    view()->share('errors', new ViewErrorBag);
+    expect($schema->toHtml())->toContain('Static 2', 'data-mapping-static-source="static_2"');
+
+    $field->getConstantValueSchema('static_2')->getComponent('static')->state('Customer');
+    $state = $field->getRawState();
+    $state['targets'][$field->getStateKeys()['name.part']] = MappingState::source('static_2');
+    $field->rawState($state);
+    expect($schema->getState()['mapping'])->toContain([
+        'kind' => 'static',
+        'target' => 'name.part',
+        'static' => 'Customer',
+        'alias' => 'default',
+        'transforms' => [],
+    ]);
+
+    $field->getAction('removeConstant')(['constant' => 'static_2'])->call();
+    expect(array_keys($field->getConstants()))->toBe(['static_2', 'static_3']);
+    $state = $field->getRawState();
+    unset($state['targets'][$field->getStateKeys()['name.part']]);
+    $field->rawState($state);
+    $field->getAction('removeConstant')(['constant' => 'static_2'])->call();
+    expect(array_keys($field->getConstants()))->toBe(['static_3']);
+    expect($field->isSourceUsed('static_2'))->toBeFalse();
+    expect($schema->getState()['mapping'])->toHaveCount(1);
+});
+
+it('round trips typed static sources and their settings', function (mixed $value, string $target) {
+    $rows = [['kind' => 'static', 'target' => $target, 'static' => $value, 'alias' => 'saved', 'transforms' => []]];
+    $schema = static_source_mapping_schema($rows);
+    expect($schema->getState()['mapping'][0])->toBe($rows[0]);
+})->with([
+    'string' => ['Customer', 'name.part'],
+    'integer' => [0, 'count'],
+    'array item' => ['priority', 'tags'],
+]);
+
+it('checks static source compatibility after transforms and validates connected values', function () {
+    app(TransformRegistry::class)->register(\PHPinnacle\Ferry\Transformations\Cast::make());
+    $schema = static_source_mapping_schema();
+    $field = $schema->getComponent('mapping');
+    $field->getAction('addConstant')->call();
+    expect($field->getConnectionModes()['static_2'])->not->toHaveKey('count');
+    $key = $field->getSourceStateKeys()['static_2'];
+    $schema
+        ->getComponentByStatePath('mapping.sources.' . $key . '.transforms')
+        ->state([
+            ['key' => 'cast', 'params' => ['type' => 'integer']],
+        ]);
+    expect($field->getConnectionModes()['static_2']['count'])->toBe('whole');
+    $state = $field->getRawState();
+    $state['targets'][$field->getStateKeys()['count']] = MappingState::source('static_2');
+    $field->rawState($state);
+    expect($schema->getState(...))->toThrow(ValidationException::class);
+    $field->getConstantValueSchema('static_2')->getComponent('static')->state('10');
+    $row = $schema->getState()['mapping'][0];
+    expect($row)->toMatchArray(['kind' => 'static', 'target' => 'count', 'static' => '10']);
+    expect($row['transforms'])->toBe([['key' => 'cast', 'params' => ['type' => 'integer']]]);
+});
+
+it('keeps static source actions disabled when unavailable', function (bool $enabled, bool $disabled) {
+    $schema = static_source_mapping_schema([], $disabled);
+    $field = $schema->getComponent('mapping')->staticValues($enabled);
+    $field->getAction('addConstant')->call();
+    expect($field->getConstants())->toBe([]);
+    expect($field->getAction('addConstant')->isDisabled())->toBeTrue();
+})->with([[false, false], [true, true]]);
+
+it('rejects non-scalar or empty values only after a static source is connected', function (mixed $value) {
+    $schema = static_source_mapping_schema();
+    $field = $schema->getComponent('mapping');
+    $field->getAction('addConstant')->call();
+    $field->getConstantValueSchema('static_2')->getComponent('static')->state($value);
+    $state = $field->getRawState();
+    $state['targets'][$field->getStateKeys()['name.part']] = MappingState::source('static_2');
+    $field->rawState($state);
+    expect($schema->getState(...))->toThrow(ValidationException::class);
+})->with([[''], [null], [['invalid']]]);
+
+it('fills settings defaults when loading a static row without settings', function () {
+    $schema = static_source_mapping_schema([['kind' => 'static', 'target' => 'name.part', 'static' => 'Customer']]);
+    expect($schema->getState()['mapping'][0])->toBe([
+        'kind' => 'static',
+        'target' => 'name.part',
+        'static' => 'Customer',
+        'alias' => 'default',
+        'transforms' => [],
+    ]);
+});

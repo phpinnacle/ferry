@@ -16,11 +16,26 @@ final class Cast
             ->label(fn () => __('phpinnacle-ferry::resources.transform.cast'))
             ->description(fn () => __('phpinnacle-ferry::resources.transform.cast_description'))
             ->icon(Heroicon::ArrowPath)
-            ->schema(fn () => [
+            ->schema(fn (?JsonSchema $input) => [
                 Select::make('type')
                     ->label(__('phpinnacle-ferry::resources.sync.fields.constant_type'))
                     ->options(ColumnType::castableOptions())
+                    ->disableOptionWhen(
+                        fn (string $value) => $input !== null && ColumnType::fromJsonSchema($input)?->value === $value,
+                    )
                     ->required(),
+                Select::make('replace_null_with_default')
+                    ->label(__('phpinnacle-ferry::resources.transform.cast_replace_null_with_default'))
+                    ->helperText(__('phpinnacle-ferry::resources.transform.cast_replace_null_with_default_help'))
+                    ->options([
+                        'true' => __('filament-forms::components.select.boolean.true'),
+                        'false' => __('filament-forms::components.select.boolean.false'),
+                    ])
+                    ->default('true')
+                    ->formatStateUsing(fn (?string $state) => $state ?? 'true')
+                    ->selectablePlaceholder(false)
+                    // Keep Kafka's default implicit in stored transform settings.
+                    ->dehydrated(fn (?string $state) => $state === 'false'),
             ])
             ->inputSchema(['type' => ['string', 'integer', 'number', 'boolean', 'null']])
             ->outputSchema(function (JsonSchema $input, array $params) {

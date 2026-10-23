@@ -46,6 +46,12 @@ class TransformFactory
         foreach ($sync->schema as $index => $mapping) {
             if ($mapping->kind === FieldKind::Static) {
                 $after += self::constant('field_' . $index . '_0', $mapping);
+                /** @var string $target */
+                $target = $mapping->target;
+                foreach ($mapping->transforms as $position => $setting) {
+                    $name = sprintf('field_%d_%d', $index, $position + 1);
+                    $after += $this->handlerOrFail($setting->key)->connector($name, $target, $setting->params);
+                }
 
                 continue;
             }
@@ -74,16 +80,18 @@ class TransformFactory
             $name => [
                 'type' => 'org.apache.kafka.connect.transforms.InsertField$Value',
                 'static.field' => $target,
-                'static.value' => is_bool($mapping->static)
-                    ? ($mapping->static ? 'true' : 'false')
-                    : (string) $mapping->static,
+                'static.value' => match ($mapping->static) {
+                    true => 'true',
+                    false => 'false',
+                    default => (string) $mapping->static,
+                },
             ],
         ];
 
-        if ($mapping->type() !== ColumnType::String) {
+        if ($mapping->sourceType() !== ColumnType::String) {
             $transforms[$name . '_cast'] = [
                 'type' => 'org.apache.kafka.connect.transforms.Cast$Value',
-                'spec' => $target . ':' . $mapping->type()?->castType(),
+                'spec' => $target . ':' . $mapping->sourceType()?->castType(),
             ];
         }
 

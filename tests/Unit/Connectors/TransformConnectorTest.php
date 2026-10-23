@@ -106,8 +106,8 @@ it('captures an unbound field filter without writing it or capturing unused fiel
         'schema' => SyncSchema::fromBindings($object, [], app(TransformRegistry::class), transforms: [
             'fields' => ['_marked' => [new TransformSetting('filter', [
                 'mode' => 'exclude',
-                'type' => 'boolean',
-                'value' => 'true',
+                'condition' => '@ == true',
+                'missing_or_null_behavior' => 'include',
             ])]],
         ]),
     ]);
@@ -123,7 +123,7 @@ it('captures an unbound field filter without writing it or capturing unused fiel
         ->and($config['transforms'])
         ->toBe('unwrap,field_0_0,rename_keys,rename_values')
         ->and($config['transforms.field_0_0.filter.condition'])
-        ->toBe('$[?(@._marked == true)]')
+        ->toBe("$[?(@['_marked'] == true)]")
         ->and($config['transforms.field_0_0.predicate'])
         ->toBe('tombstone')
         ->and($config['transforms.field_0_0.negate'])

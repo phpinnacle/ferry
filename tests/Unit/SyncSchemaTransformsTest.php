@@ -57,6 +57,17 @@ it('converts only the final schema to a persisted column type', function () {
         'fields' => ['_code' => [new TransformSetting('pack')]],
     ]))
         ->toThrow(ValidationException::class);
+
+    foreach ([
+        [[new TransformSetting('cast', ['type' => 'integer'])], ColumnType::Integer],
+        [[new TransformSetting('pack')], null],
+    ] as [$transforms, $result]) {
+        $unbound = SyncSchema::fromBindings($this->object, [], $registry, transforms: [
+            'fields' => ['_code' => $transforms],
+        ])[0];
+
+        expect($unbound->target)->toBeNull()->and($unbound->result)->toBe($result);
+    }
 });
 
 it('validates settings without configured or resolvable handlers', function () {

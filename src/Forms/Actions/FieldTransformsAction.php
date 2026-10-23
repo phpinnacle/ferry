@@ -9,6 +9,7 @@ use Filament\Support\Icons\Heroicon;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use PHPinnacle\Ferry\Forms\FieldTransforms;
 use PHPinnacle\Ferry\Forms\JsonSchema;
 use PHPinnacle\Ferry\Models\ConnectionMetadata;
@@ -26,7 +27,7 @@ class FieldTransformsAction
 
         return Action::make('fieldTransforms')
             ->label(__('phpinnacle-ferry::resources.sync.fields.add_transform'))
-            ->icon(Heroicon::Sparkles)
+            ->icon(Heroicon::Plus)
             ->color('gray')
             ->disabled(
                 fn (FieldTransforms $component, array $arguments) => (
@@ -42,6 +43,7 @@ class FieldTransformsAction
                 'available' => $available,
                 'addable' => $component->getAvailableTransforms($transforms),
                 'settings' => $component->getSettings(),
+                'allowedMoves' => $component->getAllowedMoves($transforms),
                 'object' => $object,
             ])
             ->modal(
@@ -88,7 +90,13 @@ class FieldTransformsAction
                     ])->validate();
                 }
                 /** @var array{params?: array<string, string>} $data */
-                $component->state(self::apply($component->getSettings(), $arguments, $data, $available));
+                $settings = self::apply($component->getSettings(), $arguments, $data, $available);
+                if (array_key_exists('order', $arguments) && !$component->hasCompatibleTypes($settings, $transforms)) {
+                    throw ValidationException::withMessages([
+                        'order' => __('phpinnacle-ferry::validation.transform_order'),
+                    ]);
+                }
+                $component->state($settings);
                 $component->callAfterStateUpdated();
             });
     }

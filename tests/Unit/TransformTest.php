@@ -105,6 +105,61 @@ it('uses each cast result as the input to the next cast without resolving handle
     'integer to integer' => ['integer', ColumnType::Integer],
 ]);
 
+it('disables and rejects the current cast type in the native form', function (array $definition, string $current) {
+    $schema = Schema::make(SchemaHost::make())
+        ->statePath('data')
+        ->components(
+            Cast::make()->getSchema(null, JsonSchema::fromArray($definition)),
+        );
+    $schema->fill(['type' => $current]);
+
+    expect($schema->getComponent('type')->isOptionDisabled($current, ''))->toBeTrue();
+    expect($schema->getState(...))->toThrow(ValidationException::class);
+})->with([
+    [['type' => 'string'], 'string'],
+    [['type' => 'integer'], 'integer'],
+    [['type' => 'number'], 'decimal'],
+    [['type' => 'boolean'], 'boolean'],
+    [['type' => ['integer', 'null']], 'integer'],
+]);
+
+it('keeps all cast targets available when the current type is unknown or a union', function (array $definition) {
+    $schema = Schema::make(SchemaHost::make())->components(
+        Cast::make()->getSchema(null, JsonSchema::fromArray($definition)),
+    );
+
+    expect($schema->getComponent('type')->getEnabledOptions())->toBe(ColumnType::castableOptions());
+})->with([[[]], [['type' => ['string', 'number', 'null']]], [['type' => 'string', 'format' => 'ferry-reference']]]);
+
+it('keeps the Kafka null replacement default implicit and persists disabling it', function (?string $setting) {
+    $schema = Schema::make(SchemaHost::make())
+        ->statePath('data')
+        ->components(
+            Cast::make()->getSchema(null, JsonSchema::fromArray(['type' => 'boolean'])),
+        );
+    $params = ['type' => 'string'];
+    if ($setting !== null) {
+        $params['replace_null_with_default'] = $setting;
+    }
+    $schema->fill($params);
+
+    expect($schema->getComponent('replace_null_with_default')->getState())->toBe($setting ?? 'true');
+    $expected = ['type' => 'string'];
+    if ($setting === 'false') {
+        $expected['replace_null_with_default'] = 'false';
+    }
+    expect($schema->getState())->toBe($expected);
+    $config = new CastTransform()->connector('cast', 'field', $expected)['cast'];
+    expect($config['replace.null.with.default'] ?? 'true')->toBe($setting ?? 'true');
+})->with([null, 'true', 'false']);
+
+it('validates null replacement settings before dehydration', function () {
+    $schema = Schema::make(SchemaHost::make())->statePath('data')->components(Cast::make()->getSchema(null));
+    $schema->fill(['type' => 'string', 'replace_null_with_default' => 'invalid']);
+
+    expect($schema->getState(...))->toThrow(ValidationException::class);
+});
+
 it('inserts a string constant without registering a transform', function () {
     $sync = new Sync([
         'schema' => [
@@ -377,8 +432,8 @@ it('builds a configured pipeline without registering editor descriptions', funct
             new ScalarField(FieldType::Boolean),
             transforms: [new TransformSetting('headless', [
                 'mode' => 'exclude',
-                'type' => 'boolean',
-                'value' => 'true',
+                'condition' => '@ == true',
+                'missing_or_null_behavior' => 'include',
             ])],
         )],
     ]);
@@ -393,5 +448,34 @@ it('builds a configured pipeline without registering editor descriptions', funct
                 'properties' => [],
             ]))['before']['field_0_0']['filter.condition'],
         )
-        ->toBe('$[?(@._marked == true)]');
+        ->toBe("$[?(@['_marked'] == true)]");
+});
+
+it('persists and executes static chains on their destination without renaming', function () {
+    $row = [
+        'kind' => 'static',
+        'target' => 'discount',
+        'static' => '10',
+        'result' => 'integer',
+        'transforms' => [['key' => 'cast', 'params' => ['type' => 'integer']]],
+    ];
+    $mapping = FieldMapping::fromArray($row);
+    expect($mapping->jsonSerialize())
+        ->toBe($row)
+        ->and($mapping->sourceType())
+        ->toBe(ColumnType::String)
+        ->and($mapping->type())
+        ->toBe(ColumnType::Integer);
+    app()->forgetInstance(TransformRegistry::class);
+    $pipeline = app(TransformFactory::class)->pipeline(new Sync(['schema' => [$mapping]]), new ConnectionMetadata);
+    expect($pipeline['before'])
+        ->toBe([])
+        ->and(array_keys($pipeline['after']))
+        ->toBe(['field_0_0', 'field_0_1'])
+        ->and($pipeline['after']['field_0_0']['static.field'])
+        ->toBe('discount')
+        ->and($pipeline['after']['field_0_0']['static.value'])
+        ->toBe('10')
+        ->and($pipeline['after']['field_0_1']['spec'])
+        ->toBe('discount:int64');
 });

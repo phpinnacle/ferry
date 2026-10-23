@@ -2,6 +2,8 @@
 
 namespace PHPinnacle\Ferry\Forms;
 
+use stdClass;
+
 /**
  * Type and presentation projections for inline JSON Schema field definitions.
  *
@@ -25,7 +27,7 @@ namespace PHPinnacle\Ferry\Forms;
  *     title?: string, description?: string, format?: string, minLength?: int, maxLength?: int,
  *     minimum?: int|float, maximum?: int|float, exclusiveMinimum?: int|float, exclusiveMaximum?: int|float,
  *     minItems?: int, maxItems?: int, uniqueItems?: bool, multipleOf?: int|float, pattern?: string, enum?: list<mixed>,
- *     x-name?: string, x-icon?: string, x-color?: string, x-badges?: list<Badge>, ...
+ *     x-icon?: string, x-color?: string, x-badges?: list<Badge>, ...
  * }
  * @phpstan-type Constraint array{kind: string, value: string, scope: list<string>}
  * @phpstan-type ValuePresentation array{type: string, nullable: bool, constraints: list<Constraint>, enum: list<string>}
@@ -71,16 +73,16 @@ final readonly class JsonSchema
         $items = [];
         $required = $this->required();
         foreach ($this->properties() as $name => $property) {
-            $displayName = $property->annotation('x-name') ?? (string) $name;
+            $name = (string) $name;
             $items[] = [
-                'id' => (string) $name,
-                'name' => $displayName,
-                'label' => $property->annotation('title') ?? $displayName,
+                'id' => $name,
+                'name' => $name,
+                'label' => $property->annotation('title') ?? $name,
                 'icon' => $property->annotation('x-icon'),
                 'color' => $property->annotation('x-color'),
                 'description' => $property->annotation('description'),
                 'type' => $property->label(),
-                'required' => in_array((string) $name, $required, true),
+                'required' => in_array($name, $required, true),
                 'badges' => $property->badges(),
                 'presentation' => $property->presentation(),
             ];
@@ -169,14 +171,16 @@ final readonly class JsonSchema
     {
         $types = $this->types();
         if ($formatted) {
-            if (isset($this->definition['enum'])) {
+            if (($this->definition['enum'] ?? null) !== null) {
                 return 'enum';
             }
             $alternatives = $this->alternatives();
             if ($alternatives !== []) {
                 $labels = array_unique(array_map(fn (self $branch) => $branch->label(true), $alternatives));
 
-                return implode(' | ', array_diff($labels, ['null'])) ?: 'null';
+                $label = implode(' | ', array_diff($labels, ['null']));
+
+                return $label ? $label : 'null';
             }
             $format = $this->annotation('format');
             if ($format !== null) {
@@ -195,7 +199,11 @@ final readonly class JsonSchema
             );
         }
 
-        return $types === [] ? (in_array('null', $this->types(), true) ? 'null' : 'any') : implode(' | ', $types);
+        if ($types !== []) {
+            return implode(' | ', $types);
+        }
+
+        return in_array('null', $this->types(), true) ? 'null' : 'any';
     }
 
     /** @return Presentation */
@@ -255,7 +263,11 @@ final readonly class JsonSchema
             if ($min !== null || $max !== null) {
                 $constraints[] = [
                     'kind' => $kind,
-                    'value' => $min !== null && $max !== null ? "{$min}–{$max}" : ($min !== null ? "≥ $min" : "≤ $max"),
+                    'value' => match (true) {
+                        $min !== null && $max !== null => "{$min}–{$max}",
+                        $min !== null => "≥ {$min}",
+                        default => "≤ {$max}",
+                    },
                     'scope' => $scope,
                 ];
             }
@@ -267,21 +279,21 @@ final readonly class JsonSchema
             'exclusiveMinimum' => '>',
             'exclusiveMaximum' => '<',
         ] as $key => $symbol) {
-            if (isset($this->definition[$key])) {
+            if (($this->definition[$key] ?? null) !== null) {
                 $range[] = $symbol . ' ' . $this->definition[$key];
             }
         }
         if ($range !== []) {
             $constraints[] = ['kind' => 'range', 'value' => implode(' · ', $range), 'scope' => $scope];
         }
-        if (isset($this->definition['pattern'])) {
+        if (array_key_exists('pattern', $this->definition)) {
             $constraints[] = [
                 'kind' => 'pattern',
                 'value' => '/' . $this->definition['pattern'] . '/',
                 'scope' => $scope,
             ];
         }
-        if (isset($this->definition['multipleOf'])) {
+        if (array_key_exists('multipleOf', $this->definition)) {
             $constraints[] = [
                 'kind' => 'multiple',
                 'value' => '× ' . $this->definition['multipleOf'],
@@ -317,7 +329,18 @@ final readonly class JsonSchema
         return array_values(array_unique($types));
     }
 
-    /** @param 'title'|'description'|'format'|'x-name'|'x-icon'|'x-color' $name */
+    public function singleType(): ?string
+    {
+        $types = array_values(array_diff($this->types(), ['null']));
+
+        if (count($types) === 1) {
+            return $types[0];
+        }
+
+        return $this->types() === ['null'] ? 'null' : null;
+    }
+
+    /** @param 'title'|'description'|'format'|'x-icon'|'x-color' $name */
     public function annotation(string $name): ?string
     {
         if (array_key_exists($name, $this->definition)) {
@@ -364,8 +387,22 @@ final readonly class JsonSchema
 
         $sourceTypes = $this->types();
         $targetTypes = $target->types();
-        if ($sourceTypes !== [] && $targetTypes !== [] && array_diff($sourceTypes, $targetTypes) !== []) {
+        $acceptedTypes = in_array('number', $targetTypes, true) ? [...$targetTypes, 'integer'] : $targetTypes;
+        if ($sourceTypes !== [] && $targetTypes !== [] && array_diff($sourceTypes, $acceptedTypes) !== []) {
             return false;
+        }
+        $targetValues = $target->enumValues();
+        if ($targetValues !== null) {
+            $sourceValues = $this->enumValues();
+            if (
+                $sourceValues === null
+                || !array_all($sourceValues, fn (mixed $value) => array_any(
+                    $targetValues,
+                    fn (mixed $allowed) => self::sameEnumValue($value, $allowed),
+                ))
+            ) {
+                return false;
+            }
         }
         if (
             ($sourceTypes === []
@@ -382,6 +419,61 @@ final readonly class JsonSchema
         }
 
         return true;
+    }
+
+    /** @return list<mixed>|null */
+    private function enumValues(): ?array
+    {
+        $values = $this->definition['enum'] ?? null;
+        foreach ($this->allOf as $branch) {
+            $allowed = $branch->enumValues();
+            if ($allowed !== null) {
+                $values = $values === null
+                    ? $allowed
+                    : array_values(array_filter(
+                        $values,
+                        fn (mixed $value) => array_any($allowed, fn (mixed $candidate) => self::sameEnumValue(
+                            $value,
+                            $candidate,
+                        )),
+                    ));
+            }
+        }
+
+        return $values;
+    }
+
+    private static function sameEnumValue(mixed $left, mixed $right): bool
+    {
+        return match (true) {
+            is_int($left) && is_float($right) => $left === (int) $right && (float) $left === $right,
+            is_float($left) && is_int($right) => self::sameEnumValue($right, $left),
+            (is_array($left) || $left instanceof stdClass) && (is_array($right) || $right instanceof stdClass)
+                => self::sameEnumStructure($left, $right),
+            default => $left === $right,
+        };
+    }
+
+    /**
+     * @param array<array-key, mixed>|stdClass $left
+     * @param array<array-key, mixed>|stdClass $right
+     */
+    private static function sameEnumStructure(array|stdClass $left, array|stdClass $right): bool
+    {
+        $leftIsList = is_array($left) && array_is_list($left);
+        $rightIsList = is_array($right) && array_is_list($right);
+        $left = (array) $left;
+        $right = (array) $right;
+        if ($leftIsList !== $rightIsList || count($left) !== count($right)) {
+            return false;
+        }
+
+        return array_all(
+            $left,
+            fn (mixed $value, int|string $key) => (
+                array_key_exists($key, $right) && self::sameEnumValue($value, $right[$key])
+            ),
+        );
     }
 
     private function stringsFit(self $target, SchemaCompatibility $compatibility): bool
@@ -412,11 +504,15 @@ final readonly class JsonSchema
         $bound = $this->definition[$keyword] ?? null;
         foreach ($this->allOf as $branch) {
             $value = $branch->lengthBound($keyword);
-            if ($value !== null) {
-                $bound = $bound === null
-                    ? $value
-                    : ($keyword === 'minLength' ? max($bound, $value) : min($bound, $value));
+            if ($value === null) {
+                continue;
             }
+            if ($bound === null) {
+                $bound = $value;
+
+                continue;
+            }
+            $bound = $keyword === 'minLength' ? max($bound, $value) : min($bound, $value);
         }
 
         return $bound;

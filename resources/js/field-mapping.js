@@ -14,6 +14,8 @@ export default function fieldMapping({ state, disabled, inverse = false, require
         unmappedOnly: false,
         selected: null,
         connections: [],
+        hoveredConnection: null,
+        focusedConnection: null,
         width: 1,
         height: 1,
         announcement: '',
@@ -96,6 +98,8 @@ export default function fieldMapping({ state, disabled, inverse = false, require
 
             return {
                 'is-mapped': mapped,
+                'is-disconnecting': !this.disabled && [this.hoveredConnection, this.focusedConnection]
+                    .some(connection => connection?.[side] === id),
                 'is-selected': this.isSelected(side, id),
                 'is-incompatible': incompatible,
                 'is-compatible': Boolean(this.selected && this.selected.side !== side && !this.isDisabled(side, id) && !incompatible),
@@ -137,6 +141,12 @@ export default function fieldMapping({ state, disabled, inverse = false, require
             const search = side === 'source' ? this.sourceSearch : this.targetSearch;
             return text.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase())
                 && (!this.unmappedOnly || !this.isMapped(side, id));
+        },
+
+        selectFromCard(event, side, id) {
+            const control = event.target.closest('button, a, input, select, textarea, label, [role="button"], [role="group"], [role="combobox"], [contenteditable]');
+            if (control && event.currentTarget.contains(control)) return;
+            this.select(side, id);
         },
 
         select(side, id) {
@@ -230,9 +240,16 @@ export default function fieldMapping({ state, disabled, inverse = false, require
                     source,
                     target,
                     path: this.inverse ? this.path(end, start) : this.path(start, end),
+                    midpoint: { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 },
                     label: `Disconnect ${sourcePort.dataset.label} from ${targetPort.dataset.label}`,
                 }] : [];
             });
+            for (const property of ['hoveredConnection', 'focusedConnection']) {
+                const highlighted = this[property];
+                if (highlighted && !this.connections.some(connection => connection.source === highlighted.source && connection.target === highlighted.target)) {
+                    this[property] = null;
+                }
+            }
         },
     };
 }
