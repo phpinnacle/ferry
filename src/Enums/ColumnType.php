@@ -36,6 +36,16 @@ enum ColumnType: string implements HasLabel
         };
     }
 
+    public static function fromValue(string|int|float|bool $value): self
+    {
+        return match (true) {
+            is_bool($value) => self::Boolean,
+            is_int($value) => self::Integer,
+            is_float($value) => self::Decimal,
+            default => self::String,
+        };
+    }
+
     public static function fromJsonSchema(JsonSchema $schema): ?self
     {
         return match (array_values(array_diff($schema->types(), ['null']))) {
@@ -67,12 +77,6 @@ enum ColumnType: string implements HasLabel
         }
 
         return $options;
-    }
-
-    /** @return list<self> */
-    public static function filterable(): array
-    {
-        return [self::String, self::Reference, self::Boolean];
     }
 
     public function valueRule(): string

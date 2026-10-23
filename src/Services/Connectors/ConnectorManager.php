@@ -178,7 +178,7 @@ class ConnectorManager
             ]));
         }
 
-        if (!$this->transforms->appliesTo($sync, $object)) {
+        if (!$this->transforms->appliesTo($sync)) {
             throw new LogicException(__('phpinnacle-ferry::resources.sync.errors.invalid_transforms', [
                 'code' => $sync->code,
             ]));

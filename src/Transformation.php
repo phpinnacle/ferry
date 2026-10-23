@@ -11,7 +11,6 @@ use Filament\Support\Contracts\HasDescription;
 use Filament\Support\Contracts\HasIcon;
 use Filament\Support\Contracts\HasLabel;
 use Illuminate\Contracts\Support\Htmlable;
-use PHPinnacle\Ferry\Enums\TransformScope;
 use PHPinnacle\Ferry\Forms\JsonSchema;
 use PHPinnacle\Ferry\Models\ConnectionMetadata;
 
@@ -40,24 +39,18 @@ final class Transformation implements HasColor, HasDescription, HasIcon, HasLabe
 
     private function __construct(
         private readonly string $key,
-        private readonly TransformScope $scope,
     ) {
         $this->label = $key;
     }
 
-    public static function make(string $key, TransformScope $scope): self
+    public static function make(string $key): self
     {
-        return new self($key, $scope);
+        return new self($key);
     }
 
     public function key(): string
     {
         return $this->key;
-    }
-
-    public function scope(): TransformScope
-    {
-        return $this->scope;
     }
 
     /** @param Definition|Closure(JsonSchema): bool $schema */
@@ -167,10 +160,10 @@ final class Transformation implements HasColor, HasDescription, HasIcon, HasLabe
     }
 
     /** @return array<Component> */
-    public function getSchema(?ConnectionMetadata $object): array
+    public function getSchema(?ConnectionMetadata $object, ?JsonSchema $input = null): array
     {
         /** @var array<Component> $schema */
-        $schema = $this->evaluate($this->schema, ['object' => $object]);
+        $schema = $this->evaluate($this->schema, ['object' => $object, 'input' => $input]);
 
         return array_map(static fn (Component $component) => clone $component, $schema);
     }

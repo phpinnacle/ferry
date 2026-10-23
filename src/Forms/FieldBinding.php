@@ -20,9 +20,9 @@ use PHPinnacle\Ferry\Forms\Concerns\Searchable;
 /**
  * @phpstan-import-type MappingItem from JsonSchema
  * @phpstan-import-type Definition from JsonSchema
- * @phpstan-type SourceEntry array{kind: 'source', source: string, value: mixed}&array<string, mixed>
- * @phpstan-type ValueEntry array{kind: 'value', value: array<string, mixed>}
- * @phpstan-type Entry SourceEntry|ValueEntry
+ * @phpstan-type SourceState array{kind: 'source', source: string, target: mixed}&array<string, mixed>
+ * @phpstan-type StaticState array{kind: 'static', target: string, static: mixed}
+ * @phpstan-type State list<SourceState|StaticState>
  */
 class FieldBinding extends Field
 {
@@ -179,10 +179,13 @@ class FieldBinding extends Field
         return $schema;
     }
 
-    /** @return array<string, mixed> */
+    /** @return list<array<string, mixed>> */
     public function getBindingValues(): array
     {
-        return $this->getDehydratedBindings($this->getBindingState());
+        /** @var array{sources?: array<string, array<string, mixed>>, bindings?: array<string, mixed>, bound?: array<string, bool>, previews?: array<string, mixed>}|null $state */
+        $state = $this->getRawState();
+
+        return $this->dehydrateBindings($state);
     }
 
     /** @return array<Schema> */
@@ -204,13 +207,13 @@ class FieldBinding extends Field
         $this->hydrateDefaultState($hydratedDefaultState);
 
         $bindings = $this->getHydratedBindings();
-        /** @var array<string, Entry> $state */
+        /** @var State $state */
         $state = $this->getRawState() ?? [];
         $sources = [];
         foreach ($state as $entry) {
             if ($entry['kind'] === 'source') {
                 /** @var array<string, mixed> $settings */
-                $settings = Arr::except($entry, ['kind', 'source', 'value']);
+                $settings = Arr::except($entry, ['kind', 'source', 'target']);
                 if ($settings !== []) {
                     $sources[$entry['source']] = $settings;
                 }
@@ -354,19 +357,27 @@ class FieldBinding extends Field
 
     /**
      * @param array{sources?: array<string, array<string, mixed>>, bindings?: array<string, mixed>, bound?: array<string, bool>, previews?: array<string, mixed>}|null $state
-     * @return array<string, array<string, mixed>>
+     * @return list<array<string, mixed>>
      */
     private function dehydrateBindings(?array $state): array
     {
         $sources = $this->decodeSourceSettings($state['sources'] ?? []);
-        $bindings = [];
-        foreach ($this->getDehydratedBindings($state['bindings'] ?? []) as $source => $value) {
-            $bindings[$source] = $this->isSourceUsed((string) $source)
-                ? ['kind' => 'source', 'source' => (string) $source, 'value' => $value] + ($sources[$source] ?? [])
-                : ['kind' => 'value', 'value' => $value];
+        $values = $this->getDehydratedBindings($state['bindings'] ?? []);
+        $rows = [];
+        foreach ($this->getSources() as $source) {
+            $id = $source['id'];
+            $rows[] =
+                ['kind' => 'source', 'source' => $id, 'target' => $this->isSourceUsed($id) ? $values[$id] : null]
+                + ($sources[$id] ?? []);
+        }
+        foreach ($state['bindings'] ?? [] as $key => $data) {
+            if (self::isConstantKey((string) $key)) {
+                /** @var array{target: string, static: mixed}&array<string, mixed> $data */
+                $rows[] = ['kind' => 'static', 'target' => $data['target'], 'static' => $data['static']];
+            }
         }
 
-        return $bindings;
+        return $rows;
     }
 
     /** @param array<array-key, mixed> $arguments */
@@ -463,21 +474,25 @@ class FieldBinding extends Field
         $bindings = [];
         $simple = $this->getSimpleField();
 
-        /** @var array<string, Entry> $state */
+        /** @var State $state */
         $state = $this->getRawState() ?? [];
 
-        foreach ($state as $source => $entry) {
+        foreach ($state as $entry) {
             $data = [];
-            if ($entry['kind'] === 'value') {
-                $bindings[self::CONSTANT_PREFIX . bin2hex((string) $source)] = [
-                    'column' => (string) $source,
-                    ...$entry['value'],
+            if ($entry['kind'] === 'static') {
+                $bindings[self::CONSTANT_PREFIX . bin2hex($entry['target'])] = [
+                    'target' => $entry['target'],
+                    'static' => $entry['static'],
                 ];
 
                 continue;
             }
 
-            $binding = $entry['value'];
+            if ($entry['target'] === null) {
+                continue;
+            }
+            $source = $entry['source'];
+            $binding = $entry['target'];
             if ($simple !== null) {
                 data_set($data, $simple->getName(), $binding);
             } else {
@@ -508,13 +523,6 @@ class FieldBinding extends Field
             }
 
             $bindings[$source['id']] = $simple !== null ? data_get($state[$key], $simple->getName()) : $state[$key];
-        }
-
-        foreach ($state as $key => $data) {
-            if (self::isConstantKey((string) $key)) {
-                /** @var array{column: string} $data */
-                $bindings[$data['column']] = Arr::except($data, 'column');
-            }
         }
 
         return $bindings;
@@ -611,7 +619,7 @@ class FieldBinding extends Field
 
         $sourceKeys = $this->getSourceStateKeys();
         $keys = array_values($sourceKeys);
-        $outputKeys = array_keys(array_filter($sourceKeys, fn (string $key) => $bound[$key] ?? false));
+        $outputKeys = [];
         $simple = $this->getSimpleField();
 
         foreach ($value as $key => $binding) {
@@ -631,16 +639,16 @@ class FieldBinding extends Field
 
             if ($isConstant) {
                 $validator = Validator::make($binding, [
-                    'column' => ['required', 'string', Rule::notIn($outputKeys)],
+                    'target' => ['required', 'string', Rule::notIn($outputKeys)],
                 ]);
                 if ($validator->fails()) {
                     $fail($validator->errors()->first())->translate();
 
                     return;
                 }
-                /** @var array{column: string} $constant */
+                /** @var array{target: string, static: mixed} $constant */
                 $constant = $validator->validated();
-                $outputKeys[] = $constant['column'];
+                $outputKeys[] = $constant['target'];
             }
 
             if (!$isConstant && ($bound[$key] ?? false) && $simple !== null) {

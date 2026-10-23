@@ -73,3 +73,16 @@ it('reports every mapping as broken and refuses to resume when its destination i
         ->and($sync->shouldResume($this->object))
         ->toBeFalse();
 });
+
+it('ignores removed unused sources during structure review', function () {
+    $object = new ConnectionMetadata(['system' => [], 'properties' => []]);
+    $sync = new Sync(['schema' => [
+        new FieldMapping(
+            '_unused',
+            null,
+            new ScalarField(FieldType::Boolean),
+        ),
+    ]]);
+
+    expect($sync->hasValidSchema($object))->toBeTrue();
+});

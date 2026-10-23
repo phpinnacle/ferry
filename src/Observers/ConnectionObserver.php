@@ -64,7 +64,7 @@ class ConnectionObserver
             if (
                 !$object instanceof ConnectionMetadata
                 || !$sync->hasValidSchema($object, $this->destinations->fieldsFor($sync))
-                || !$this->transforms->appliesTo($sync, $object)
+                || !$this->transforms->appliesTo($sync)
             ) {
                 if ($sync->connector !== null) {
                     $this->connectors->pause($sync, manually: false);

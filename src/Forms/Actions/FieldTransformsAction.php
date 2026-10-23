@@ -9,8 +9,8 @@ use Filament\Support\Icons\Heroicon;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
-use PHPinnacle\Ferry\Enums\TransformScope;
 use PHPinnacle\Ferry\Forms\FieldTransforms;
+use PHPinnacle\Ferry\Forms\JsonSchema;
 use PHPinnacle\Ferry\Models\ConnectionMetadata;
 use PHPinnacle\Ferry\Services\TransformRegistry;
 use PHPinnacle\Ferry\Transformation;
@@ -21,7 +21,7 @@ class FieldTransformsAction
     public static function make(FieldTransforms $field, TransformRegistry $transforms): Action
     {
         $object = $field->getObject();
-        $available = $transforms->forScope(TransformScope::Field);
+        $available = $transforms->all();
         $selected = fn (array $arguments) => self::selected($arguments, $available);
 
         return Action::make('fieldTransforms')
@@ -61,12 +61,16 @@ class FieldTransformsAction
                     'field' => strip_tags($label instanceof Htmlable ? $label->toHtml() : $label ?? ''),
                 ]);
             })
-            ->schema(function (Action $action, array $arguments) use ($selected, $object) {
+            ->schema(function (Action $action, FieldTransforms $component, array $arguments) use ($selected, $object) {
                 if ($action->isDisabled() || !self::hasForm($arguments)) {
                     return [];
                 }
 
-                return self::schema($selected($arguments), $object);
+                return self::schema(
+                    $selected($arguments),
+                    $object,
+                    $component->getInputSchema(self::position($component->getSettings(), $arguments)),
+                );
             })
             ->fillForm(fn (FieldTransforms $component, array $arguments) => self::hasForm($arguments)
                 ? self::formData($component->getSettings(), $arguments)
@@ -164,9 +168,9 @@ class FieldTransformsAction
     }
 
     /** @return list<Component> */
-    private static function schema(Transformation $transform, ?ConnectionMetadata $object): array
+    private static function schema(Transformation $transform, ?ConnectionMetadata $object, ?JsonSchema $input): array
     {
-        $schema = $transform->getSchema($object);
+        $schema = $transform->getSchema($object, $input);
 
         return (
             $schema === []

@@ -24,40 +24,51 @@ final class MappingState
         return ['kind' => 'value', 'value' => $value];
     }
 
-    /**
-     * @param Targets $targets
-     * @param array<string, array<string, mixed>> $sources
-     * @return State
-     */
-    public static function mapping(array $targets, array $sources = []): array
+    public static function mapping(array $targets, array $sources = [], array $available = []): array
     {
+        $sources += array_fill_keys($available, []);
+        $rows = [];
+        $used = [];
         foreach ($targets as $target => $mapped) {
-            $collection = array_is_list($mapped);
-            $entries = array_map(
-                fn (array $entry) => $entry['kind'] === 'source' ? $entry + ($sources[$entry['source']] ?? []) : $entry,
-                $collection ? $mapped : [$mapped],
-            );
-            $targets[$target] = $collection ? $entries : $entries[0];
+            foreach (array_is_list($mapped) ? $mapped : [$mapped] as $entry) {
+                if ($entry['kind'] === 'value') {
+                    $rows[] = ['kind' => 'static', 'target' => (string) $target, 'static' => $entry['value']];
+                } else {
+                    $rows[] =
+                        ['kind' => 'source', 'source' => $entry['source'], 'target' => (string) $target]
+                        + ($sources[$entry['source']] ?? []);
+                    $used[$entry['source']] = true;
+                }
+            }
+        }
+        foreach ($sources as $source => $settings) {
+            if (!isset($used[$source])) {
+                $rows[] = ['kind' => 'source', 'source' => (string) $source, 'target' => null] + $settings;
+            }
         }
 
-        return $targets;
+        return $rows;
     }
 
-    /**
-     * @param array<string, mixed> $bindings
-     * @param array<string, array<string, mixed>> $sources
-     * @return array<string, array<string, mixed>>
-     */
-    public static function binding(array $bindings, array $sources = []): array
+    public static function binding(array $bindings, array $sources = [], array $available = []): array
     {
-        foreach ($bindings as $source => $value) {
-            $constant = is_array($value) && array_key_exists('value', $value);
-            $bindings[$source] = $constant
-                ? ['kind' => 'value', 'value' => $value]
-                : ['kind' => 'source', 'source' => (string) $source, 'value' => $value] + ($sources[$source] ?? []);
+        $available = $available === [] ? array_keys($bindings + $sources) : $available;
+        $rows = [];
+        foreach ($available as $source) {
+            $value = $bindings[$source] ?? null;
+            if (is_array($value) && array_key_exists('value', $value)) {
+                continue;
+            }
+            $rows[] =
+                ['kind' => 'source', 'source' => (string) $source, 'target' => $value] + ($sources[$source] ?? []);
+        }
+        foreach ($bindings as $target => $value) {
+            if (is_array($value) && array_key_exists('value', $value)) {
+                $rows[] = ['kind' => 'static', 'target' => (string) $target, 'static' => $value['value']];
+            }
         }
 
-        return $bindings;
+        return $rows;
     }
 
     public static function encode(FieldMapping $field, mixed $targets, array $sources = []): mixed

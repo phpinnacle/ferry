@@ -69,7 +69,7 @@ function ferry_connector_manager(
 
     return new ConnectorManager(
         $client,
-        new SourceFactory($transforms),
+        new SourceFactory,
         $destinations,
         $transforms,
         $signals ?? new RecordingSignalProducer,
@@ -132,7 +132,14 @@ it('refuses activation before Kafka requests when the source or mapping is unava
         'invalid_mapping' => $sync->forceFill([
             'schema' => [new FieldMapping('_missing', 'external_id', new ScalarField(FieldType::Id))],
         ])->saveQuietly(),
-        'invalid_transforms' => $sync->forceFill(['transforms' => [new TransformSetting('missing')]])->saveQuietly(),
+        'invalid_transforms' => $sync->forceFill([
+            'schema' => [new FieldMapping(
+                '_idrref',
+                'external_id',
+                new ScalarField(FieldType::Id),
+                transforms: [new TransformSetting('missing')],
+            )],
+        ])->saveQuietly(),
     };
 
     $http = new RecordingConnectClient;
@@ -259,21 +266,21 @@ it('refreshes only the sink when the source config is unchanged, unless the sour
         ->toContain(['PUT', '/connectors/ferry-source-test-connection/resume']);
 });
 
-it('requests an incremental snapshot when a record filter adds a column to the shared source connector', function () {
+it('requests an incremental snapshot when an unbound field filter adds a captured column', function () {
     $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
     TestCase::makeMetadata($connection, [
         'system' => ['_idrref' => new ScalarField(FieldType::Id), '_marked' => new ScalarField(FieldType::Boolean)],
     ]);
     $sync = TestCase::makeSync([
         'connection_id' => $connection->id,
-        'transforms' => [
-            new TransformSetting('filter', [
-                'mode' => 'exclude',
-                'column' => '_marked',
-                'type' => 'boolean',
-                'value' => 'true',
-            ]),
-        ],
+        'schema' => [new \PHPinnacle\Ferry\Data\FieldMapping(
+            '_marked',
+            null,
+            new ScalarField(FieldType::Boolean),
+            transforms: [
+                new TransformSetting('filter', ['mode' => 'exclude', 'type' => 'boolean', 'value' => 'true']),
+            ],
+        )],
     ], ['status' => SyncStatus::Active]);
     $signals = new RecordingSignalProducer;
     $http = new RecordingConnectClient(

@@ -5,7 +5,6 @@ use PHPinnacle\Ferry\Enums\StructureStatus;
 use PHPinnacle\Ferry\Enums\SyncStatus;
 use PHPinnacle\Ferry\Rules\SyncSchema;
 use PHPinnacle\Ferry\Services\SourceFactory;
-use PHPinnacle\Ferry\Services\TransformFactory;
 use PHPinnacle\Ferry\Services\TransformRegistry;
 use PHPinnacle\Ferry\Tests\TestCase;
 use PHPinnacle\Rosetta\Data\MetadataProperty;
@@ -18,8 +17,6 @@ uses(TestCase::class);
 
 beforeEach(function () {
     Queue::fake();
-
-    $this->factory = $this->app->make(TransformFactory::class);
 });
 
 $makeProperty = fn (string $id, string $name, object $field) => new MetadataProperty(
@@ -53,7 +50,7 @@ it('builds a debezium postgres connector config scoped to the tracked synchroniz
     ], ['status' => SyncStatus::Active]);
 
     $connection = $connection->fresh();
-    $builder = new SourceFactory($this->factory);
+    $builder = new SourceFactory;
     $config = $builder->source($connection, $connection->trackedSyncs());
 
     expect($builder->name($connection))
@@ -126,7 +123,7 @@ it('unions tables and columns across the tracked synchronizations of one connect
     ], ['status' => SyncStatus::Pause]);
 
     $connection = $connection->fresh();
-    $config = new SourceFactory($this->factory)->source(
+    $config = new SourceFactory()->source(
         $connection,
         $connection->trackedSyncs(),
     );
@@ -140,7 +137,7 @@ it('unions tables and columns across the tracked synchronizations of one connect
 it('never lets an unscoped source connector capture the whole database', function () {
     $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
 
-    $config = new SourceFactory($this->factory)->source(
+    $config = new SourceFactory()->source(
         $connection,
         $connection->trackedSyncs(),
     );

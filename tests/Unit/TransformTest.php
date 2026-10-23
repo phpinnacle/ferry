@@ -8,21 +8,18 @@ use Filament\Support\Contracts\HasColor;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Validation\ValidationException;
 use PHPinnacle\Ferry\Data\FieldMapping;
-use PHPinnacle\Ferry\Data\StaticValue;
 use PHPinnacle\Ferry\Data\TransformSetting;
 use PHPinnacle\Ferry\Enums\ColumnType;
-use PHPinnacle\Ferry\Enums\TransformScope;
+use PHPinnacle\Ferry\Enums\FieldKind;
 use PHPinnacle\Ferry\FerryPlugin;
 use PHPinnacle\Ferry\Forms\JsonSchema;
 use PHPinnacle\Ferry\Models\ConnectionMetadata;
 use PHPinnacle\Ferry\Models\Sync;
-use PHPinnacle\Ferry\Resources\Syncs\Schemas\TransformsBuilder;
 use PHPinnacle\Ferry\Services\TransformFactory;
 use PHPinnacle\Ferry\Services\TransformRegistry;
 use PHPinnacle\Ferry\Tests\Fixtures\SchemaHost;
 use PHPinnacle\Ferry\Transformation;
 use PHPinnacle\Ferry\Transformations\Cast;
-use PHPinnacle\Ferry\Transformations\Filter;
 use PHPinnacle\Ferry\Transformations\MaskField;
 use PHPinnacle\Ferry\Transformations\Substring;
 use PHPinnacle\Ferry\Transformations\Trim;
@@ -30,6 +27,8 @@ use PHPinnacle\Ferry\Transforms\CastTransform;
 use PHPinnacle\Ferry\Transforms\FilterTransform;
 use PHPinnacle\Ferry\Transforms\MaskFieldTransform;
 use PHPinnacle\Ferry\Transforms\SubstringTransform;
+use PHPinnacle\Rosetta\Enums\FieldType;
+use PHPinnacle\Rosetta\Fields\ScalarField;
 use Tests\TestCase;
 
 require_once __DIR__ . '/../Fixtures/SchemaHost.php';
@@ -54,17 +53,15 @@ it('registers the built-in transforms through the UI registry independently of t
 });
 
 it('registers application transforms through the plugin', function () {
-    FerryPlugin::make()->transforms(Transformation::make('trim', TransformScope::Record)->label('Trim'));
+    FerryPlugin::make()->transforms(Transformation::make('trim')->label('Trim'));
 
     $registry = $this->app->make(TransformRegistry::class);
 
     expect($registry->get('trim'))
         ->not
         ->toBeNull()
-        ->and(array_keys($registry->forScope(TransformScope::Record)))
-        ->toBe(['filter', 'trim'])
-        ->and(array_keys($registry->forScope(TransformScope::Field)))
-        ->toBe(['cast']);
+        ->and(array_keys($registry->all()))
+        ->toBe(['cast', 'filter', 'trim']);
 });
 
 it('casts a field to the selected column type', function (ColumnType $type, string $spec) {
@@ -111,9 +108,8 @@ it('uses each cast result as the input to the next cast without resolving handle
 it('inserts a string constant without registering a transform', function () {
     $sync = new Sync([
         'schema' => [
-            new FieldMapping(null, 'type', null, constant: new StaticValue(ColumnType::String, 'Customer')),
+            new FieldMapping(null, 'type', null, static: 'Customer', kind: FieldKind::Static),
         ],
-        'transforms' => [],
     ]);
     $pipeline = new TransformFactory()->pipeline($sync, new ConnectionMetadata);
 
@@ -128,9 +124,9 @@ it('inserts a string constant without registering a transform', function () {
 });
 
 it('casts a typed constant after inserting it', function () {
-    $constant = new StaticValue(ColumnType::Boolean, 'true');
-    $mapping = new FieldMapping(null, 'is_active', null, constant: $constant);
-    $sync = new Sync(['schema' => [$mapping], 'transforms' => []]);
+    $constant = true;
+    $mapping = new FieldMapping(null, 'is_active', null, static: $constant, kind: FieldKind::Static);
+    $sync = new Sync(['schema' => [$mapping]]);
     $transforms = app(TransformFactory::class)->pipeline($sync, new ConnectionMetadata)['after'];
 
     expect($mapping->type())
@@ -154,7 +150,13 @@ it('registers optional installed field transforms through the public plugin API'
 
     FerryPlugin::make()->transforms(Trim::make(), Substring::make(), MaskField::make());
 
-    expect(array_keys($registry->forScope(TransformScope::Field)))->toBe(['cast', 'trim', 'substring', 'mask']);
+    expect(array_keys($registry->all()))->toBe([
+        'cast',
+        'filter',
+        'trim',
+        'substring',
+        'mask',
+    ]);
     expect($registry->resultSchema(JsonSchema::fromArray(['type' => 'string']), [
         ['key' => 'trim', 'params' => []],
         ['key' => 'substring', 'params' => ['start' => '0']],
@@ -188,66 +190,6 @@ it('masks a source field without applying the Apache transform to tombstones', f
         ],
     ]);
 });
-
-it('preserves transform settings and order when builder blocks are filled reordered and removed', function () {
-    $registry = app(TransformRegistry::class);
-    $registry->register(Trim::make(), MaskField::make());
-    $livewire = SchemaHost::make();
-    $builder = TransformsBuilder::make(TransformScope::Field, null, $registry);
-    $schema = Schema::make($livewire)->statePath('data')->components([$builder]);
-    $settings = [
-        ['key' => 'trim', 'params' => []],
-        ['key' => 'mask', 'params' => ['replacement' => 'hidden']],
-    ];
-    $schema->fill(['transforms' => $settings]);
-
-    expect($schema->getState()['transforms'])->toBe($settings);
-
-    $keys = array_keys($builder->getRawState());
-    $builder
-        ->getAction('reorder')
-        ->arguments(['items' => array_reverse($keys)])
-        ->call();
-
-    expect($schema->getState()['transforms'])->toBe(array_reverse($settings));
-
-    $builder->getAction('delete')->arguments(['item' => $keys[1]])->call();
-
-    expect($schema->getState()['transforms'])->toBe([$settings[0]]);
-});
-
-it('renders transform icons and localized descriptions without adding them to submitted settings', function (string $locale) {
-    app()->setLocale($locale);
-    $registry = app(TransformRegistry::class);
-    $registry->register(Trim::make(), Substring::make(), MaskField::make());
-    $livewire = SchemaHost::make();
-    $builder = TransformsBuilder::make(TransformScope::Field, null, $registry);
-    $schema = Schema::make($livewire)->statePath('data')->components([$builder]);
-    $settings = [
-        ['key' => 'trim', 'params' => []],
-        ['key' => 'substring', 'params' => ['start' => '1', 'end' => '5']],
-        ['key' => 'mask', 'params' => ['replacement' => 'hidden']],
-        ['key' => 'cast', 'params' => ['type' => 'string']],
-    ];
-    $schema->fill(['transforms' => $settings]);
-    $html = $schema->toHtml();
-
-    foreach ($registry->forScope(TransformScope::Field) as $transform) {
-        if ($transform->getDescription() !== null) {
-            expect($html)->toContain(e($transform->getDescription()));
-        }
-    }
-
-    expect($schema->getState()['transforms'])->toBe($settings);
-
-    $filter = Filter::make();
-    $builder = TransformsBuilder::make($filter->scope(), null, $registry);
-    $schema = Schema::make($livewire)->statePath('data')->components([$builder]);
-    $schema->fill(['transforms' => [['key' => $filter->key(), 'params' => []]]]);
-
-    expect($schema->toHtml())
-        ->toContain(e($filter->getDescription()));
-})->with(['en', 'ru']);
 
 it('only applies string field transforms to string inputs', function (?ColumnType $type) {
     foreach ([
@@ -297,7 +239,7 @@ it('dehydrates native settings forms into string parameters and omits an empty e
 
 it('keeps description values immutable and settings forms independent', function () {
     $input = JsonSchema::fromArray(['type' => 'string', 'format' => 'email', 'maxLength' => 100]);
-    $base = Transformation::make('custom', TransformScope::Field);
+    $base = Transformation::make('custom');
     $definition = $base
         ->label('Custom transform')
         ->description('Custom description')
@@ -378,7 +320,7 @@ it('preserves nullability and replaces value constraints in built-in output sche
 ]);
 
 it('uses schema requirements for format and length dependent availability', function () {
-    $transform = Transformation::make('email', TransformScope::Field)
+    $transform = Transformation::make('email')
         ->inputSchema(['type' => ['string', 'null'], 'format' => 'email', 'maxLength' => 100]);
 
     expect($transform->accepts(JsonSchema::fromArray(['type' => 'string', 'format' => 'email', 'maxLength' => 80])))
@@ -391,7 +333,7 @@ it('uses schema requirements for format and length dependent availability', func
 
 it('passes the complete preceding output schema to callbacks in an ordered chain', function () {
     $registry = app(TransformRegistry::class);
-    $registry->register(Transformation::make('limit', TransformScope::Field)
+    $registry->register(Transformation::make('limit')
         ->inputSchema(['type' => 'string'])
         ->outputSchema(fn (JsonSchema $input, array $params) => [
             ...$input->toArray(),
@@ -429,19 +371,27 @@ it('builds a configured pipeline without registering editor descriptions', funct
     $factory = app(TransformFactory::class);
     $sync = new Sync;
     $sync->forceFill([
-        'transforms' => [new TransformSetting('headless', [
-            'mode' => 'exclude',
-            'column' => '_marked',
-            'type' => 'boolean',
-            'value' => 'true',
-        ])],
-        'schema' => [],
+        'schema' => [new FieldMapping(
+            '_marked',
+            null,
+            new ScalarField(FieldType::Boolean),
+            transforms: [new TransformSetting('headless', [
+                'mode' => 'exclude',
+                'type' => 'boolean',
+                'value' => 'true',
+            ])],
+        )],
     ]);
 
     expect($registry->get('headless'))
         ->toBeNull()
         ->and($factory->handler('headless'))
         ->toBe($handler)
-        ->and($factory->pipeline($sync, new ConnectionMetadata)['before']['record_0']['filter.condition'])
+        ->and(
+            $factory->pipeline($sync, new ConnectionMetadata([
+                'system' => ['_marked' => new ScalarField(FieldType::Boolean)],
+                'properties' => [],
+            ]))['before']['field_0_0']['filter.condition'],
+        )
         ->toBe('$[?(@._marked == true)]');
 });

@@ -3,76 +3,22 @@
 namespace PHPinnacle\Ferry\Rules;
 
 use Closure;
-use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Translation\PotentiallyTranslatedString;
-use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use PHPinnacle\Ferry\Data\DestinationField;
 use PHPinnacle\Ferry\Data\FieldMapping;
-use PHPinnacle\Ferry\Data\StaticValue;
 use PHPinnacle\Ferry\Data\TransformSetting;
 use PHPinnacle\Ferry\Destinations\StaticDestination;
 use PHPinnacle\Ferry\Enums\ColumnType;
-use PHPinnacle\Ferry\Enums\TransformScope;
+use PHPinnacle\Ferry\Enums\FieldKind;
 use PHPinnacle\Ferry\Forms\JsonSchema;
 use PHPinnacle\Ferry\Models\ConnectionMetadata;
 use PHPinnacle\Ferry\Models\Sync;
 use PHPinnacle\Ferry\Services\TransformRegistry;
-use PHPinnacle\Ferry\Transformation;
 
-readonly class SyncSchema implements ValidationRule
+readonly class SyncSchema
 {
-    public function validate(string $attribute, mixed $value, Closure $fail): void
-    {
-        if (!is_array($value)) {
-            $fail('phpinnacle-ferry::validation.sync_schema.format')->translate();
-
-            return;
-        }
-
-        if ($value === []) {
-            $fail('phpinnacle-ferry::validation.sync_schema.empty')->translate();
-
-            return;
-        }
-
-        $sources = [];
-        $columns = [];
-
-        foreach ($value as $row) {
-            $source = is_array($row) ? $row['source'] ?? null : null;
-            $column = is_array($row) ? $row['column'] ?? null : null;
-
-            if (!is_string($source) || $source === '') {
-                $fail('phpinnacle-ferry::validation.sync_schema.source_required')->translate();
-
-                return;
-            }
-
-            if (!is_string($column) || $column === '') {
-                $fail('phpinnacle-ferry::validation.sync_schema.column_required')->translate();
-
-                return;
-            }
-
-            if (array_key_exists($source, $sources)) {
-                $fail('phpinnacle-ferry::validation.sync_schema.source_duplicate')->translate([
-                    'field' => $source,
-                ]);
-
-                return;
-            }
-
-            if (!self::validateColumn($column, $columns, $fail)) {
-                return;
-            }
-
-            $sources[$source] = true;
-            $columns[$column] = true;
-        }
-    }
-
     /**
      * @param list<mixed> $columns
      * @param Closure(string): PotentiallyTranslatedString $fail
@@ -133,8 +79,8 @@ readonly class SyncSchema implements ValidationRule
     }
 
     /**
-     * @param array<string, string> $bindings
-     * @param array{fields?: array<string, list<TransformSetting>>, constants?: array<string, array<string, string>>} $transforms
+     * @param array<string, string|null> $bindings
+     * @param array{fields?: array<string, list<TransformSetting>>, constants?: array<string, mixed>} $transforms
      * @return list<FieldMapping>
      */
     public static function fromBindings(
@@ -147,17 +93,8 @@ readonly class SyncSchema implements ValidationRule
         $mappings = [];
         $fields = array_column($destination->fields ?? [], null, 'id');
 
-        foreach (array_keys($transforms['fields'] ?? []) as $source) {
-            if (!array_key_exists($source, $bindings)) {
-                throw ValidationException::withMessages([
-                    'data.transforms' => __('phpinnacle-ferry::resources.sync.errors.transform_source_unmapped', [
-                        'field' => $source,
-                    ]),
-                ]);
-            }
-        }
-
-        foreach ($bindings as $source => $column) {
+        $sources = $bindings + array_fill_keys(array_keys($transforms['fields'] ?? []), null);
+        foreach ($sources as $source => $column) {
             $source = (string) $source;
             $field = $object->field($source);
 
@@ -174,7 +111,7 @@ readonly class SyncSchema implements ValidationRule
             $schema = JsonSchema::fromArray($type?->jsonSchema() ?? []);
 
             foreach ($settings as $setting) {
-                $transform = self::transform($setting, TransformScope::Field, $registry);
+                $transform = $registry->getOrFail($setting->key);
                 $schema = $transform->accepts($schema) ? $transform->getOutputSchema($schema, $setting->params) : null;
 
                 if ($schema === null) {
@@ -187,7 +124,7 @@ readonly class SyncSchema implements ValidationRule
                 }
             }
 
-            if ($settings !== []) {
+            if ($settings !== [] && $column !== null) {
                 $type = ColumnType::fromJsonSchema($schema);
                 if ($type === null) {
                     throw ValidationException::withMessages([
@@ -199,36 +136,29 @@ readonly class SyncSchema implements ValidationRule
                 }
             }
 
-            if ($destination !== null) {
+            if ($destination !== null && $column !== null) {
                 self::assertNotKeyField($object, $source);
                 self::assertCompatibleWithDestination($fields, $column, $type);
             }
 
-            $mappings[] = new FieldMapping($source, $column, $field, $settings === [] ? null : $type, $settings);
+            $mappings[] = new FieldMapping(
+                $source,
+                $column,
+                $field,
+                $settings === [] ? null : ColumnType::fromJsonSchema($schema),
+                $settings,
+            );
         }
 
-        foreach ($transforms['constants'] ?? [] as $column => $params) {
+        foreach ($transforms['constants'] ?? [] as $column => $value) {
             $column = (string) $column;
-            $validator = Validator::make($params, [
-                'type' => ['required', Rule::enum(ColumnType::class)->only(ColumnType::castable())],
-                'value' => [
-                    'required',
-                    'string',
-                    (ColumnType::tryFrom($params['type'] ?? '') ?? ColumnType::String)->valueRule(),
-                ],
-            ]);
+            Validator::make(['static' => $value], [
+                'static' => ['required', self::validateStaticValue(...)],
+            ])->validate();
+            /** @var string|int|float|bool $value */
+            $mapping = new FieldMapping(null, $column, null, static: $value, kind: FieldKind::Static);
 
-            if ($validator->fails()) {
-                throw ValidationException::withMessages([
-                    'data.schema' => __('phpinnacle-ferry::resources.sync.errors.constant_invalid_value', [
-                        'error' => $validator->errors()->first(),
-                    ]),
-                ]);
-            }
-
-            $type = ColumnType::from($params['type']);
-
-            if (in_array($column, array_column($mappings, 'column'), true)) {
+            if (in_array($column, array_column($mappings, 'target'), true)) {
                 throw ValidationException::withMessages([
                     'data.schema' => __('phpinnacle-ferry::resources.sync.errors.constant_column_taken', [
                         'column' => $column,
@@ -237,10 +167,16 @@ readonly class SyncSchema implements ValidationRule
             }
 
             if ($destination !== null) {
-                self::assertCompatibleWithDestination($fields, $column, $type);
+                self::assertCompatibleWithDestination($fields, $column, $mapping->type());
             }
 
-            $mappings[] = new FieldMapping(null, $column, null, constant: new StaticValue($type, $params['value']));
+            $mappings[] = $mapping;
+        }
+
+        foreach ($object->mappableFields(withKey: $destination === null) as $entry) {
+            if (!array_key_exists($entry['source'], $sources)) {
+                $mappings[] = new FieldMapping($entry['source'], null, $object->field($entry['source']));
+            }
         }
 
         if ($destination !== null) {
@@ -250,35 +186,37 @@ readonly class SyncSchema implements ValidationRule
         return $mappings;
     }
 
-    /**
-     * @param list<TransformSetting> $settings
-     * @return list<TransformSetting>
-     */
-    public static function fromTransforms(array $settings, TransformRegistry $registry): array
+    /** @param Closure(string): PotentiallyTranslatedString $fail */
+    private static function validateStaticValue(string $attribute, mixed $value, Closure $fail): void
     {
-        foreach ($settings as $setting) {
-            self::transform($setting, TransformScope::Record, $registry);
+        if (!is_string($value) && !is_int($value) && !is_float($value) && !is_bool($value)) {
+            $fail('The :attribute field must be a scalar value.')->translate();
         }
-
-        return $settings;
     }
 
-    private static function transform(
-        TransformSetting $setting,
-        TransformScope $scope,
-        TransformRegistry $registry,
-    ): Transformation {
-        $definition = $registry->getOrFail($setting->key);
-
-        if ($definition->scope() !== $scope) {
-            throw ValidationException::withMessages([
-                'data.transforms' => __('phpinnacle-ferry::resources.sync.errors.transform_scope_mismatch', [
-                    'transform' => $definition->getLabel(),
-                ]),
-            ]);
+    /** @param list<FieldMapping> $mappings */
+    public static function assertValid(array $mappings, ?StaticDestination $destination): void
+    {
+        $fields = array_column($destination->fields ?? [], null, 'id');
+        foreach ($mappings as $mapping) {
+            if ($mapping->target === null) {
+                continue;
+            }
+            $type = $mapping->type();
+            if ($type === null) {
+                throw ValidationException::withMessages([
+                    'data.schema' => __('phpinnacle-ferry::resources.sync.errors.unsupported_field_type', [
+                        'column' => $mapping->target,
+                    ]),
+                ]);
+            }
+            if ($destination !== null) {
+                self::assertCompatibleWithDestination($fields, $mapping->target, $type);
+            }
         }
-
-        return $definition;
+        if ($destination !== null) {
+            self::assertRequiredFieldsMapped($fields, $mappings);
+        }
     }
 
     /** @param array<string, DestinationField> $fields */
@@ -323,7 +261,7 @@ readonly class SyncSchema implements ValidationRule
      */
     private static function assertRequiredFieldsMapped(array $fields, array $mappings): void
     {
-        $mapped = array_map(static fn (FieldMapping $mapping) => $mapping->column, $mappings);
+        $mapped = array_map(static fn (FieldMapping $mapping) => $mapping->target, $mappings);
 
         foreach ($fields as $field) {
             if ($field->required && !in_array($field->id, $mapped, true)) {

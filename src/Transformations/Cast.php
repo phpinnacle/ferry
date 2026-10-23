@@ -5,7 +5,6 @@ namespace PHPinnacle\Ferry\Transformations;
 use Filament\Forms\Components\Select;
 use Filament\Support\Icons\Heroicon;
 use PHPinnacle\Ferry\Enums\ColumnType;
-use PHPinnacle\Ferry\Enums\TransformScope;
 use PHPinnacle\Ferry\Forms\JsonSchema;
 use PHPinnacle\Ferry\Transformation;
 
@@ -13,7 +12,7 @@ final class Cast
 {
     public static function make(): Transformation
     {
-        return Transformation::make('cast', TransformScope::Field)
+        return Transformation::make('cast')
             ->label(fn () => __('phpinnacle-ferry::resources.transform.cast'))
             ->description(fn () => __('phpinnacle-ferry::resources.transform.cast_description'))
             ->icon(Heroicon::ArrowPath)

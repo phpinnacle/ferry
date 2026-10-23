@@ -114,7 +114,6 @@ return new class extends Migration {
             $table->string('source');
             $table->string('destination');
             $table->json('schema');
-            $table->json('transforms')->default('[]');
             $table->timestamps();
 
             $this->addTenancy($table);

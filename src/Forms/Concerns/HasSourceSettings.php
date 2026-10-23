@@ -24,8 +24,6 @@ trait HasSourceSettings
     /** @return list<MappingItem> */
     abstract public function getSources(): array;
 
-    abstract public function isSourceUsed(string $source): bool;
-
     /** @param array<Component>|Closure $schema */
     public function sourceSettings(array|Closure $schema): static
     {
@@ -69,9 +67,7 @@ trait HasSourceSettings
                 ->makeChildSchema('settings_' . $key)
                 ->statePath('sources.' . $key)
                 ->components([
-                    Group::make($this->evaluate($this->sourceSettingsSchema, ['source' => (string) $source]))
-                        ->dehydrated(fn () => $this->isSourceUsed((string) $source))
-                        ->validatedWhenNotDehydrated(false),
+                    Group::make($this->evaluate($this->sourceSettingsSchema, ['source' => (string) $source])),
                 ])
                 ->getClone();
         }

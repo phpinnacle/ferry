@@ -14,7 +14,6 @@ use PHPinnacle\Ferry\Models\ConnectionMetadata;
 use PHPinnacle\Ferry\Models\Sync;
 use PHPinnacle\Ferry\Resources\Syncs\Schemas\SyncForm;
 use PHPinnacle\Ferry\Services\DestinationFactory;
-use PHPinnacle\Ferry\Services\TransformRegistry;
 use PHPinnacle\Ferry\Tests\Fixtures\MappingState;
 use PHPinnacle\Ferry\Tests\Fixtures\SchemaHost;
 use PHPinnacle\Ferry\Tests\TestCase;
@@ -166,7 +165,10 @@ it('validates the static mapping against the declared destination fields', funct
     $schema->fill($livewire->data);
 
     if ($valid) {
-        expect($schema->getState()['schema'])
+        expect(array_map(fn (array $row) => array_diff_key(
+            $row,
+            array_flip(['field', 'result']),
+        ), $schema->getState()['schema']))
             ->toBe(MappingState::mapping($mapping, [
                 '_description' => ['transforms' => []],
                 '_code' => ['transforms' => []],
@@ -175,7 +177,6 @@ it('validates the static mapping against the declared destination fields', funct
                 SyncForm::forCreate(
                     $schema->getState(),
                     app(DestinationFactory::class),
-                    app(TransformRegistry::class),
                 )['type'],
             )
             ->toBe(DestinationType::Static);
@@ -224,7 +225,10 @@ it('validates the bound column names of a dynamic synchronization', function (st
     ]);
 
     if ($valid) {
-        expect($schema->getState()['schema'])
+        expect(array_map(fn (array $row) => array_diff_key(
+            $row,
+            array_flip(['field', 'result']),
+        ), $schema->getState()['schema']))
             ->toBe(MappingState::binding(['_idrref' => $column], ['_idrref' => ['transforms' => []]]));
 
         return;
@@ -247,21 +251,23 @@ it('creates every parameter of a chosen transform so that live inputs can bind t
         'source' => 'object-0',
         'destination' => DestinationType::Dynamic->value,
         'schema' => [],
-        'transforms' => [],
     ]);
 
-    $builder = $schema->getComponentByStatePath('transforms');
-    $builder->getAction('add')->arguments(['block' => 'filter'])->call();
-    expect($builder->getRawItemState(array_key_first($builder->getItems())))
-        ->toMatchArray(['mode' => 'exclude', 'column' => null, 'value' => null]);
+    $mapping = $schema->getComponentByStatePath('schema');
+    $key = $mapping->getSourceStateKeys()['_folder'];
+    $field = $schema->getComponentByStatePath('schema.sources.' . $key . '.transforms');
+    $action = $field->getAction('fieldTransforms')(['transform' => 'filter']);
+    $components = $action->getSchema(FilamentSchema::make($livewire))->getFlatComponents();
+    $value = collect($components)->first(
+        fn ($component) => $component instanceof Select && $component->getName() === 'value',
+    );
 
-    $column = collect($schema->getFlatComponents())
-        ->first(fn ($component) => $component instanceof Select && $component->getName() === 'column');
-    $column->state('_folder')->callAfterStateUpdated();
-    $value = collect($schema->getFlatComponents(withHidden: true))
-        ->first(fn ($component) => $component instanceof Select && $component->getName() === 'value');
-
-    expect($value->isVisible())->toBeTrue()->and($value->getOptions())->toBe(['true' => 'Yes', 'false' => 'No']);
+    expect($value->getOptions())
+        ->toBe(['true' => 'Yes', 'false' => 'No'])
+        ->and(collect($components)->contains(
+            fn ($component) => method_exists($component, 'getName') && $component->getName() === 'column',
+        ))
+        ->toBeFalse();
 });
 
 it('orders source objects with references first, obsolete ones last and titles case-insensitively', function () use (
@@ -379,7 +385,10 @@ it('resets the shared schema when switching destinations', function (string $fro
     expect($mapping)
         ->toBeInstanceOf($to === 'dynamic' ? FieldBinding::class : FieldMapping::class);
     expect($mapping->isSourceUsed('_description'))->toBeFalse();
-    expect($mapping->getSourceSettings())->toBe(['_description' => ['transforms' => []]]);
+    expect(array_map(
+        fn (array $settings) => $settings['transforms'],
+        $mapping->getSourceSettings(),
+    ))->toBe(['_description' => []]);
     view()->share('errors', new \Illuminate\Support\ViewErrorBag);
     expect($form->toHtml())->toContain('Field Mapping');
 })->with([
@@ -435,3 +444,28 @@ it('passes outdated mappings to the field warnings instead of a separate entry',
         expect(array_keys($field->getTargetWarnings()))->toBe(['name', 'gone', 'tax_number']);
     }
 })->with([DestinationType::Dynamic, DestinationType::Static]);
+
+it('warns on a changed source used only by a filter', function () {
+    $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
+    TestCase::makeMetadata($connection, ['system' => [
+        '_marked' => new StringField(length: 10, fixed: false),
+    ]]);
+    $sync = TestCase::makeSync([
+        'connection_id' => $connection->id,
+        'schema' => [
+            new SchemaMapping('_marked', null, new ScalarField(FieldType::Boolean), transforms: [
+                new \PHPinnacle\Ferry\Data\TransformSetting('filter', [
+                    'mode' => 'exclude',
+                    'type' => 'boolean',
+                    'value' => 'true',
+                ]),
+            ]),
+        ],
+    ]);
+    $form = SyncForm::configure(
+        FilamentSchema::make(SchemaHost::make())->statePath('data')->record($sync)->operation('edit'),
+    );
+    $form->fill(SyncForm::fill($sync->toArray()));
+
+    expect($form->getComponentByStatePath('schema')->getWarnings())->toHaveKey('_marked');
+});

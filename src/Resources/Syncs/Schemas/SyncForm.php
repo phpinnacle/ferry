@@ -3,6 +3,7 @@
 namespace PHPinnacle\Ferry\Resources\Syncs\Schemas;
 
 use Closure;
+use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Components\Grid;
@@ -16,12 +17,10 @@ use Illuminate\Validation\ValidationException;
 use PHPinnacle\Common\Concerns\FormSlug;
 use PHPinnacle\Ferry\Data\DestinationField;
 use PHPinnacle\Ferry\Data\FieldMapping as SchemaMapping;
-use PHPinnacle\Ferry\Data\TransformSetting;
 use PHPinnacle\Ferry\Destinations\StaticDestination;
 use PHPinnacle\Ferry\Enums\ColumnType;
 use PHPinnacle\Ferry\Enums\DestinationType;
 use PHPinnacle\Ferry\Enums\StructureStatus;
-use PHPinnacle\Ferry\Enums\TransformScope;
 use PHPinnacle\Ferry\Forms\FieldBinding;
 use PHPinnacle\Ferry\Forms\FieldMapping;
 use PHPinnacle\Ferry\Forms\FieldTransforms;
@@ -37,14 +36,11 @@ use PHPinnacle\Rosetta\Enums\MetadataKind;
 /**
  * @phpstan-import-type TransformInput from TransformRegistry
  *
- * @phpstan-type SchemaState array<string, array{kind: 'source', source: string, value: string, transforms?: list<TransformRow>}|array{kind: 'value', value: array{value: string, type: string}}>
- * @phpstan-type StaticState array<string, array{kind: 'source', source: string, transforms?: list<TransformRow>}|array{kind: 'value', value: string}>
- * @phpstan-type SettingState array{key: string, params: array<string, string>}
- * @phpstan-type TransformRow array{key: string, params?: array<string, string>}
- * @phpstan-type CreateState array{name: string, connection_id: string, code: string, source: string, destination: string, schema: SchemaState|StaticState, transforms?: array<array-key, TransformRow>}
- * @phpstan-type EditState array{name: string, schema: SchemaState|StaticState, transforms?: array<array-key, TransformRow>}
- * @phpstan-type FillMapping array{source: string, column: string, transforms?: list<SettingState>}|array{source: null, column: string, constant: array{type: value-of<ColumnType>, value: string}}
- * @phpstan-type FillState array{type: value-of<DestinationType>, destination: string, schema: list<FillMapping>, transforms: list<SettingState>}
+ * @phpstan-import-type MappingData from SchemaMapping
+ * @phpstan-type SchemaState list<MappingData>
+ * @phpstan-type CreateState array{name: string, connection_id: string, code: string, source: string, destination: string, schema: SchemaState}
+ * @phpstan-type EditState array{name: string, schema: SchemaState}
+ * @phpstan-type FillState array{type: value-of<DestinationType>, destination: string, schema: SchemaState}
  */
 class SyncForm
 {
@@ -54,32 +50,7 @@ class SyncForm
      */
     public static function fill(array $data): array
     {
-        $schema = [];
         $isStatic = $data['type'] === DestinationType::Static->value;
-
-        foreach ($data['schema'] as $mapping) {
-            $settings = $mapping['transforms'] ?? [];
-            if ($isStatic) {
-                $schema[$mapping['column']] = $mapping['source'] === null
-                    ? ['kind' => 'value', 'value' => $mapping['constant']['value']]
-                    : ['kind' => 'source', 'source' => $mapping['source'], 'transforms' => $settings];
-                continue;
-            }
-
-            if ($mapping['source'] === null) {
-                $schema[$mapping['column']] = ['kind' => 'value', 'value' => $mapping['constant']];
-
-                continue;
-            }
-            $schema[$mapping['source']] = [
-                'kind' => 'source',
-                'source' => $mapping['source'],
-                'value' => $mapping['column'],
-                'transforms' => $settings,
-            ];
-        }
-
-        $data['schema'] = $schema;
         $data['destination'] = $isStatic ? 'static:' . $data['destination'] : DestinationType::Dynamic->value;
 
         return $data;
@@ -87,16 +58,17 @@ class SyncForm
 
     /**
      * @param CreateState $data
-     * @return array{connection_id: string, name: string, code: string, source: string, type: DestinationType, destination: string|null, schema: list<SchemaMapping>, transforms: list<TransformSetting>}
+     * @return array{connection_id: string, name: string, code: string, source: string, type: DestinationType, destination: string|null, schema: SchemaState}
      */
     public static function forCreate(
         array $data,
         DestinationFactory $destinations,
-        TransformRegistry $registry,
     ): array {
-        $object = self::object(Connection::query()->find($data['connection_id']), $data['source'], 'data.source');
+        self::object(Connection::query()->find($data['connection_id']), $data['source'], 'data.source');
         $key = self::staticKey($data['destination']);
         $destination = $key !== null ? $destinations->getOrFail($key) : null;
+
+        SyncSchema::assertValid(array_map(SchemaMapping::fromArray(...), $data['schema']), $destination);
 
         return [
             'connection_id' => $data['connection_id'],
@@ -105,25 +77,20 @@ class SyncForm
             'source' => $data['source'],
             'type' => $destination === null ? DestinationType::Dynamic : DestinationType::Static,
             'destination' => $destination?->key,
-            'schema' => self::mappings($object, $data, $destination, $registry),
-            'transforms' => SyncSchema::fromTransforms(
-                self::settings($data['transforms'] ?? []),
-                $registry,
-            ),
+            'schema' => $data['schema'],
         ];
     }
 
     /**
      * @param EditState $data
-     * @return array{name: string, schema: list<SchemaMapping>, transforms: list<TransformSetting>}
+     * @return array{name: string, schema: SchemaState}
      */
     public static function forUpdate(
         array $data,
         Sync $record,
         DestinationFactory $destinations,
-        TransformRegistry $registry,
     ): array {
-        $object = self::object($record->connection, $record->source, 'data.schema');
+        self::object($record->connection, $record->source, 'data.schema');
         $destination = $record->type === DestinationType::Static ? $destinations->get($record->destination) : null;
 
         if ($record->type === DestinationType::Static && $destination === null) {
@@ -134,76 +101,12 @@ class SyncForm
             ]);
         }
 
+        SyncSchema::assertValid(array_map(SchemaMapping::fromArray(...), $data['schema']), $destination);
+
         return [
             'name' => $data['name'],
-            'schema' => self::mappings($object, $data, $destination, $registry),
-            'transforms' => SyncSchema::fromTransforms(
-                self::settings($data['transforms'] ?? []),
-                $registry,
-            ),
+            'schema' => $data['schema'],
         ];
-    }
-
-    /**
-     * @param CreateState|EditState $data
-     * @return list<SchemaMapping>
-     */
-    private static function mappings(
-        ConnectionMetadata $object,
-        array $data,
-        ?StaticDestination $destination,
-        TransformRegistry $registry,
-    ): array {
-        $fields = array_column($destination->fields ?? [], null, 'id');
-        $bindings = [];
-        $constants = [];
-        $fieldTransforms = [];
-
-        if ($destination !== null) {
-            /** @var StaticState $schema */
-            $schema = $data['schema'];
-            foreach ($schema as $column => $entry) {
-                if ($entry['kind'] === 'value') {
-                    $constants[$column] = ['type' => $fields[$column]->type->value, 'value' => $entry['value']];
-
-                    continue;
-                }
-                $bindings[$entry['source']] = $column;
-                $fieldTransforms[$entry['source']] = self::settings($entry['transforms'] ?? []);
-            }
-        } else {
-            /** @var SchemaState $schema */
-            $schema = $data['schema'];
-            foreach ($schema as $key => $entry) {
-                if ($entry['kind'] === 'value') {
-                    $constants[$key] = $entry['value'];
-
-                    continue;
-                }
-                $bindings[$entry['source']] = $entry['value'];
-                $fieldTransforms[$entry['source']] = self::settings($entry['transforms'] ?? []);
-            }
-        }
-
-        return SyncSchema::fromBindings(
-            $object,
-            $bindings,
-            $registry,
-            $destination,
-            ['fields' => $fieldTransforms, 'constants' => $constants],
-        );
-    }
-
-    /**
-     * @param array<array-key, TransformRow> $rows
-     * @return list<TransformSetting>
-     */
-    private static function settings(array $rows): array
-    {
-        return array_values(array_map(
-            TransformSetting::fromArray(...),
-            $rows,
-        ));
     }
 
     private static function object(?Connection $connection, string $source, string $attribute): ConnectionMetadata
@@ -268,7 +171,7 @@ class SyncForm
                             ->disabledOn('edit')
                             ->afterStateUpdated(function (Select $component, Set $set) {
                                 $set('source', null);
-                                self::resetSource($set, $component);
+                                self::resetMapping($set, $component);
                             }),
                         Select::make('source')
                             ->label(__('phpinnacle-ferry::resources.sync.fields.source'))
@@ -283,7 +186,7 @@ class SyncForm
                             ->required()
                             ->live()
                             ->disabledOn('edit')
-                            ->afterStateUpdated(self::resetSource(...)),
+                            ->afterStateUpdated(self::resetMapping(...)),
                         Select::make('destination')
                             ->label(__('phpinnacle-ferry::resources.sync.fields.destination'))
                             ->options(self::destinationOptions(...))
@@ -328,8 +231,11 @@ class SyncForm
                 }
 
                 foreach ($record->schema ?? [] as $mapping) {
-                    if ($mapping->source !== null && array_key_exists($mapping->column, $targetWarnings)) {
-                        $sourceWarnings[$mapping->source] = $targetWarnings[$mapping->column];
+                    if ($mapping->source !== null) {
+                        $warning = $mapping->target ?? $mapping->source;
+                        if (array_key_exists($warning, $targetWarnings)) {
+                            $sourceWarnings[$mapping->source] = $targetWarnings[$warning];
+                        }
                     }
                 }
 
@@ -346,18 +252,28 @@ class SyncForm
                 }
 
                 $mapping->sourceSettings(fn (string $source) => [
+                    Hidden::make('field')->dehydrateStateUsing(fn () => $object?->field($source)?->jsonSerialize()),
+                    Hidden::make('result')->dehydrateStateUsing(function (Get $get) use (
+                        $registry,
+                        $sourceSchema,
+                        $source,
+                    ) {
+                        /** @var list<TransformInput> $settings */
+                        $settings = $get('transforms');
+                        $schema = $registry->resultSchema(
+                            JsonSchema::fromArray($sourceSchema['properties'][$source]),
+                            $settings,
+                        );
+
+                        return $schema !== null ? ColumnType::fromJsonSchema($schema)?->value : null;
+                    }),
                     FieldTransforms::make('transforms')
                         ->label($sourceSchema['properties'][$source]['title'])
                         ->object($object)
                         ->inputSchema($sourceSchema['properties'][$source]),
                 ]);
 
-                return [
-                    $mapping,
-                    TransformsBuilder::make(TransformScope::Record, $object, $registry)
-                        ->label(__('phpinnacle-ferry::resources.sync.fields.transforms'))
-                        ->columnSpanFull(),
-                ];
+                return [$mapping];
             });
     }
 
@@ -375,7 +291,7 @@ class SyncForm
                 dest: __('phpinnacle-ferry::resources.sync.fields.target_column'),
             )
             ->simple(
-                TextInput::make('column')
+                TextInput::make('target')
                     ->label(__('phpinnacle-ferry::resources.sync.fields.target_column'))
                     ->maxLength(255)
                     ->required(),
@@ -384,11 +300,11 @@ class SyncForm
             ->rule(fn (FieldBinding $component) => function (string $attribute, mixed $value, Closure $fail) use (
                 $component,
             ) {
+                /** @var list<array{target: string|null}> $bindings */
                 $bindings = $component->getBindingValues();
-                SyncSchema::validateColumns(array_map(
-                    static fn (mixed $binding, int|string $source) => is_array($binding) ? $source : $binding,
-                    $bindings,
-                    array_keys($bindings),
+                SyncSchema::validateColumns(array_column(
+                    array_filter($bindings, static fn (array $entry) => $entry['target'] !== null),
+                    'target',
                 ), $fail);
             })
             ->columnSpanFull();
@@ -399,7 +315,7 @@ class SyncForm
     {
         return [
             Grid::make(3)->schema([
-                TextInput::make('column')
+                TextInput::make('target')
                     ->label(__('phpinnacle-ferry::resources.sync.fields.target_column'))
                     ->maxLength(255)
                     ->required(),
@@ -407,9 +323,30 @@ class SyncForm
                     ->label(__('phpinnacle-ferry::resources.sync.fields.constant_type'))
                     ->options(ColumnType::castableOptions())
                     ->default(ColumnType::String->value)
+                    ->afterStateHydrated(fn (Select $component, Get $get) => $component->state(match (true) {
+                        is_bool($get('static')) => 'boolean',
+                        is_int($get('static')) => 'integer',
+                        is_float($get('static')) => 'decimal',
+                        default => 'string',
+                    }))
+                    ->dehydrated(false)
+                    ->live()
                     ->required(),
-                TextInput::make('value')
+                TextInput::make('static')
+                    ->formatStateUsing(fn (string|int|float|bool|null $state) => (
+                        is_bool($state) ? ($state ? 'true' : 'false') : $state
+                    ))
                     ->label(__('phpinnacle-ferry::resources.sync.fields.constant_value'))
+                    ->rule(fn (Get $get) => ColumnType::from($get->string('type'))->valueRule())
+                    ->dehydrateStateUsing(fn (
+                        string|int|float|bool|null $state,
+                        Get $get,
+                    ) => match (ColumnType::from($get->string('type'))) {
+                        ColumnType::Boolean => $state === true || $state === 'true',
+                        ColumnType::Integer => (int) $state,
+                        ColumnType::Decimal => (float) $state,
+                        default => $state,
+                    })
                     ->required(),
             ]),
         ];
@@ -503,12 +440,6 @@ class SyncForm
         $container->clearCachedChildSchemas();
         $defaultState = null;
         $container->getComponentByStatePath('schema')?->hydrateState($defaultState);
-    }
-
-    private static function resetSource(Set $set, Select $component): void
-    {
-        $set('transforms', []);
-        self::resetMapping($set, $component);
     }
 
     /** @return array{type: 'object', properties: array<string, array{title: string, type: string, format?: string}>} */

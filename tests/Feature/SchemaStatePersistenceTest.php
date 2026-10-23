@@ -1,0 +1,78 @@
+<?php
+
+use Filament\Schemas\Schema;
+use Illuminate\Support\Facades\Queue;
+use PHPinnacle\Ferry\Enums\ColumnType;
+use PHPinnacle\Ferry\Enums\StructureStatus;
+use PHPinnacle\Ferry\Models\Sync;
+use PHPinnacle\Ferry\Resources\Syncs\Schemas\SyncForm;
+use PHPinnacle\Ferry\Services\DestinationFactory;
+use PHPinnacle\Ferry\Tests\Fixtures\SchemaHost;
+use PHPinnacle\Ferry\Tests\TestCase;
+use PHPinnacle\Rosetta\Enums\FieldType;
+use PHPinnacle\Rosetta\Fields\ScalarField;
+use PHPinnacle\Rosetta\Fields\StringField;
+
+require_once __DIR__ . '/../TestCase.php';
+require_once __DIR__ . '/../Fixtures/SchemaHost.php';
+
+uses(TestCase::class);
+
+it('stores and restores the exact native schema emitted by the form', function (
+    string|int|float|bool $value,
+    string $type,
+) {
+    Queue::fake();
+    $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
+    TestCase::makeMetadata($connection, ['system' => [
+        '_description' => new StringField(length: 100, fixed: false),
+        '_marked' => new ScalarField(FieldType::Boolean),
+        '_unused' => new StringField(length: 20, fixed: false),
+    ]]);
+    $livewire = SchemaHost::make();
+    $form = SyncForm::configure(Schema::make($livewire)->statePath('data')->operation('create'));
+    $form->fill([
+        'connection_id' => $connection->id,
+        'source' => 'object-0',
+        'destination' => 'dynamic',
+        'name' => 'Native schema',
+        'code' => 'native_schema',
+        'schema' => [
+            ['kind' => 'source', 'source' => '_description', 'target' => 'name', 'transforms' => []],
+            [
+                'kind' => 'source',
+                'source' => '_marked',
+                'target' => null,
+                'transforms' => [
+                    ['key' => 'filter', 'params' => ['mode' => 'exclude', 'value' => 'true', 'type' => 'boolean']],
+                ],
+            ],
+            ['kind' => 'static', 'target' => 'constant', 'static' => $value],
+        ],
+    ]);
+    $state = $form->getState();
+    $attributes = SyncForm::forCreate($state, app(DestinationFactory::class));
+    expect($attributes['schema'])->toBe($state['schema']);
+
+    $sync = Sync::create($attributes);
+    $raw = $sync->getConnection()->table('syncs')->where('id', $sync->id)->value('schema');
+    expect(json_decode($raw, true, flags: JSON_THROW_ON_ERROR))
+        ->toBe($state['schema'])
+        ->and($sync->fresh()->toArray()['schema'])
+        ->toEqual($state['schema'])
+        ->and($sync->fresh()->schema[3]->static)
+        ->toBe($value)
+        ->and($sync->fresh()->schema[3]->type())
+        ->toBe(ColumnType::from($type))
+        ->and($sync->getConnection()->getSchemaBuilder()->getColumnListing($sync->destination))
+        ->toBe(['idrref', 'name', 'constant']);
+
+    $edit = SyncForm::configure(Schema::make($livewire)->statePath('data')->record($sync)->operation('edit'));
+    $edit->fill(SyncForm::fill($sync->fresh()->toArray()));
+    expect($edit->getState()['schema'])->toEqual($state['schema']);
+})->with([
+    'false' => [false, 'boolean'],
+    'zero' => [0, 'integer'],
+    'whole decimal' => [1.0, 'decimal'],
+    'string true' => ['true', 'string'],
+]);

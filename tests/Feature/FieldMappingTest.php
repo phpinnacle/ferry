@@ -85,16 +85,26 @@ it('offers registered static editors for every destination and validates their d
             'boolean' => fn () => Toggle::make('value')->default(false),
         ]);
     $schema->fill(['mapping' => MappingState::mapping([])]);
-    expect($schema->getState()['mapping'])->toEqualCanonicalizing([
-        'name.part' => MappingState::value(null),
-        'enabled' => MappingState::value(false),
-    ]);
+    expect($schema->getState()['mapping'])
+        ->toEqualCanonicalizing(MappingState::mapping(
+            [
+                'name.part' => MappingState::value(null),
+                'enabled' => MappingState::value(false),
+            ],
+            [],
+            array_column($schema->getComponent('mapping')->getSources(), 'id'),
+        ));
 
     $schema->fill(['mapping' => MappingState::mapping(['name.part' => MappingState::source('source')])]);
-    expect($schema->getState()['mapping'])->toEqualCanonicalizing([
-        'name.part' => MappingState::source('source'),
-        'enabled' => MappingState::value(false),
-    ]);
+    expect($schema->getState()['mapping'])
+        ->toEqualCanonicalizing(MappingState::mapping(
+            [
+                'name.part' => MappingState::source('source'),
+                'enabled' => MappingState::value(false),
+            ],
+            [],
+            array_column($schema->getComponent('mapping')->getSources(), 'id'),
+        ));
 });
 
 it('renders inline static forms and round trips typed values and literal identifiers', function () {
@@ -108,17 +118,23 @@ it('renders inline static forms and round trips typed values and literal identif
     view()->share('errors', new ViewErrorBag);
 
     expect($schema->toHtml())->toContain('role="switch"');
-    expect($schema->getState()['mapping'])->toBe([
-        'name.part' => MappingState::value('HELLO'),
-        'enabled' => MappingState::value(false),
-        'count' => MappingState::value(0.0),
-        '0' => MappingState::value('007'),
-        'raw' => MappingState::value('009'),
-    ]);
+    expect($schema->getState()['mapping'])
+        ->toBe(MappingState::mapping(
+            [
+                'name.part' => MappingState::value('HELLO'),
+                'enabled' => MappingState::value(false),
+                'count' => MappingState::value(0.0),
+                '0' => MappingState::value('007'),
+                'raw' => MappingState::value('009'),
+            ],
+            [],
+            array_column($schema->getComponent('mapping')->getSources(), 'id'),
+        ));
 });
 
 it('supports array static editors alongside collection connections', function (array $mapping) {
-    expect(static_mapping_schema($mapping)->getState()['mapping'])->toBe($mapping);
+    $schema = static_mapping_schema($mapping);
+    expect($schema->getState()['mapping'])->toBe(MappingState::mapping($mapping, [], ['source']));
 })->with([
     'static array' => [['tags' => MappingState::value(['one', 'two'])]],
     'collected source' => [['tags' => [MappingState::source('source')]]],
@@ -133,7 +149,6 @@ it('validates static values through their registered Filament fields', function 
     'long text' => [['name.part' => MappingState::value('longer than five')]],
     'negative number' => [['count' => MappingState::value(-1)]],
     'empty static value without an editor' => [['raw' => MappingState::value('')]],
-    'extra static keys' => [['enabled' => [...MappingState::value(true), 'extra' => true]]],
 ]);
 
 it('only renders mapping search inputs when enabled, including closure configuration', function () {
@@ -159,7 +174,12 @@ it('only renders mapping search inputs when enabled, including closure configura
     expect(substr_count($schema->toHtml(), 'type="search"'))->toBe(2);
     $enabled = false;
     expect($schema->toHtml())->not->toContain('type="search"');
-    expect($schema->getState()['mapping'])->toBe(['name' => MappingState::source('title')]);
+    expect($schema->getState()['mapping'])
+        ->toBe(MappingState::mapping(
+            ['name' => MappingState::source('title')],
+            [],
+            array_column($schema->getComponent('mapping')->getSources(), 'id'),
+        ));
 });
 
 it('preserves standalone mapping content and values across presentation options', function (
@@ -217,7 +237,12 @@ it('preserves standalone mapping content and values across presentation options'
     expect(str_contains($text, 'Show unmapped'))->toBe($contained);
     expect($html)->toContain('aria-live="polite"');
     expect($html)->toContain(FilamentAsset::getAlpineComponentSrc('field-mapping', FerryServiceProvider::PACKAGE));
-    expect($schema->getState()['mapping'])->toBe(['name' => MappingState::source('title')]);
+    expect($schema->getState()['mapping'])
+        ->toBe(MappingState::mapping(
+            ['name' => MappingState::source('title')],
+            [],
+            array_column($schema->getComponent('mapping')->getSources(), 'id'),
+        ));
 })->with([true, false])->with([true, false])->with([true, false]);
 
 it('keeps the mapping toolbar when either side has no fields', function (
@@ -409,10 +434,15 @@ it('shows only the final type and uses it for connection checks', function () {
 
     expect(strip_tags($html))->toContain('string')->not->toContain('boolean', '→');
     expect($field->getSources()[0]['type'])->toBe('boolean');
-    expect($schema->getState()['mapping'])->toBe(['name' => MappingState::source('active')]);
+    expect($schema->getState()['mapping'])
+        ->toBe(MappingState::mapping(
+            ['name' => MappingState::source('active')],
+            [],
+            array_column($schema->getComponent('mapping')->getSources(), 'id'),
+        ));
 });
 
-it('submits source settings only for connections and ignores unused invalid drafts', function (bool $inverse) {
+it('persists and validates source settings independently of connections', function (bool $inverse) {
     $field = FieldMapping::make('mapping')
         ->jsonSchema(source: [
             'properties' => ['first.part' => ['type' => 'string'], '0' => ['type' => 'string']],
@@ -445,7 +475,7 @@ it('submits source settings only for connections and ignores unused invalid draf
     ]);
     $key = $field->getSourceStateKeys()['first.part'];
     $field->getChildSchemas()['settings_' . $key]->getComponent('alias')->state('');
-    expect($schema->getState()['mapping'])->toBe([]);
+    expect($schema->getState(...))->toThrow(ValidationException::class);
     $schema->fill(['mapping' => MappingState::mapping(['name' => MappingState::source('first.part')], ['first.part' => [
         'alias' => '',
         'enabled' => false,
@@ -511,7 +541,7 @@ it('shows settings for newly available sources without requiring a connection or
     expect($schema->toHtml())->toContain('Alias for name', 'Alias for email');
 })->with([false, true]);
 
-it('ignores invalid unused transform drafts and validates them once selected', function (
+it('validates transform settings on unconnected sources', function (
     bool $binding,
     string $type,
     array $transforms,
@@ -529,7 +559,7 @@ it('ignores invalid unused transform drafts and validates them once selected', f
     $settingsKey = $field->getSourceStateKeys()['input'];
     $field->getChildSchemas()['settings_' . $settingsKey]->getComponent('transforms')->state($transforms);
 
-    expect($schema->getState()['widget'])->toBe([]);
+    expect($schema->getState(...))->toThrow(ValidationException::class);
 
     if ($binding) {
         $field->getAction('bind')(['source' => 'input'])->call();

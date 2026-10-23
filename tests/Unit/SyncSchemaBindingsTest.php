@@ -34,8 +34,8 @@ it('builds dynamic mappings directly from source to column bindings', function (
         app(TransformRegistry::class),
     );
 
-    expect(array_column($mappings, 'column', 'source'))
-        ->toBe(['_idrref' => 'external_id', '_description' => 'title'])
+    expect(array_column($mappings, 'target', 'source'))
+        ->toBe(['_idrref' => 'external_id', '_description' => 'title', '_marked' => null, '_code' => null])
         ->and($mappings[0]->field)
         ->toEqual(new ScalarField(FieldType::Id))
         ->and($mappings[1]->field)
@@ -45,13 +45,13 @@ it('builds dynamic mappings directly from source to column bindings', function (
 it('maps source fields to compatible static destination fields', function () {
     $mappings = SyncSchema::fromBindings(
         $this->object,
-        ['_description' => 'name', '_code' => 'tax_number'],
+        ['_description' => 'name', '_code' => 'tax_number', '_marked' => null],
         app(TransformRegistry::class),
         customers_destination(),
     );
 
-    expect(array_column($mappings, 'column', 'source'))
-        ->toBe(['_description' => 'name', '_code' => 'tax_number']);
+    expect(array_column($mappings, 'target', 'source'))
+        ->toBe(['_description' => 'name', '_code' => 'tax_number', '_marked' => null]);
 });
 
 it('rejects bindings that do not match source or destination declarations', function (

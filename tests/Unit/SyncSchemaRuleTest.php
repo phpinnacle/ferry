@@ -7,10 +7,13 @@ use Tests\TestCase;
 
 uses(TestCase::class);
 
-$validate = function (mixed $schema) {
+$validate = function (mixed $columns) {
     $validator = Validator::make(
-        ['schema' => $schema],
-        ['schema' => [new SyncSchema]],
+        ['schema' => $columns],
+        ['schema' => [
+            'array',
+            fn (string $attribute, mixed $value, Closure $fail) => SyncSchema::validateColumns($value, $fail),
+        ]],
     );
 
     return $validator->errors()->first('schema') !== ''
@@ -18,49 +21,21 @@ $validate = function (mixed $schema) {
         : null;
 };
 
-it('accepts a valid field mapping', function () use ($validate) {
-    expect($validate([
-        ['source' => '_idrref', 'column' => 'external_id'],
-        ['source' => 'property-1', 'column' => 'title'],
-    ]))->toBeNull();
-});
-
-it('rejects a mapping that is not a list of rows', function () use ($validate) {
-    expect($validate('external_id'))->toBe(__('phpinnacle-ferry::validation.sync_schema.format'));
+it('accepts valid target columns', function () use ($validate) {
+    expect($validate(['external_id', 'title']))->toBeNull();
 });
 
 it('requires at least one mapped column', function () use ($validate) {
     expect($validate([]))->toBe(__('phpinnacle-ferry::validation.sync_schema.empty'));
 });
 
-it('requires a source field in every row', function () use ($validate) {
-    expect($validate([['column' => 'title']]))
-        ->toBe(__('phpinnacle-ferry::validation.sync_schema.source_required'));
-});
-
-it('requires a column name in every row', function () use ($validate) {
-    expect($validate([['source' => '_idrref']]))
-        ->toBe(__('phpinnacle-ferry::validation.sync_schema.column_required'));
-});
-
-it('forbids mapping the same source field twice', function () use ($validate) {
-    expect($validate([
-        ['source' => '_idrref', 'column' => 'external_id'],
-        ['source' => '_idrref', 'column' => 'row_id'],
-    ]))
-        ->toBe(__('phpinnacle-ferry::validation.sync_schema.source_duplicate', ['field' => '_idrref']));
-});
-
 it('forbids reusing a column name', function () use ($validate) {
-    expect($validate([
-        ['source' => '_idrref', 'column' => 'title'],
-        ['source' => 'property-1', 'column' => 'title'],
-    ]))
+    expect($validate(['title', 'title']))
         ->toBe(__('phpinnacle-ferry::validation.sync_schema.column_duplicate', ['column' => 'title']));
 });
 
 it('accepts only snake case latin column names', function (string $column) use ($validate) {
-    expect($validate([['source' => '_idrref', 'column' => $column]]))
+    expect($validate([$column]))
         ->toBe(__('phpinnacle-ferry::validation.sync_schema.column_format', ['column' => $column]));
 })->with([
     'uppercase' => 'Title',
@@ -70,7 +45,7 @@ it('accepts only snake case latin column names', function (string $column) use (
 ]);
 
 it('forbids reserved technical column names', function () use ($validate) {
-    expect($validate([['source' => '_idrref', 'column' => Sync::ID_COLUMN]]))
+    expect($validate([Sync::ID_COLUMN]))
         ->toBe(__(
             'phpinnacle-ferry::validation.sync_schema.column_reserved',
             ['column' => Sync::ID_COLUMN],

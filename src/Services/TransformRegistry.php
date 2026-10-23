@@ -4,7 +4,6 @@ namespace PHPinnacle\Ferry\Services;
 
 use Illuminate\Container\Attributes\Singleton;
 use LogicException;
-use PHPinnacle\Ferry\Enums\TransformScope;
 use PHPinnacle\Ferry\Forms\JsonSchema;
 use PHPinnacle\Ferry\Transformation;
 
@@ -58,8 +57,8 @@ class TransformRegistry
     }
 
     /** @return array<string, Transformation> */
-    public function forScope(TransformScope $scope): array
+    public function all(): array
     {
-        return array_filter($this->items, static fn (Transformation $transform) => $transform->scope() === $scope);
+        return $this->items;
     }
 }

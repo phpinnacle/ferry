@@ -4,10 +4,10 @@ namespace PHPinnacle\Ferry\Forms;
 
 use Closure;
 use Filament\Forms\Components\Field;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Translation\PotentiallyTranslatedString;
 use Illuminate\Validation\Rule;
-use PHPinnacle\Ferry\Enums\TransformScope;
 use PHPinnacle\Ferry\Forms\Actions\FieldTransformsAction;
 use PHPinnacle\Ferry\Models\ConnectionMetadata;
 use PHPinnacle\Ferry\Services\TransformRegistry;
@@ -34,6 +34,14 @@ class FieldTransforms extends Field
         return $this;
     }
 
+    public function getInputSchema(?int $index = null): ?JsonSchema
+    {
+        return app(TransformRegistry::class)->resultSchema(
+            JsonSchema::fromArray($this->evaluate($this->inputSchema)),
+            $index === null ? $this->getSettings() : array_slice($this->getSettings(), 0, $index),
+        );
+    }
+
     /** @return array<string, Transformation> */
     public function getAvailableTransforms(TransformRegistry $transforms): array
     {
@@ -46,7 +54,7 @@ class FieldTransforms extends Field
         }
 
         return array_filter(
-            $transforms->forScope(TransformScope::Field),
+            $transforms->all(),
             fn (Transformation $transform) => $transform->accepts($schema),
         );
     }
@@ -76,12 +84,43 @@ class FieldTransforms extends Field
 
         $this->hiddenLabel();
         $this->default([]);
+        $this->mutateDehydratedStateUsing(function (self $component, array $state) {
+            /** @var list<Transform> $state */
+            return $component->dehydrateSettings($state);
+        });
         $this->rules(fn (self $component) => [
             $component->validateSettings(...),
         ]);
         $this->registerActions([
             fn (self $component, TransformRegistry $transforms) => FieldTransformsAction::make($component, $transforms),
         ]);
+    }
+
+    /**
+     * @param list<Transform> $state
+     * @return list<Transform>
+     */
+    private function dehydrateSettings(array $state): array
+    {
+        $settings = $state;
+        $registry = app(TransformRegistry::class);
+        foreach ($settings as $index => $setting) {
+            $transform = $registry->getOrFail($setting['key']);
+            $parameters = $this
+                ->makeChildSchema((string) $index)
+                ->statePath($index . '.params')
+                ->components($transform->getSchema($this->object, $this->getInputSchema($index)));
+            $parametersState = [];
+            Arr::set($parametersState, $parameters->getStatePath(), $setting['params'] ?? []);
+            /** @var array<string, mixed> $parametersState */
+            $parameters->dehydrateState($parametersState);
+            $parameters->mutateDehydratedState($parametersState);
+            /** @var array<string, string> $params */
+            $params = Arr::get($parametersState, $parameters->getStatePath(), []);
+            $settings[$index] = ['key' => $setting['key'], 'params' => $params];
+        }
+
+        return $settings;
     }
 
     /** @param Closure(string): PotentiallyTranslatedString $fail */
@@ -94,7 +133,7 @@ class FieldTransforms extends Field
             'transforms.*.key' => [
                 'required',
                 'string',
-                Rule::in(array_keys($transforms->forScope(TransformScope::Field))),
+                Rule::in(array_keys($transforms->all())),
             ],
             'transforms.*.params' => ['sometimes', 'array'],
             'transforms.*.params.*' => ['string'],
@@ -113,7 +152,7 @@ class FieldTransforms extends Field
             $this
                 ->makeChildSchema((string) $index)
                 ->statePath($index . '.params')
-                ->components($transform->getSchema($this->object))
+                ->components($transform->getSchema($this->object, $schema))
                 ->validate();
             $schema = $transform->accepts($schema) ? $transform->getOutputSchema($schema, $params) : null;
             if ($schema === null) {

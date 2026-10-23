@@ -413,7 +413,7 @@ it('static values are accepted for every known destination and retain string for
 })->with([
     [['enabled' => MappingState::value('true')], true],
     [['enabled' => MappingState::value('')], false],
-    [['enabled' => MappingState::value(true)], false],
+    [['enabled' => MappingState::value(true)], true],
     [['enabled' => []], false],
     [['enabled' => [...MappingState::value('true'), 'type' => 'boolean']], false],
     [['other' => MappingState::value('true')], false],

@@ -64,7 +64,7 @@ it('builds a confluent jdbc sink connector config with field renames', function 
         ),
     ]);
 
-    $builder = new SourceFactory($this->factory);
+    $builder = new SourceFactory;
     config(['phpinnacle-ferry.sync.table_prefix' => 'changed_prefix_']);
 
     $config = new DestinationFactory()
@@ -145,7 +145,7 @@ it('keeps each sink limited to the fields of its own mapping when several syncs 
         ),
     ]);
 
-    $builder = new SourceFactory($this->factory);
+    $builder = new SourceFactory;
 
     $firstConfig = new DestinationFactory()
         ->resolve($first)
@@ -196,7 +196,7 @@ it('builds a static sink with fixed fields and its target connection', function 
         ),
     ]);
 
-    $builder = new SourceFactory($this->factory);
+    $builder = new SourceFactory;
 
     $config = $registry->resolve($sync)->connector(
         $sync,
@@ -285,7 +285,7 @@ it('keeps configured sink hosts and environment ports while applying the default
         config(['database.connections.sqlite.port' => $port]);
     }
 
-    $builder = new SourceFactory($this->factory);
+    $builder = new SourceFactory;
 
     expect(
         new DestinationFactory()

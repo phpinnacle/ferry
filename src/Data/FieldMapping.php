@@ -5,54 +5,82 @@ namespace PHPinnacle\Ferry\Data;
 use JsonSerializable;
 use PHPinnacle\Ferry\Casts\FieldDecoder;
 use PHPinnacle\Ferry\Enums\ColumnType;
+use PHPinnacle\Ferry\Enums\FieldKind;
 use PHPinnacle\Rosetta\Contracts\Field;
 
 /**
  * @phpstan-import-type FieldData from FieldDecoder
- *
- * @phpstan-type MappingData array{source: string|null, column: string, field: FieldData|null, result?: value-of<ColumnType>, transforms?: list<array{key: string, params: array<string, string>}>, constant?: array{type: value-of<ColumnType>, value: string}}
+ * @phpstan-type MappingData array{kind: 'source', source: string, target: string|null, field: FieldData, result?: value-of<ColumnType>|null, transforms?: list<array{key: string, params: array<string, string>}>}|array{kind: 'static', target: string, static: string|int|float|bool}
  */
 final readonly class FieldMapping implements JsonSerializable
 {
     /** @param list<TransformSetting> $transforms */
     public function __construct(
         public ?string $source,
-        public string $column,
+        public ?string $target,
         public ?Field $field,
         public ?ColumnType $result = null,
         public array $transforms = [],
-        public ?StaticValue $constant = null,
+        public string|int|float|bool|null $static = null,
+        public FieldKind $kind = FieldKind::Source,
     ) {}
 
     /** @param MappingData $data */
     public static function fromArray(array $data): self
     {
-        return new self(
-            source: $data['source'],
-            column: $data['column'],
-            field: $data['field'] !== null ? FieldDecoder::decode($data['field']) : null,
-            result: ($data['result'] ?? null) !== null ? ColumnType::from($data['result']) : null,
-            transforms: array_map(TransformSetting::fromArray(...), $data['transforms'] ?? []),
-            constant: ($data['constant'] ?? null) !== null ? StaticValue::fromArray($data['constant']) : null,
-        );
+        return match ($data['kind']) {
+            'source' => new self(
+                source: $data['source'],
+                target: $data['target'],
+                field: FieldDecoder::decode($data['field']),
+                result: isset($data['result']) ? ColumnType::from($data['result']) : null,
+                transforms: array_map(TransformSetting::fromArray(...), $data['transforms'] ?? []),
+            ),
+            'static' => new self(null, $data['target'], null, static: $data['static'], kind: FieldKind::Static),
+        };
     }
 
-    /** @return array<string, mixed> */
+    /** @return MappingData */
     public function jsonSerialize(): array
     {
+        if ($this->kind === FieldKind::Static) {
+            /** @var string $target */
+            $target = $this->target;
+            /** @var string|int|float|bool $value */
+            $value = $this->static;
+
+            return ['kind' => 'static', 'target' => $target, 'static' => $value];
+        }
+
+        /** @var string $source */
+        $source = $this->source;
+        /** @var Field $field */
+        $field = $this->field;
+
+        /** @var FieldData $data */
+        $data = $field->jsonSerialize();
+
         return [
-            'source' => $this->source,
-            'column' => $this->column,
-            'field' => $this->field?->jsonSerialize(),
-            ...($this->result !== null ? ['result' => $this->result->value] : []),
-            ...($this->transforms !== [] ? ['transforms' => $this->transforms] : []),
-            ...($this->constant !== null ? ['constant' => $this->constant] : []),
+            'kind' => 'source',
+            'source' => $source,
+            'target' => $this->target,
+            'field' => $data,
+            'result' => $this->result?->value,
+            'transforms' => array_map(
+                static fn (TransformSetting $setting) => $setting->jsonSerialize(),
+                $this->transforms,
+            ),
         ];
     }
 
     public function identity(): string
     {
-        return $this->source ?? 'constant:' . $this->column;
+        return $this->source ?? 'static:' . $this->target;
+    }
+
+    public function isUsed(): bool
+    {
+        return $this->target !== null || $this->transforms !== [];
     }
 
     public function sourceType(): ?ColumnType
@@ -62,6 +90,13 @@ final readonly class FieldMapping implements JsonSerializable
 
     public function type(): ?ColumnType
     {
-        return $this->constant->type ?? $this->result ?? $this->sourceType();
+        if ($this->kind === FieldKind::Static) {
+            /** @var string|int|float|bool $value */
+            $value = $this->static;
+
+            return ColumnType::fromValue($value);
+        }
+
+        return $this->result ?? ($this->transforms === [] ? $this->sourceType() : null);
     }
 }

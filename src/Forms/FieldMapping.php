@@ -22,7 +22,9 @@ use PHPinnacle\Ferry\Forms\Concerns\Searchable;
  * @phpstan-type ValueEntry array{kind: 'value', value: mixed}
  * @phpstan-type Entry SourceEntry|ValueEntry
  * @phpstan-type Targets array<string, Entry|non-empty-list<SourceEntry>>
- * @phpstan-type State Targets
+ * @phpstan-type SourceState array{kind: 'source', source: string, target: string|null}&array<string, mixed>
+ * @phpstan-type StaticState array{kind: 'static', target: string, static: mixed}
+ * @phpstan-type State list<SourceState|StaticState>
  */
 // @mago-expect lint:too-many-properties
 class FieldMapping extends Field
@@ -207,23 +209,29 @@ class FieldMapping extends Field
         $state = $this->getRawState() ?? [];
         $sources = [];
         $targets = [];
-        foreach ($state as $target => $mapped) {
-            $collection = array_is_list($mapped);
-            $entries = [];
-            /** @var list<Entry> $mappedEntries */
-            $mappedEntries = $collection ? $mapped : [$mapped];
-            foreach ($mappedEntries as $entry) {
-                if ($entry['kind'] === 'source') {
-                    /** @var array<string, mixed> $settings */
-                    $settings = Arr::except($entry, ['kind', 'source']);
-                    if ($settings !== []) {
-                        $sources[$entry['source']] = $settings;
-                    }
-                    $entry = Arr::only($entry, ['kind', 'source']);
+        foreach ($state as $entry) {
+            if ($entry['kind'] === 'source') {
+                /** @var array<string, mixed> $settings */
+                $settings = Arr::except($entry, ['kind', 'source', 'target']);
+                if ($settings !== []) {
+                    $sources[$entry['source']] = $settings;
                 }
-                $entries[] = $entry;
             }
-            $targets[$target] = $collection ? $entries : $entries[0];
+        }
+        $this->rawState(['sources' => $this->encodeSourceSettings($sources), 'targets' => []]);
+        $modes = $this->getConnectionModes();
+        foreach ($state as $entry) {
+            if ($entry['target'] === null) {
+                continue;
+            }
+            $target = $entry['target'];
+            if ($entry['kind'] === 'static') {
+                $targets[$target] = ['kind' => 'value', 'value' => $entry['static']];
+            } elseif (($modes[$entry['source']][$target] ?? null) === 'item') {
+                $targets[$target][] = ['kind' => 'source', 'source' => $entry['source']];
+            } else {
+                $targets[$target] = ['kind' => 'source', 'source' => $entry['source']];
+            }
         }
         $encoded = [
             'sources' => $this->encodeSourceSettings($sources),
@@ -255,25 +263,38 @@ class FieldMapping extends Field
 
     /**
      * @param array{sources?: array<string, array<string, mixed>>, targets?: Targets}|null $state
-     * @return array<string, mixed>
+     * @return array<array-key, mixed>
      */
     private function dehydrateMapping(?array $state): array
     {
         $sources = $this->decodeSourceSettings($state['sources'] ?? []);
         /** @var Targets $targets */
         $targets = self::rekey($state['targets'] ?? [], array_flip($this->getStateKeys()));
+        $rows = [];
+        $used = [];
         foreach ($targets as $target => $mapped) {
-            $collection = array_is_list($mapped);
-            /** @var list<Entry> $mappedEntries */
-            $mappedEntries = $collection ? $mapped : [$mapped];
-            $entries = array_map(
-                fn (array $entry) => $entry['kind'] === 'source' ? $entry + ($sources[$entry['source']] ?? []) : $entry,
-                $mappedEntries,
-            );
-            $targets[$target] = $collection ? $entries : $entries[0];
+            /** @var list<Entry> $entries */
+            $entries = array_is_list($mapped) ? $mapped : [$mapped];
+            foreach ($entries as $entry) {
+                if ($entry['kind'] === 'value') {
+                    $rows[] = ['kind' => 'static', 'target' => (string) $target, 'static' => $entry['value']];
+                } else {
+                    $source = $entry['source'];
+                    $rows[] =
+                        ['kind' => 'source', 'source' => $source, 'target' => (string) $target]
+                        + ($sources[$source] ?? []);
+                    $used[$source] = true;
+                }
+            }
+        }
+        foreach ($this->getSources() as $source) {
+            $id = $source['id'];
+            if (!isset($used[$id])) {
+                $rows[] = ['kind' => 'source', 'source' => $id, 'target' => null] + ($sources[$id] ?? []);
+            }
         }
 
-        return $targets;
+        return $rows;
     }
 
     /** @param bool|Closure(): bool $condition */
@@ -468,7 +489,7 @@ class FieldMapping extends Field
                     if (
                         $collection
                         || $this->getStaticFormType((string) $target) === null
-                        && (!is_string($entry['value'])
+                        && (!is_scalar($entry['value'])
                         || $entry['value'] === '')
                     ) {
                         $fail('The :attribute field contains an invalid mapping value.')->translate();

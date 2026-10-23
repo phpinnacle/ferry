@@ -2,10 +2,9 @@
 
 use Illuminate\Validation\ValidationException;
 use PHPinnacle\Ferry\Data\FieldMapping;
-use PHPinnacle\Ferry\Data\StaticValue;
 use PHPinnacle\Ferry\Data\TransformSetting;
 use PHPinnacle\Ferry\Enums\ColumnType;
-use PHPinnacle\Ferry\Enums\TransformScope;
+use PHPinnacle\Ferry\Enums\FieldKind;
 use PHPinnacle\Ferry\FerryPlugin;
 use PHPinnacle\Ferry\Models\ConnectionMetadata;
 use PHPinnacle\Ferry\Models\Sync;
@@ -40,10 +39,10 @@ beforeEach(function () {
 it('converts only the final schema to a persisted column type', function () {
     $registry = app(TransformRegistry::class);
     $registry->register(
-        Transformation::make('pack', TransformScope::Field)
+        Transformation::make('pack')
             ->inputSchema(['type' => 'string'])
             ->outputSchema(['type' => 'array', 'items' => ['type' => 'string']]),
-        Transformation::make('join', TransformScope::Field)
+        Transformation::make('join')
             ->inputSchema(['type' => 'array', 'items' => ['type' => 'string']])
             ->outputSchema(['type' => ['string', 'null'], 'maxLength' => 100]),
     );
@@ -60,7 +59,7 @@ it('converts only the final schema to a persisted column type', function () {
         ->toThrow(ValidationException::class);
 });
 
-it('validates field and record settings without configured or resolvable handlers', function () {
+it('validates settings without configured or resolvable handlers', function () {
     config(['phpinnacle-ferry.transforms' => []]);
     app()->bind(
         TransformFactory::class,
@@ -73,29 +72,8 @@ it('validates field and record settings without configured or resolvable handler
         app(TransformRegistry::class),
         transforms: ['fields' => ['_code' => [new TransformSetting('cast', ['type' => 'boolean'])]]],
     );
-    $settings = SyncSchema::fromTransforms(
-        [
-            new TransformSetting('filter', [
-                'mode' => 'exclude',
-                'column' => '_code',
-                'value' => 'x',
-                'type' => 'string',
-            ]),
-        ],
-        app(TransformRegistry::class),
-    );
-
     expect($mappings[0]->result)
-        ->toBe(ColumnType::Boolean)
-        ->and($settings)
-        ->toEqual([
-            new TransformSetting('filter', [
-                'mode' => 'exclude',
-                'column' => '_code',
-                'value' => 'x',
-                'type' => 'string',
-            ]),
-        ]);
+        ->toBe(ColumnType::Boolean);
 });
 
 it('lets a field transform change the type that is checked against the destination', function () {
@@ -106,7 +84,7 @@ it('lets a field transform change the type that is checked against the destinati
         ['_description' => 'name', '_code' => 'is_active'],
         app(TransformRegistry::class),
         customers_destination(),
-        ['fields' => ['_code' => [$cast]], 'constants' => ['tax_number' => ['type' => 'string', 'value' => 'none']]],
+        ['fields' => ['_code' => [$cast]], 'constants' => ['tax_number' => 'none']],
     );
 
     expect($mappings[1]->result)
@@ -127,9 +105,9 @@ it('validates the final cast type and preserves every step in the connector pipe
         ['_description' => 'name', '_code' => 'is_active'],
         app(TransformRegistry::class),
         customers_destination(),
-        ['fields' => ['_code' => $settings], 'constants' => ['tax_number' => ['type' => 'string', 'value' => 'none']]],
+        ['fields' => ['_code' => $settings], 'constants' => ['tax_number' => 'none']],
     );
-    $sync = new Sync(['schema' => $mappings, 'transforms' => []]);
+    $sync = new Sync(['schema' => $mappings]);
     $pipeline = app(TransformFactory::class)->pipeline($sync, $this->object)['before'];
 
     expect($mappings[1]->result)
@@ -148,26 +126,26 @@ it('maps a static value to a destination field without a source field', function
         customers_destination(),
         transforms: [
             'constants' => [
-                'tax_number' => ['type' => 'string', 'value' => 'none'],
-                'is_active' => ['type' => 'boolean', 'value' => 'true'],
+                'tax_number' => 'none',
+                'is_active' => true,
             ],
         ],
     );
 
     expect($mappings)
-        ->toHaveCount(3)
+        ->toHaveCount(4)
         ->and($mappings[1]->source)
         ->toBeNull()
         ->and($mappings[1]->field)
         ->toBeNull()
-        ->and($mappings[1]->column)
+        ->and($mappings[1]->target)
         ->toBe('tax_number')
         ->and($mappings[2]->type())
         ->toBe(ColumnType::Boolean)
         ->and($mappings[2]->transforms)
         ->toBe([])
-        ->and($mappings[2]->constant)
-        ->toEqual(new StaticValue(ColumnType::Boolean, 'true'));
+        ->and($mappings[2]->static)
+        ->toEqual(true);
 });
 
 it('rejects transform settings that cannot be applied', function (
@@ -185,29 +163,21 @@ it('rejects transform settings that cannot be applied', function (
     ))
         ->toThrow(ValidationException::class, __('phpinnacle-ferry::resources.sync.errors.' . $error, $replace));
 })->with([
-    'constant that does not match its type' => [
+    'constant that does not match its target' => [
         [],
-        ['is_active' => ['type' => 'boolean', 'value' => 'maybe']],
-        'constant_invalid_value',
-        fn () => [
-            'error' => 'The selected value is invalid.',
-        ],
-    ],
-    'constant with an unsupported type' => [
-        [],
-        ['is_active' => ['type' => 'reference', 'value' => 'x']],
-        'constant_invalid_value',
-        ['error' => 'The selected type is invalid.'],
+        ['is_active' => 'maybe'],
+        'incompatible_destination_field',
+        ['field' => 'Is Active'],
     ],
     'constant incompatible with the destination' => [
         [],
-        ['is_active' => ['type' => 'integer', 'value' => '1']],
+        ['is_active' => 1],
         'incompatible_destination_field',
         ['field' => 'Is Active'],
     ],
     'constant over a mapped column' => [
         [],
-        ['name' => ['type' => 'string', 'value' => 'x']],
+        ['name' => 'x'],
         'constant_column_taken',
         ['column' => 'name'],
     ],
@@ -249,45 +219,41 @@ it('refuses transforms that are not registered', function () {
         ]));
 });
 
-it('accepts only record transforms for a whole synchronization', function () {
-    expect(fn () => SyncSchema::fromTransforms(
-        [new TransformSetting('cast', ['type' => 'string'])],
-        app(TransformRegistry::class),
-    ))
-        ->toThrow(ValidationException::class, __('phpinnacle-ferry::resources.sync.errors.transform_scope_mismatch', [
-            'transform' => __('phpinnacle-ferry::resources.transform.cast'),
-        ]))
-        ->and(SyncSchema::fromTransforms([], app(TransformRegistry::class)))
-        ->toBe([]);
-});
-
 it('round-trips source and static mappings without synthetic transforms', function () {
     $plain = new FieldMapping('_description', 'title', new StringField(length: 100, fixed: false));
-    $constant = new FieldMapping(null, 'is_active', null, constant: new StaticValue(ColumnType::Boolean, 'true'));
+    $constant = new FieldMapping(null, 'is_active', null, static: true, kind: FieldKind::Static);
 
     expect(array_keys($plain->jsonSerialize()))
-        ->toEqualCanonicalizing(['source', 'column', 'field'])
+        ->toEqualCanonicalizing(['kind', 'source', 'target', 'field', 'result', 'transforms'])
         ->and(FieldMapping::fromArray($plain->jsonSerialize()))
         ->toEqual($plain)
         ->and(FieldMapping::fromArray(json_decode(json_encode($constant), true)))
         ->toEqual($constant);
 });
 
-it('preserves false and zero static values without transform settings', function (string $type, string $value) {
+it('preserves false and zero static values without transform settings', function (string|int|float|bool $value) {
     $mapping = SyncSchema::fromBindings(
         $this->object,
         [],
         app(TransformRegistry::class),
-        transforms: ['constants' => ['status' => ['type' => $type, 'value' => $value]]],
+        transforms: ['constants' => ['status' => $value]],
     )[0];
 
-    expect($mapping->constant)
-        ->toEqual(new StaticValue(ColumnType::from($type), $value))
+    expect($mapping->static)
+        ->toEqual($value)
         ->and($mapping->transforms)
         ->toBe([])
         ->and($mapping->jsonSerialize())
         ->not->toHaveKey('transforms');
 })->with([
-    'false' => ['boolean', 'false'],
-    'zero' => ['integer', '0'],
+    'false' => [false],
+    'zero' => [0],
+    'decimal' => [1.0],
+    'string' => ['true'],
 ]);
+
+it('rejects non-scalar static input at the schema boundary', function (mixed $value) {
+    expect(fn () => SyncSchema::fromBindings($this->object, [], app(TransformRegistry::class), transforms: [
+        'constants' => ['status' => $value],
+    ]))->toThrow(ValidationException::class);
+})->with([[null], [[]], [['nested' => 'value']]]);

@@ -19,10 +19,7 @@ use PHPinnacle\Rosetta\Enums\PropertyKind;
 use PHPinnacle\Rosetta\Fields\ScalarField;
 use PHPinnacle\Rosetta\Fields\StringField;
 
-use function PHPinnacle\Ferry\Tests\Fakes\exclude_folders_transform;
-
 require_once __DIR__ . '/../../TestCase.php';
-require_once __DIR__ . '/../../Fakes/ExcludeFoldersTransform.php';
 
 uses(TestCase::class);
 
@@ -32,9 +29,8 @@ beforeEach(function () {
     config(['database.connections.sqlite.host' => 'db.internal', 'database.connections.sqlite.port' => 5432]);
 });
 
-it('orders record, field and constant transforms around the renames of a sink', function () {
+it('orders source transforms and static values around the renames of a sink', function () {
     $factory = $this->app->make(TransformFactory::class);
-    app(TransformRegistry::class)->register(exclude_folders_transform());
 
     $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
     $object = TestCase::makeMetadata($connection, [
@@ -64,26 +60,18 @@ it('orders record, field and constant transforms around the renames of a sink', 
             app(TransformRegistry::class),
             transforms: [
                 'fields' => ['title' => [new TransformSetting('cast', ['type' => 'integer'])]],
-                'constants' => ['active' => ['type' => 'boolean', 'value' => 'true']],
+                'constants' => ['active' => true],
             ],
-        ),
-        'transforms' => SyncSchema::fromTransforms(
-            [new TransformSetting('exclude_folders')],
-            app(TransformRegistry::class),
         ),
     ]);
 
-    $builder = new SourceFactory($factory);
+    $builder = new SourceFactory;
     $config = new DestinationFactory()
         ->resolve($sync)
         ->connector($sync, $object, $builder->topic($connection, $object), $factory);
 
-    expect($sync->fresh()->transforms)
-        ->toEqual([new TransformSetting('exclude_folders')])
-        ->and($config['transforms'])
-        ->toBe('unwrap,record_0,field_0_0,rename_keys,rename_values,field_1_0,field_1_0_cast')
-        ->and($config['transforms.record_0.type'])
-        ->toBe('io.confluent.connect.transforms.Filter$Value')
+    expect($config['transforms'])
+        ->toBe('unwrap,field_0_0,rename_keys,rename_values,field_1_0,field_1_0_cast')
         ->and($config['transforms.field_0_0.spec'])
         ->toBe('_fld1:int64')
         ->and($config['transforms.rename_values.renames'])
@@ -102,32 +90,29 @@ it('orders record, field and constant transforms around the renames of a sink', 
         ->not->toHaveKey('predicates');
 });
 
-it('captures the column of a record filter in the source and keeps tombstones out of it', function () {
+it('captures an unbound field filter without writing it or capturing unused fields', function () {
     $factory = $this->app->make(TransformFactory::class);
     $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
     $object = TestCase::makeMetadata($connection, [
         'system' => [
             '_idrref' => new ScalarField(FieldType::Id),
             '_marked' => new ScalarField(FieldType::Boolean),
+            '_unused' => new StringField(length: 10, fixed: false),
         ],
     ]);
     $sync = TestCase::makeSync([
         'connection_id' => $connection->id,
         'source' => 'object-0',
-        'transforms' => SyncSchema::fromTransforms(
-            [
-                new TransformSetting('filter', [
-                    'mode' => 'exclude',
-                    'column' => '_marked',
-                    'type' => 'boolean',
-                    'value' => 'true',
-                ]),
-            ],
-            app(TransformRegistry::class),
-        ),
+        'schema' => SyncSchema::fromBindings($object, [], app(TransformRegistry::class), transforms: [
+            'fields' => ['_marked' => [new TransformSetting('filter', [
+                'mode' => 'exclude',
+                'type' => 'boolean',
+                'value' => 'true',
+            ])]],
+        ]),
     ]);
 
-    $builder = new SourceFactory($factory);
+    $builder = new SourceFactory;
     $source = $builder->source($connection, new Collection([$sync]));
     $config = new DestinationFactory()
         ->resolve($sync)
@@ -136,12 +121,12 @@ it('captures the column of a record filter in the source and keeps tombstones ou
     expect($source['column.include.list'])
         ->toBe('public._reference0._idrref,public._reference0._marked')
         ->and($config['transforms'])
-        ->toBe('unwrap,record_0,rename_keys,rename_values')
-        ->and($config['transforms.record_0.filter.condition'])
+        ->toBe('unwrap,field_0_0,rename_keys,rename_values')
+        ->and($config['transforms.field_0_0.filter.condition'])
         ->toBe('$[?(@._marked == true)]')
-        ->and($config['transforms.record_0.predicate'])
+        ->and($config['transforms.field_0_0.predicate'])
         ->toBe('tombstone')
-        ->and($config['transforms.record_0.negate'])
+        ->and($config['transforms.field_0_0.negate'])
         ->toBe('true')
         ->and($config['predicates'])
         ->toBe('tombstone')
@@ -157,10 +142,15 @@ it('keeps building the shared source when a synchronization refers to a transfor
     $sync = TestCase::makeSync([
         'connection_id' => $connection->id,
         'source' => 'object-0',
-        'transforms' => [new TransformSetting('missing')],
+        'schema' => [new \PHPinnacle\Ferry\Data\FieldMapping(
+            '_idrref',
+            null,
+            new ScalarField(FieldType::Id),
+            transforms: [new TransformSetting('missing')],
+        )],
     ]);
 
-    expect(new SourceFactory($this->app->make(TransformFactory::class))->source($connection, new Collection([$sync])))
+    expect(new SourceFactory()->source($connection, new Collection([$sync])))
         ->toMatchArray(['column.include.list' => 'public._reference0._idrref']);
 });
 

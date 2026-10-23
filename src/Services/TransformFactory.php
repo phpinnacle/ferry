@@ -6,8 +6,9 @@ use Illuminate\Container\Attributes\Singleton;
 use Illuminate\Support\Facades\Config;
 use LogicException;
 use PHPinnacle\Ferry\Contracts\TransformHandler;
-use PHPinnacle\Ferry\Data\StaticValue;
+use PHPinnacle\Ferry\Data\FieldMapping;
 use PHPinnacle\Ferry\Enums\ColumnType;
+use PHPinnacle\Ferry\Enums\FieldKind;
 use PHPinnacle\Ferry\Models\ConnectionMetadata;
 use PHPinnacle\Ferry\Models\Sync;
 
@@ -42,18 +43,17 @@ class TransformFactory
         $before = [];
         $after = [];
 
-        foreach ($sync->transforms as $index => $setting) {
-            $before += $this->handlerOrFail($setting->key)->connector('record_' . $index, null, $setting->params);
-        }
-
         foreach ($sync->schema as $index => $mapping) {
-            if ($mapping->constant !== null) {
-                $after += self::constant('field_' . $index . '_0', $mapping->column, $mapping->constant);
+            if ($mapping->kind === FieldKind::Static) {
+                $after += self::constant('field_' . $index . '_0', $mapping);
 
                 continue;
             }
 
-            $source = $mapping->source !== null ? $object->physicalColumn($mapping->source) : null;
+            /** @var string $sourceId */
+            $sourceId = $mapping->source;
+            /** @var string $source */
+            $source = $object->physicalColumn($sourceId);
 
             foreach ($mapping->transforms as $position => $setting) {
                 $name = sprintf('field_%d_%d', $index, $position);
@@ -66,42 +66,32 @@ class TransformFactory
     }
 
     /** @return array<string, array<string, string>> */
-    private static function constant(string $name, string $column, StaticValue $constant): array
+    private static function constant(string $name, FieldMapping $mapping): array
     {
+        /** @var string $target */
+        $target = $mapping->target;
         $transforms = [
             $name => [
                 'type' => 'org.apache.kafka.connect.transforms.InsertField$Value',
-                'static.field' => $column,
-                'static.value' => $constant->value,
+                'static.field' => $target,
+                'static.value' => is_bool($mapping->static)
+                    ? ($mapping->static ? 'true' : 'false')
+                    : (string) $mapping->static,
             ],
         ];
 
-        if ($constant->type !== ColumnType::String) {
+        if ($mapping->type() !== ColumnType::String) {
             $transforms[$name . '_cast'] = [
                 'type' => 'org.apache.kafka.connect.transforms.Cast$Value',
-                'spec' => $column . ':' . $constant->type->castType(),
+                'spec' => $target . ':' . $mapping->type()?->castType(),
             ];
         }
 
         return $transforms;
     }
 
-    public function appliesTo(Sync $sync, ConnectionMetadata $object): bool
+    public function appliesTo(Sync $sync): bool
     {
-        foreach ($sync->transforms as $setting) {
-            $transform = $this->handler($setting->key);
-
-            if ($transform === null || $transform->normalize($setting->params, $object) !== $setting->params) {
-                return false;
-            }
-
-            foreach ($transform->sourceColumns($setting->params) as $column) {
-                if (!$object->hasColumn($column)) {
-                    return false;
-                }
-            }
-        }
-
         foreach ($sync->schema as $mapping) {
             foreach ($mapping->transforms as $setting) {
                 if ($this->handler($setting->key) === null) {

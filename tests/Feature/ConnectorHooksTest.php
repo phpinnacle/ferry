@@ -206,7 +206,7 @@ it('updates active connectors after commit and discards the update on rollback',
         ->toBe($commit ? 1 : 0)
         ->and($sync->fresh()->name)
         ->toBe($commit ? 'Renamed' : 'Test synchronization')
-        ->and($sync->fresh()->schema[0]->column)
+        ->and($sync->fresh()->schema[0]->target)
         ->toBe($commit ? 'reference_id' : 'external_id')
         ->and($database->getSchemaBuilder()->hasColumn($sync->destination, 'reference_id'))
         ->toBe($commit)

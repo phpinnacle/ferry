@@ -5,7 +5,6 @@ namespace PHPinnacle\Ferry\Transformations;
 use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Components\Group;
 use Filament\Support\Icons\Heroicon;
-use PHPinnacle\Ferry\Enums\TransformScope;
 use PHPinnacle\Ferry\Forms\JsonSchema;
 use PHPinnacle\Ferry\Transformation;
 
@@ -13,7 +12,7 @@ final class Substring
 {
     public static function make(): Transformation
     {
-        return Transformation::make('substring', TransformScope::Field)
+        return Transformation::make('substring')
             ->label(fn () => __('phpinnacle-ferry::resources.transform.substring'))
             ->icon(Heroicon::Scissors)
             ->schema(fn () => [

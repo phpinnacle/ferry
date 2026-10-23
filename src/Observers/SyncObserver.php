@@ -70,7 +70,7 @@ class SyncObserver
             if (
                 $object !== null
                 && $sync->shouldResume($object, $this->destinations->fieldsFor($sync))
-                && $this->transforms->appliesTo($sync, $object)
+                && $this->transforms->appliesTo($sync)
             ) {
                 $this->connectors->activate($sync, refreshSource: false);
             }
