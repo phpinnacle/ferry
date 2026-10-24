@@ -181,7 +181,7 @@ use PHPinnacle\Ferry\Forms\JsonSchema;
 ])
 ```
 
-`getOutputSchema($input, $params)` returns a `JsonSchema` object. Without an output declaration it preserves the complete input schema, which is appropriate only when the transform guarantees that all its constraints remain true. A callback can return null when its settings are incomplete and no output can be determined. An empty schema array means unconstrained values, not an invalid chain.
+`getOutputSchema($input, $params)` returns a `JsonSchema` object or `null` when its callback cannot determine an output, for example when settings are incomplete. Without an output declaration it preserves the complete input schema, which is appropriate only when the transform guarantees that all its constraints remain true. An empty schema array means unconstrained values, not an invalid chain.
 
 Each step consumes the preceding output schema. Cast replaces the value constraints with the selected scalar type and preserves nullability; repeated casts use that result. Trim, Substring and Mask accept strings, including formatted and nullable strings, but reject the `date-time` format and schemas with `x-ferry-reference: true`, which represent logical dates and references. Ordinary UUID strings remain supported. Their outputs retain nullability and discard the original format, enum, pattern and length bounds. Custom descriptions can preserve or establish guarantees their execution actually provides.
 
@@ -610,7 +610,7 @@ Use `sourceSettings(fn (string $source) => [Actions::make([...])])` for native s
 ## Testing
 
 ```bash
-vendor/bin/pest --no-coverage --configuration packages/ferry/phpunit.xml.dist
+vendor/bin/pest --no-coverage packages/ferry/tests
 node --test packages/ferry/tests/Unit/*Test.js
 node --test packages/common/tests/inline-builder.test.js
 ```

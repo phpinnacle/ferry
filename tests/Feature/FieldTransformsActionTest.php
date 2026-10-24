@@ -321,6 +321,25 @@ it('accepts nullable string inputs and rejects invalid parameters', function () 
     expect($this->field->getContainer()->getState(...))->toThrow(ValidationException::class);
 });
 
+it('identifies the failing transform when its input or output schema is unavailable', function (bool $accepts) {
+    app(TransformRegistry::class)->register(
+        Transformation::make('unavailable')
+            ->label('Unavailable transform')
+            ->inputSchema(fn (JsonSchema $input) => $accepts)
+            ->outputSchema(fn (JsonSchema $input, array $params) => null),
+    );
+    $this->field->state([
+        ['type' => 'trim', 'data' => []],
+        ['type' => 'unavailable', 'data' => []],
+    ]);
+
+    expect($this->field->getContainer()->getState(...))
+        ->toThrow(
+            ValidationException::class,
+            __('phpinnacle-ferry::validation.transform_input_type', ['transform' => 'Unavailable transform']),
+        );
+})->with([true, false]);
+
 it('validates hydrated numeric controls through their serialized string parameters', function () {
     app(TransformRegistry::class)->register(Substring::make());
     $settings = [['type' => 'substring', 'data' => ['start' => '1', 'end' => '4']]];

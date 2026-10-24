@@ -611,13 +611,17 @@ class FieldBinding extends Field
         $state = $this->getRawState() ?? [];
 
         foreach ($state as $entry) {
-            $data = [];
+            if ($entry['kind'] === 'source' && $entry['target'] === null) {
+                continue;
+            }
+
+            $data = $entry['target'];
+            if ($simple !== null) {
+                $data = [];
+                data_set($data, $simple->getName(), $entry['target']);
+            }
+
             if ($entry['kind'] === 'static') {
-                if ($simple !== null) {
-                    data_set($data, $simple->getName(), $entry['target']);
-                } else {
-                    $data = $entry['target'];
-                }
                 $bindings[self::CONSTANT_PREFIX . bin2hex(random_bytes(6))] = [
                     'input' => Arr::except($entry, ['kind', 'target']),
                     'output' => $data,
@@ -626,18 +630,7 @@ class FieldBinding extends Field
                 continue;
             }
 
-            if ($entry['target'] === null) {
-                continue;
-            }
-            $source = $entry['source'];
-            $binding = $entry['target'];
-            if ($simple !== null) {
-                data_set($data, $simple->getName(), $binding);
-            } else {
-                $data = $binding;
-            }
-
-            $bindings[$this->getBindingKey((string) $source)] = $data;
+            $bindings[$this->getBindingKey($entry['source'])] = $data;
         }
 
         return $bindings;

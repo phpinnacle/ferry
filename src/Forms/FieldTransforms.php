@@ -150,13 +150,10 @@ class FieldTransforms extends InlineBuilder
         $transforms = app(TransformRegistry::class);
         $schema = JsonSchema::fromArray($this->evaluate($this->inputSchema));
         foreach ($settings as $setting) {
-            $transform = $transforms->getOrFail($setting['type']);
-            $schema = $transform->accepts($schema)
-                ? $transform->getOutputSchema($schema, $setting['data'] ?? [])
-                : null;
+            $schema = $transforms->resultSchema($schema, [$setting]);
             if ($schema === null) {
                 $fail('phpinnacle-ferry::validation.transform_input_type')->translate([
-                    'transform' => $transform->getLabel(),
+                    'transform' => $transforms->getOrFail($setting['type'])->getLabel(),
                 ]);
 
                 return;
