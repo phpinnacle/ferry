@@ -120,6 +120,41 @@ it('presents numeric limits and allowed values without treating them as connecti
         ->toBe(['"active"', '"<draft>"']);
 });
 
+it('intersects numeric types in allOf without losing their integer constraint', function (array $definition) {
+    $schema = JsonSchema::fromArray($definition);
+
+    expect($schema->types())
+        ->toBe(['integer'])
+        ->and($schema->compatible(JsonSchema::fromArray(['type' => 'integer'])))
+        ->toBeTrue()
+        ->and($schema->compatible(JsonSchema::fromArray(['type' => 'number'])))
+        ->toBeTrue()
+        ->and($schema->compatible(JsonSchema::fromArray(['type' => 'string'])))
+        ->toBeFalse()
+        ->and(JsonSchema::fromArray(['type' => 'integer'])->compatible($schema))
+        ->toBeTrue()
+        ->and(JsonSchema::fromArray(['type' => 'number'])->compatible($schema))
+        ->toBeFalse();
+})->with([
+    'number then integer' => [['allOf' => [['type' => 'number'], ['type' => 'integer']]]],
+    'integer then number' => [['allOf' => [['type' => 'integer'], ['type' => 'number']]]],
+    'parent number' => [['type' => 'number', 'allOf' => [['type' => 'integer']]]],
+    'parent integer' => [['type' => 'integer', 'allOf' => [['type' => 'number']]]],
+    'union narrowed to integer' => [['allOf' => [['type' => ['number', 'string']], ['type' => 'integer']]]],
+    'nested intersection' => [['allOf' => [['type' => 'number'], ['allOf' => [['type' => 'integer']]]]]],
+]);
+
+it('preserves number and null alternatives in numeric intersections', function () {
+    expect(JsonSchema::fromArray(['allOf' => [['type' => 'number'], ['type' => 'number']]])->types())
+        ->toBe(['number'])
+        ->and(
+            JsonSchema::fromArray([
+                'allOf' => [['type' => ['number', 'null']], ['type' => ['integer', 'null']]],
+            ])->types(),
+        )
+        ->toEqualCanonicalizing(['integer', 'null']);
+});
+
 it('compares declared unions, nullability, formats and nested array types', function (
     array $source,
     array $target,

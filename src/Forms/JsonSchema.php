@@ -323,6 +323,12 @@ final readonly class JsonSchema
         foreach ($this->allOf as $branch) {
             $branchTypes = $branch->types();
             if ($branchTypes !== []) {
+                if (in_array('number', $types, true) && in_array('integer', $branchTypes, true)) {
+                    $types[] = 'integer';
+                }
+                if (in_array('integer', $types, true) && in_array('number', $branchTypes, true)) {
+                    $branchTypes[] = 'integer';
+                }
                 $types = $types === [] ? $branchTypes : array_intersect($types, $branchTypes);
             }
         }
