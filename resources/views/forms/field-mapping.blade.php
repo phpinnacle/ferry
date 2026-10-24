@@ -1,12 +1,11 @@
 @php
     use Filament\Support\Facades\FilamentAsset;
     use PHPinnacle\Ferry\FerryServiceProvider;
-    use PHPinnacle\Ferry\Forms\JsonSchema;
 
     $sources = $getSources();
     $constants = $getConstants();
     $targets = $getTargets();
-    $outputPresentation = array_map(fn (JsonSchema $property) => $property->presentation(), JsonSchema::fromArray($getOutputSchema())->properties());
+    $outputPresentation = $getSourcePresentations();
     $connectionModes = $getConnectionModes();
     $sourceLabel = $getSourceLabel();
     $targetLabel = $getTargetLabel();
@@ -54,6 +53,7 @@
         x-load
         x-load-src="{{ FilamentAsset::getAlpineComponentSrc('field-mapping', FerryServiceProvider::PACKAGE) }}"
         x-data="fieldMapping({
+            element: $el,
             state: $wire.{{ $applyStateBindingModifiers("\$entangle('{$statePath}')") }},
             disabled: @js($disabled),
             inverse: @js($inverse),
@@ -65,12 +65,26 @@
         x-on:keydown.escape.window="cancel()"
         x-on:resize.window="refresh()"
     >
+        {!! $staticSchemas['mappingUi']->getComponent('configuration')->toSchemaHtml() !!}
+
         @if ($contained)
             <div @class(['flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 dark:border-white/10', 'px-3 py-2' => $dense, 'px-5 py-4' => ! $dense])>
-                <label class="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
-                    <input type="checkbox" x-model="unmappedOnly" class="rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-800" />
-                    {{ __('phpinnacle-ferry::resources.mapping.show_unmapped') }}
-                </label>
+                <fieldset class="ferry-mapping-filter">
+                    <legend class="sr-only">{{ __('phpinnacle-ferry::resources.mapping.filter.label') }}</legend>
+                    @foreach (['all', 'mapped', 'unmapped'] as $filter)
+                        <label>
+                            <input
+                                type="radio"
+                                name="{{ $getId() }}-visibility-filter"
+                                value="{{ $filter }}"
+                                x-model="visibilityFilter"
+                                class="sr-only"
+                                @checked($filter === 'all')
+                            />
+                            <span>{{ __('phpinnacle-ferry::resources.mapping.filter.'.$filter) }}</span>
+                        </label>
+                    @endforeach
+                </fieldset>
                 <span class="text-sm text-gray-500 dark:text-gray-400">
                     {!! __('phpinnacle-ferry::resources.mapping.mapped_count', ['mapped' => '<span x-text="mappedTargetCount()"></span>', 'total' => count($targets)]) !!}
                     @if ($requiredTargets !== [])
@@ -120,100 +134,16 @@
 
                             <div @class(['flex flex-col', 'gap-2' => $dense, 'gap-3' => ! $dense, 'mt-3' => $searchable && $dense, 'mt-5' => $searchable && ! $dense])>
                                 @foreach ($panel['items'] as $item)
-                                    @php
-                                        $plainLabel = strip_tags($item['label']);
-                                        $warning = $panel['warnings'][$item['id']] ?? null;
-                                        $presentation = $side === 'source' ? ($outputPresentation[$item['id']] ?? JsonSchema::fromArray([])->presentation()) : $item['presentation'];
-                                        $typeLabel = $presentation['type'];
-                                        $searchText = $plainLabel.' '.strip_tags($item['description'] ?? '').' '.$item['id'].' '.$item['name'].' '.$typeLabel.' '.implode(' ', array_column($item['badges'], 'label'));
-                                        $isMultiple = $side === 'target' && in_array($item['id'], $multipleTargets, true);
-                                        $staticSchema = $side === 'target' && array_key_exists($item['id'], $staticDefaults)
-                                            ? ($staticSchemas[$stateKeys[$item['id']]] ?? $getStaticFormSchema($item['id']))
-                                            : null;
-                                        $hasSourceFooter = $side === 'source' && (isset($staticSchemas['settings_'.$sourceStateKeys[$item['id']]]) || isset($constants[$item['id']]));
-                                    @endphp
-                                    <div
-                                        @class([
-                                            'field-mapping-row relative flex flex-wrap items-start rounded-lg border border-gray-200 bg-white dark:border-white/10 dark:bg-gray-900',
-                                            'min-h-14 gap-1' => $dense,
-                                            'min-h-20 gap-2' => ! $dense,
-                                            'has-warning' => $warning !== null,
-                                        ])
-                                        data-mapping-row
-                                        x-on:click="selectFromCard($event, @js($side), @js($item['id']))"
-                                        wire:key="{{ $getId() }}-{{ $side }}-{{ $item['id'] }}"
-                                        x-show="isVisible(@js($side), @js($item['id']), @js($searchText))"
-                                        :class="rowClasses(@js($side), @js($item['id']), @js($item['required']))"
-                                    >
-                                        <div class="flex w-full items-start">
-                                            <div
-                                                @class(['relative flex min-w-0 flex-1 items-start', 'px-3 pt-2' => $dense, 'pb-2' => $dense && ! $hasSourceFooter, 'px-4 py-3' => ! $dense])
-                                            >
-                                                <button
-                                                    type="button"
-                                                    class="absolute inset-0 w-full rounded-lg text-start focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-500 disabled:cursor-default"
-                                                    x-bind="fieldBindings(@js($side), @js($item['id']))"
-                                                    aria-label="{{ 'Select '.$plainLabel.' as '.$side }}"
-                                                    @disabled($disabled)
-                                                ></button>
-                                                <x-phpinnacle-ferry::mapping-item :compact="$compact" class="relative" :item="$item" :presentation="$presentation" :multiple="$isMultiple" :warning="$warning">
-                                                    @if ($isMultiple)
-                                                        <span class="mt-1 block text-xs text-gray-500 dark:text-gray-400" x-show="isMapped('target', @js($item['id'])) && !isConstant(@js($item['id']))" x-cloak>
-                                                            <span x-show="targetMode(@js($item['id'])) === 'whole'">{{ __('phpinnacle-ferry::resources.mapping.whole_array') }}</span>
-                                                            <span x-show="targetMode(@js($item['id'])) === 'item'">{{ __('phpinnacle-ferry::resources.mapping.array_items') }}</span>
-                                                        </span>
-                                                    @endif
-                                                    @if ($side === 'target')
-                                                        <span class="mt-1 block text-xs text-danger-600 dark:text-danger-400" x-show="hasTypeConflict(@js($item['id']))" x-cloak>{{ __('phpinnacle-ferry::resources.mapping.incompatible') }}</span>
-                                                    @endif
-                                                </x-phpinnacle-ferry::mapping-item>
-                                            </div>
-                                            <button
-                                                type="button"
-                                                class="field-mapping-port {{ $isLeft ? 'is-left' : 'is-right' }}"
-                                                data-mapping-port
-                                                data-side="{{ $side }}"
-                                                data-id="{{ $item['id'] }}"
-                                                data-label="{{ $plainLabel }}"
-                                                x-bind="fieldBindings(@js($side), @js($item['id']))"
-                                                aria-label="{{ 'Connect '.$plainLabel.' ('.$side.')' }}"
-                                                @disabled($disabled)
-                                            >
-                                                <span class="field-mapping-anchor" data-mapping-anchor aria-hidden="true">
-                                                    <x-filament::icon icon="heroicon-m-check" class="field-mapping-available-icon" />
-                                                    <x-filament::icon icon="heroicon-m-x-mark" class="field-mapping-unavailable-icon" />
-                                                </span>
-                                            </button>
-                                        </div>
-                                        @if ($side === 'source' && isset($constants[$item['id']]))
-                                            <div @class(['w-full', 'px-3 pb-2' => $dense, 'px-4 pb-3' => ! $dense]) data-mapping-static-source="{{ $item['id'] }}">
-                                                {{ $staticSchemas['constant_'.$item['id']] }}
-                                            </div>
+                                    @if ($side === 'source')
+                                        @if (! isset($constants[$item['id']]))
+                                            {!! $staticSchemas['sourceCards']->getComponent('card_'.$sourceStateKeys[$item['id']])->toSchemaHtml() !!}
                                         @endif
-                                        @if ($hasSourceFooter)
-                                            <div @class(['field-mapping-source-footer flex w-full items-start gap-2', 'px-3 pb-2' => $dense, 'px-4 pb-3' => ! $dense])>
-                                                <div class="min-w-0 flex-1" data-mapping-source-settings="{{ $item['id'] }}">
-                                                    {{ $staticSchemas['settings_'.$sourceStateKeys[$item['id']]] ?? null }}
-                                                </div>
-                                                @if (isset($constants[$item['id']]))
-                                                    <div class="field-mapping-static-remove shrink-0 p-2" :class="{ 'invisible': isMapped('source', @js($item['id'])) }">
-                                                        {{ ($getAction('removeConstant'))(['constant' => $item['id']])->label(__('phpinnacle-ferry::resources.binding.remove_constant').' '.$item['id']) }}
-                                                    </div>
-                                                @endif
-                                            </div>
-                                        @endif
-                                        @if ($staticSchema !== null)
-                                            {{-- Mount against Livewire's client state so nested field entanglements see their value. --}}
-                                            <template x-if="$wire.$get(@js($statePath))?.targets?.[@js($stateKeys[$item['id']])]?.kind === 'value'">
-                                                <div @class(['w-full', 'px-3 pb-2' => $dense, 'px-4 pb-3' => ! $dense]) data-mapping-static-form="{{ $item['id'] }}">
-                                                    {{ $staticSchema }}
-                                                </div>
-                                            </template>
-                                        @endif
-                                    </div>
+                                    @else
+                                        @include('phpinnacle-ferry::forms.field-mapping-row', ['field' => $field, 'presentation' => $item['presentation']])
+                                    @endif
                                 @endforeach
                                 @if ($side === 'source' && $hasStaticValues())
-                                    <div>{{ $getAction('addConstant') }}</div>
+                                    {!! $staticSchemas['mappingUi']->getComponent('staticSources')->toSchemaHtml() !!}
                                 @endif
                             </div>
                         </section>

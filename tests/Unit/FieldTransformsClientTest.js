@@ -58,7 +58,9 @@ test('the empty Transform label and filled input space activate the native add b
     });
     for (const keys of [[], ['0']]) {
         const { component, calls, activations } = editor(keys);
-        component.openFromSpace({ target: { closest: selector => keys.length === 0 && selector === '.ferry-transforms-placeholder' ? {} : null } });
+        let stopped = false;
+        component.openFromSpace({ stopPropagation: () => { stopped = true; }, target: { closest: selector => keys.length === 0 && selector === '.ferry-transforms-placeholder' ? {} : null } });
+        assert.equal(stopped, true);
         assert.deepEqual(activations, ['focus', ['mousedown', true, 0], 'click']);
         assert.deepEqual(calls, []);
     }
@@ -66,7 +68,9 @@ test('the empty Transform label and filled input space activate the native add b
 
 test('empty footer space does not open the catalog', () => {
     const { component, calls, activations } = editor([]);
-    component.openFromSpace({ target: { closest: () => null } });
+    let stopped = false;
+    component.openFromSpace({ stopPropagation: () => { stopped = true; }, target: { closest: () => null } });
+    assert.equal(stopped, false);
     assert.deepEqual(activations, []);
     assert.deepEqual(calls, []);
 });
@@ -80,7 +84,9 @@ test('chip controls, prevented clicks and disabled inputs keep their own behavio
     ]) {
         const { component, calls, button, activations } = editor(['0'], disabled);
         button.disabled = unavailable;
-        component.openFromSpace({ defaultPrevented: prevented, target: { closest: () => control ? {} : null } });
+        let stopped = false;
+        component.openFromSpace({ stopPropagation: () => { stopped = true; }, defaultPrevented: prevented, target: { closest: () => control ? {} : null } });
+        assert.equal(stopped, !disabled && !prevented);
         assert.deepEqual(activations, []);
         assert.deepEqual(calls, []);
     }

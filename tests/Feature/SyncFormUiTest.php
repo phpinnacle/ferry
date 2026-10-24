@@ -1,12 +1,17 @@
 <?php
 
+use Filament\Actions\Testing\TestAction;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Schemas\Schema as FilamentSchema;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Validation\ValidationException;
+use Livewire\Livewire;
+use PHPinnacle\Ferry\Data\DestinationField;
 use PHPinnacle\Ferry\Data\FieldMapping as SchemaMapping;
+use PHPinnacle\Ferry\Destinations\StaticDestination;
+use PHPinnacle\Ferry\Enums\ColumnType;
 use PHPinnacle\Ferry\Enums\DestinationType;
 use PHPinnacle\Ferry\Enums\StructureStatus;
 use PHPinnacle\Ferry\Forms\FieldBinding;
@@ -15,16 +20,20 @@ use PHPinnacle\Ferry\Models\ConnectionMetadata;
 use PHPinnacle\Ferry\Models\Sync;
 use PHPinnacle\Ferry\Resources\Syncs\Schemas\SyncForm;
 use PHPinnacle\Ferry\Services\DestinationFactory;
+use PHPinnacle\Ferry\Services\TransformRegistry;
 use PHPinnacle\Ferry\Tests\Fixtures\MappingState;
 use PHPinnacle\Ferry\Tests\Fixtures\SchemaHost;
 use PHPinnacle\Ferry\Tests\TestCase;
+use PHPinnacle\Ferry\Transformations\Trim;
 use PHPinnacle\Rosetta\Data\MetadataProperty;
 use PHPinnacle\Rosetta\Enums\FieldType;
 use PHPinnacle\Rosetta\Enums\MetadataKind;
 use PHPinnacle\Rosetta\Enums\PropertyKind;
 use PHPinnacle\Rosetta\Fields\NumberField;
+use PHPinnacle\Rosetta\Fields\ReferenceField;
 use PHPinnacle\Rosetta\Fields\ScalarField;
 use PHPinnacle\Rosetta\Fields\StringField;
+use PHPinnacle\Rosetta\Fields\UnionField;
 
 use function PHPinnacle\Ferry\Tests\Fakes\customers_destination;
 
@@ -33,11 +42,140 @@ require_once __DIR__ . '/../Fixtures/MappingState.php';
 require_once __DIR__ . '/../Fakes/CustomersDestination.php';
 
 require_once __DIR__ . '/../Fixtures/SchemaHost.php';
+require_once __DIR__ . '/../Fixtures/SyncForm.php';
 
 uses(TestCase::class);
 
 beforeEach(function () {
     Queue::fake();
+});
+
+it('updates only static cards and the changed transform editor in a large dynamic form', function () {
+    app(TransformRegistry::class)->register(Trim::make());
+    $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
+    $properties = [];
+    for ($index = 0; $index < 165; $index++) {
+        $properties[] = new MetadataProperty(
+            id: 'property-' . $index,
+            name: '_fld' . $index,
+            code: $index,
+            kind: PropertyKind::Field,
+            label: 'Field ' . $index,
+            title: 'Field ' . $index,
+            field: new StringField(100, false),
+        );
+    }
+    TestCase::makeMetadata($connection, ['properties' => $properties]);
+    $page = Livewire::test(\PHPinnacle\Ferry\Tests\Fixtures\SyncForm::class, ['state' => [
+        'connection_id' => $connection->id,
+        'source' => 'object-0',
+        'destination' => DestinationType::Dynamic->value,
+    ]]);
+    $sourceKey = $page->instance()->form->getComponentByStatePath('schema')->getBindingKey('_fld164');
+    $page->set('data.schema.bound.' . $sourceKey, true)
+        ->set('data.schema.bindings.' . $sourceKey . '.target', 'product_code');
+
+    $page->callAction(TestAction::make('addConstant')->schemaComponent('schema', 'form'));
+    expect($page->effects)->not->toHaveKey('html');
+    expect(implode('', $page->effects['partials']))
+        ->toContain('data-binding-constant=')
+        ->not->toContain('data-binding-source=');
+    $field = $page->instance()->form->getComponentByStatePath('schema');
+    $constant = array_key_first($field->getConstants());
+    $page->set('data.schema.bindings.' . $constant . '.input.static', 'value');
+    $draft = $page->get('data.schema');
+
+    $path = 'schema.sources.' . $field->getSourceStateKeys()['_fld0'] . '.transforms';
+    $action = TestAction::make('fieldTransforms')->schemaComponent($path, 'form');
+    $page->callAction($action->arguments(['transform' => 'trim']));
+    $page->assertSet('data.' . $path, [['key' => 'trim', 'params' => []]]);
+    expect($page->effects)->not->toHaveKey('html');
+    expect(array_keys($page->effects['partials']))->toBe(['schema-component::form.' . $path]);
+
+    $page->callAction($action->arguments(['transform' => 'trim', 'index' => 0, 'remove' => true]));
+    $page->assertSet('data.' . $path, []);
+    expect(array_keys($page->effects['partials']))->toBe(['schema-component::form.' . $path]);
+    expect($page->get('data.schema'))->toBe($draft);
+
+    $page->callAction(TestAction::make('removeConstant')
+        ->schemaComponent('schema', 'form')
+        ->arguments([
+            'constant' => $constant,
+        ]));
+    expect($page->effects)->not->toHaveKey('html');
+    expect(implode('', $page->effects['partials']))->not->toContain('data-binding-constant=', 'data-binding-source=');
+    $page->assertSet('data.schema.bindings.' . $sourceKey . '.target', 'product_code');
+});
+
+it('refreshes mapping compatibility when transform actions change the source type', function () {
+    app(TransformRegistry::class)->register(Trim::make());
+    app(DestinationFactory::class)->register(customers_destination());
+    $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
+    TestCase::makeMetadata($connection, ['system' => [
+        '_description' => new StringField(100, false),
+        '_code' => new StringField(9, true),
+    ]]);
+    $page = Livewire::test(\PHPinnacle\Ferry\Tests\Fixtures\SyncForm::class, ['state' => [
+        'connection_id' => $connection->id,
+        'source' => 'object-0',
+        'destination' => 'static:customers',
+    ]]);
+    $field = $page->instance()->form->getComponentByStatePath('schema');
+    expect($field->getConnectionModes()['_description'])
+        ->toHaveKeys(['name', 'tax_number'])
+        ->not->toHaveKey('is_active');
+    $path = 'schema.sources.' . $field->getSourceStateKeys()['_description'] . '.transforms';
+    $targets = ['target_6e616d65' => MappingState::source('_description')];
+    $page->set('data.schema.targets', $targets);
+    $action = TestAction::make('fieldTransforms')->schemaComponent($path, 'form');
+    $page->callAction($action->arguments(['transform' => 'cast']), ['params' => ['type' => 'boolean']]);
+    expect($page->instance()->form->getComponentByStatePath('schema')->getConnectionModes()['_description'])
+        ->toBe(['is_active' => 'whole']);
+    $card = 'schema-component::form.schema.card_' . $field->getSourceStateKeys()['_description'];
+    expect($page->effects)->not->toHaveKey('html');
+    expect($page->effects['partials'])->not->toHaveKey('schema-component::form.schema');
+    expect($page->effects['partials'][$card])
+        ->toContain('data-mapping-source-settings="_description"', '>boolean</span>')
+        ->not->toContain('data-mapping-source-settings="_code"');
+    expect($page->effects['partials']['schema-component::form.schema.configuration'])
+        ->toContain('updateConfiguration(');
+    $page->callAction($action->arguments(['transform' => 'cast', 'index' => 0, 'remove' => true]));
+    expect($page->instance()->form->getComponentByStatePath('schema')->getConnectionModes()['_description'])
+        ->toHaveKeys(['name', 'tax_number'])
+        ->not->toHaveKey('is_active');
+    expect($page->effects['partials'])
+        ->toHaveKeys([$card, 'schema-component::form.schema.configuration'])
+        ->not->toHaveKey('schema-component::form.schema');
+    $page->assertSet('data.schema.targets', $targets);
+
+    $page->callAction(TestAction::make('addConstant')->schemaComponent('schema', 'form'));
+    expect(array_keys($page->effects['partials']))->toEqualCanonicalizing([
+        'schema-component::form.schema.staticSources',
+        'schema-component::form.schema.configuration',
+    ]);
+    expect($page->effects['partials']['schema-component::form.schema.staticSources'])
+        ->toContain('data-mapping-static-source="static_1"')
+        ->not->toContain('data-mapping-source-settings="_description"', 'data-mapping-source-settings="_code"');
+    $staticPath = 'schema.sources.source_7374617469635f31.transforms';
+    $page->update(calls: [[
+        'method' => 'mountAction',
+        'params' => ['fieldTransforms', ['transform' => 'trim'], ['schemaComponent' => 'form.' . $staticPath]],
+        'path' => '',
+    ]], updates: ['data.schema.constants.static_1.static' => '  draft  ']);
+    $page
+        ->assertHasNoErrors()
+        ->assertSet('data.schema.constants.static_1.static', '  draft  ')
+        ->assertSet('data.' . $staticPath, [['key' => 'trim', 'params' => []]]);
+    expect($page->effects)->not->toHaveKey('html');
+    expect($page->effects['partials'])->not->toHaveKey('schema-component::form.schema');
+    $page->callAction(TestAction::make('removeConstant')
+        ->schemaComponent('schema', 'form')
+        ->arguments(['constant' => 'static_1']));
+    expect(array_keys($page->effects['partials']))->toEqualCanonicalizing([
+        'schema-component::form.schema.staticSources',
+        'schema-component::form.schema.configuration',
+    ]);
+    $page->assertSet('data.schema.constants', [])->assertSet('data.schema.targets', $targets);
 });
 
 it('shows Rosetta string bounds and exact numeric metadata in both mapping modes', function (string $destination) {
@@ -433,7 +571,7 @@ it('orders source objects with references first, obsolete ones last and titles c
 
 it('offers dynamic and every registered static destination in one select', function () use ($selects) {
     app(DestinationFactory::class)->register(customers_destination());
-    app(DestinationFactory::class)->register(new \PHPinnacle\Ferry\Destinations\StaticDestination(
+    app(DestinationFactory::class)->register(new StaticDestination(
         key: 'dynamic',
         label: 'Static destination named dynamic',
         table: 'other_customers',
@@ -476,7 +614,7 @@ it('validates the combined destination selection', function (?string $destinatio
 
 it('resets the shared schema when switching destinations', function (string $from, string $to) {
     app(DestinationFactory::class)->register(customers_destination());
-    app(DestinationFactory::class)->register(new \PHPinnacle\Ferry\Destinations\StaticDestination(
+    app(DestinationFactory::class)->register(new StaticDestination(
         key: 'other_customers',
         label: 'Other customers',
         table: 'other_customers',
@@ -651,3 +789,60 @@ it('edits physical source names while keeping metadata identities through column
         ->and($sync->columnMap($object)['_fld18'])
         ->toBe('name');
 })->with([DestinationType::Dynamic, DestinationType::Static]);
+
+it('shows each composite column as a separate source card and saves only its selected binding', function (string $destination) {
+    app(DestinationFactory::class)->register(new StaticDestination(
+        key: 'owners',
+        label: 'Owners',
+        table: 'owners',
+        primaryKey: 'id',
+        fields: [
+            new DestinationField('owner', 'Owner', ColumnType::Reference, required: true),
+        ],
+    ));
+    $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
+    TestCase::makeMetadata($connection, ['properties' => [new MetadataProperty(
+        'union-id',
+        '_fld17',
+        17,
+        PropertyKind::Field,
+        'Owner',
+        'Owner',
+        new UnionField([
+            new ReferenceField('catalog-a'),
+            new ReferenceField('catalog-b'),
+        ]),
+    )]]);
+    $form = SyncForm::configure(FilamentSchema::make(SchemaHost::make())->statePath('data')->operation('create'));
+    $form->fill([
+        'name' => 'Owners',
+        'code' => 'owners',
+        'connection_id' => $connection->id,
+        'source' => 'object-0',
+        'destination' => $destination,
+        'schema' => $destination === DestinationType::Dynamic->value
+            ? MappingState::binding(['_fld17_rrref' => 'owner'])
+            : MappingState::mapping(['owner' => MappingState::source('_fld17_rrref')]),
+    ]);
+    $mapping = $form->getComponentByStatePath('schema');
+    $sources = array_column($mapping->getSources(), null, 'id');
+    expect(array_keys($sources))
+        ->toContain('_fld17_type', '_fld17_rtref', '_fld17_rrref')
+        ->not
+        ->toContain('_fld17')
+        ->and($sources['_fld17_type']['label'])
+        ->toBe('Owner · ' . __('phpinnacle-ferry::resources.sync.components.type'));
+    $data = SyncForm::forCreate($form->getState(), app(DestinationFactory::class));
+    $bound = array_values(array_filter($data['schema'], fn (array $row) => $row['target'] !== null));
+    expect($bound)
+        ->toHaveCount(1)
+        ->and($bound[0]['source'])
+        ->toBe('union-id:rrref')
+        ->and($bound[0]['target'])
+        ->toBe('owner')
+        ->and($bound[0]['field'])
+        ->toBe(['type' => 'uuid']);
+    $filled = SyncForm::fill([...$data, 'type' => $data['type']->value, 'destination' => 'owners']);
+    $bound = array_values(array_filter($filled['schema'], fn (array $row) => $row['target'] !== null));
+    expect($bound[0]['source'])->toBe('_fld17_rrref');
+})->with([DestinationType::Dynamic->value, 'static:owners']);

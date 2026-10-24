@@ -12,6 +12,7 @@ use Filament\Schemas\Schema;
 use Filament\Support\Facades\FilamentAsset;
 use Illuminate\Support\ViewErrorBag;
 use Illuminate\Validation\ValidationException;
+use Livewire\Livewire;
 use PHPinnacle\Ferry\FerryServiceProvider;
 use PHPinnacle\Ferry\Forms\FieldBinding;
 use PHPinnacle\Ferry\Forms\FieldMapping;
@@ -26,8 +27,55 @@ use Tests\TestCase;
 require_once __DIR__ . '/../Fixtures/MappingState.php';
 
 require_once __DIR__ . '/../Fixtures/SchemaHost.php';
+require_once __DIR__ . '/../Fixtures/FieldMappingForm.php';
 
 uses(TestCase::class);
+
+it('partially updates every changed presentation and fully renders structural schema changes', function (bool $dynamicTarget) {
+    $page = Livewire::test(\PHPinnacle\Ferry\Tests\Fixtures\FieldMappingForm::class, [
+        'dynamicTarget' => $dynamicTarget,
+    ]);
+    $page->set('data.mapping.sources.source_6669727374.type', 'boolean');
+    expect($page->effects)->not->toHaveKey('html');
+    if ($dynamicTarget) {
+        expect($page->effects['partials'])->toHaveKey('schema-component::form.mapping');
+    } else {
+        expect($page->effects['partials'])->not->toHaveKey('schema-component::form.mapping');
+        foreach (['6669727374', '7365636f6e64'] as $source) {
+            expect($page->effects['partials']['schema-component::form.mapping.heading_source_' . $source])
+                ->toContain('>boolean</span>');
+        }
+    }
+    expect($page->instance()->form->getComponent('mapping')->getConnectionModes())->toBe([
+        'first' => ['destination' => 'whole'],
+        'second' => ['destination' => 'whole'],
+    ]);
+})->with([false, true]);
+
+it('refreshes source cards when a reactive schema changes its types and annotations', function (string $component) {
+    $definition = ['properties' => ['code' => ['title' => 'Code', 'type' => 'string', 'maxLength' => 10]]];
+    $source = function () use (&$definition) {
+        return $definition;
+    };
+    $field = $component === FieldBinding::class
+        ? FieldBinding::make('mapping')->jsonSchema($source)->simple(TextInput::make('target'))
+        : FieldMapping::make('mapping')->jsonSchema(source: $source, dest: []);
+    Schema::make(SchemaHost::make())->statePath('data')->components([$field])->fill(['mapping' => []]);
+    expect($field->getSources()[0]['presentation']['type'])->toBe('string');
+    $definition = [
+        'properties' => ['code' => ['title' => 'Quantity', 'type' => 'integer', 'minimum' => 0]],
+        'required' => ['code'],
+    ];
+    $card = $field->getSources()[0];
+    expect($card['label'])
+        ->toBe('Quantity')
+        ->and($card['required'])
+        ->toBeTrue()
+        ->and($card['presentation']['type'])
+        ->toBe('integer')
+        ->and($card['presentation']['constraints'])
+        ->toBe([['kind' => 'range', 'value' => '≥ 0', 'scope' => []]]);
+})->with(['binding' => [FieldBinding::class], 'mapping' => [FieldMapping::class]]);
 
 /**
  * @param array<array-key, mixed> $mapping
@@ -258,7 +306,11 @@ it('preserves standalone mapping content and values across presentation options'
     expect(str_contains($html, 'x-tooltip="{ content:'))->toBe($compact);
     expect($html)->toContain($dense ? 'min-h-14' : 'min-h-20');
     expect($html)->not->toContain($dense ? 'min-h-20' : 'min-h-14');
-    expect(str_contains($text, 'Show unmapped'))->toBe($contained);
+    expect(str_contains($text, 'Field visibility'))->toBe($contained);
+    expect(substr_count($html, 'type="radio"'))->toBe($contained ? 3 : 0);
+    if ($contained) {
+        expect($text)->toContain('All', 'Mapped', 'Unmapped');
+    }
     expect($html)->toContain('aria-live="polite"');
     expect($html)->toContain(FilamentAsset::getAlpineComponentSrc('field-mapping', FerryServiceProvider::PACKAGE));
     expect($schema->getState()['mapping'])
@@ -291,7 +343,7 @@ it('keeps the mapping toolbar when either side has no fields', function (
         ->toContain('No fields available.')
         ->not->toContain('Incoming fields')
         ->not->toContain('Output fields')
-        ->not->toContain('type="search"')->toContain('Show unmapped')->toContain('Review the destination.');
+        ->not->toContain('type="search"')->toContain('Field visibility')->toContain('Review the destination.');
 })->with([
     'no source fields' => [[], ['name']],
     'no target fields' => [['title'], []],

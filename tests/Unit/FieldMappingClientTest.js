@@ -20,12 +20,44 @@ function editor(state = {}, disabled = false, options = {}) {
         querySelector() { return this; },
     }));
     const connectionModes = structuredClone(options.connectionModes ?? scalarModes);
-    const component = fieldMapping({ state: { sources: options.sourceSettings ?? {}, targets: state }, disabled, connectionModes, requiredTargets: options.requiredTargets, inverse: options.inverse, stateKeys: options.stateKeys, staticDefaults: options.staticDefaults });
-    component.$root = { querySelectorAll: (selector) => selector === '[data-mapping-port]' ? ports : [] };
+    const element = { querySelectorAll: (selector) => selector === '[data-mapping-port]' ? ports : [] };
+    const component = fieldMapping({ element, state: { sources: options.sourceSettings ?? {}, targets: state }, disabled, connectionModes, requiredTargets: options.requiredTargets, inverse: options.inverse, stateKeys: options.stateKeys, staticDefaults: options.staticDefaults });
+    component.$root = element;
     component.$refs = { canvas: { getBoundingClientRect: () => ({ left: 20, top: 40, width: 500, height: 300 }) } };
     component.$nextTick = (callback) => callback();
     return component;
 }
+
+test('partial configuration updates refresh compatibility and ports while keeping drafts and filters', () => {
+    const component = editor({ name: sourceEntry('title') }, false, { sourceSettings: { title: { transforms: [{ key: 'trim' }] } } });
+    component.sourceSearch = 'title';
+    component.visibilityFilter = 'mapped';
+    component.refresh();
+    const state = structuredClone(component.state);
+    const ports = component.$root.querySelectorAll('[data-mapping-port]');
+    component.$root = { querySelectorAll: () => [] };
+    ports.push({ ...ports[0], dataset: { side: 'source', id: 'static_1', label: 'Static 1' } });
+    component.selected = { side: 'source', id: 'title' };
+    component.updateConfiguration({ title: { contact: 'whole' }, static_1: { name: 'whole' } }, ['title', 'email', 'static_1'], { title: 'boolean' });
+    assert.equal(component.hasTypeConflict('name'), true);
+    assert.equal(component.canConnect('static_1', 'name'), true);
+    assert.equal(component.sourceSearch, 'title');
+    assert.equal(component.visibilityFilter, 'mapped');
+    assert.deepEqual(component.selected, { side: 'source', id: 'title' });
+    component.sourceSearch = 'boolean';
+    assert.equal(component.isVisible('source', 'title', 'Title'), true);
+    component.sourceSearch = 'string';
+    assert.equal(component.isVisible('source', 'title', 'Title'), false);
+    assert.deepEqual(component.state, state);
+    component.selected = { side: 'source', id: 'static_1' };
+    ports.pop();
+    component.updateConfiguration(scalarModes, ['title', 'email'], { title: 'string' });
+    assert.equal(component.selected, null);
+    assert.equal(component.canConnect('static_1', 'name'), false);
+    assert.equal(component.hasTypeConflict('name'), false);
+    assert.equal(component.isVisible('source', 'title', 'Title'), true);
+    assert.deepEqual(component.state, state);
+});
 
 test('native static editors switch modes locally and preserve typed defaults', () => {
     const component = editor({}, false, {
@@ -238,24 +270,52 @@ test('read-only fields do not change state through selection, port clicks, or re
     assert.equal(component.selected, null);
 });
 
-test('search and unmapped filters affect visibility without deleting mappings', () => {
-    const component = editor({ name: sourceEntry('title') });
-    component.sourceSearch = ' EMAIL ';
-    assert.equal(component.isVisible('source', 'email', 'Email address'), true);
-    assert.equal(component.isVisible('source', 'title', 'Display name'), false);
-    component.sourceSearch = '';
-    component.unmappedOnly = true;
-    assert.equal(component.isVisible('source', 'title', 'Display name'), false);
-    assert.equal(component.isVisible('target', 'name', 'Customer name'), false);
-    assert.equal(component.isVisible('source', 'email', 'Email'), true);
-    assert.deepEqual(component.state.targets, { name: sourceEntry('title') });
+for (const inverse of [false, true]) {
+    test(`${inverse ? 'inverse' : 'forward'}: all, mapped and unmapped filters combine with search and preserve state`, () => {
+        const state = { name: sourceEntry('title') };
+        const component = editor(state, false, { inverse });
+        assert.equal(component.visibilityFilter, 'all');
+        for (const side of ['source', 'target']) {
+            const mapped = side === 'source' ? 'title' : 'name';
+            const unmapped = side === 'source' ? 'email' : 'contact';
+            for (const [filter, mappedVisible, unmappedVisible] of [
+                ['all', true, true], ['mapped', true, false], ['unmapped', false, true],
+            ]) {
+                component.visibilityFilter = filter;
+                assert.equal(component.isVisible(side, mapped, 'Mapped field'), mappedVisible);
+                assert.equal(component.isVisible(side, unmapped, 'Other field'), unmappedVisible);
+                component[side === 'source' ? 'sourceSearch' : 'targetSearch'] = ' MAPPED ';
+                assert.equal(component.isVisible(side, mapped, 'Mapped field'), mappedVisible);
+                assert.equal(component.isVisible(side, unmapped, 'Other field'), false);
+                component[side === 'source' ? 'sourceSearch' : 'targetSearch'] = '';
+            }
+        }
+        assert.deepEqual(component.state.targets, state);
+        component.visibilityFilter = 'all';
+        assert.equal(component.isVisible('source', 'email', 'Other field'), true);
+    });
+}
+
+test('static target values count as mapped and follow changes without modifying their values', () => {
+    const component = editor({ name: value(false) });
+    component.visibilityFilter = 'mapped';
+    assert.equal(component.isVisible('target', 'name', 'Name'), true);
+    assert.equal(component.isVisible('source', 'title', 'Title'), false);
+    component.visibilityFilter = 'unmapped';
+    assert.equal(component.isVisible('target', 'name', 'Name'), false);
+    assert.equal(component.isVisible('source', 'title', 'Title'), true);
+    component.connect('title', 'name');
+    assert.equal(component.isVisible('source', 'title', 'Title'), false);
+    component.remove('name');
+    assert.equal(component.isVisible('source', 'title', 'Title'), true);
+    assert.deepEqual(component.state.targets, {});
 });
 
 test('line endpoints follow the actual ports and hidden ports do not produce lines', () => {
     const component = editor({ name: sourceEntry('title'), contact: sourceEntry('email') });
     component.refresh();
     assert.equal(component.connections.length, 2);
-    assert.match(component.connections[0].path, /^M 88 48 .*388 48$/);
+    assert.match(component.connections.find(({ source }) => source === 'title').path, /^M 88 48 .*388 48$/);
     component.port('target', 'name').getBoundingClientRect = () => ({ left: 0, top: 0, width: 0, height: 0 });
     component.refresh();
     assert.deepEqual(component.connections.map((connection) => connection.target), ['contact']);
@@ -371,7 +431,7 @@ for (const inverse of [false, true]) {
         component.refresh();
 
         assert.equal(component.connections.length, 2);
-        assert.deepEqual(component.connections.map(({ source }) => source), ['title', 'email']);
+        assert.deepEqual(component.connections.map(({ source }) => source).sort(), ['email', 'title']);
         assert.equal(component.mappedTargetCount(), 1);
         assert.deepEqual(component.missingRequired(), []);
         component.connect('title', 'name');
@@ -397,8 +457,9 @@ for (const inverse of [false, true]) {
         assert.deepEqual(component.state.targets, { name: [sourceEntry('title'), sourceEntry('email')] });
         component.refresh();
         assert.equal(component.connections.length, 2);
-        assert.match(component.connections[1].path, inverse ? /^M 88 48 .*388 128$/ : /^M 88 128 .*388 48$/);
-        assert.deepEqual(component.connections[1].midpoint, { x: 238, y: 88 });
+        const connection = component.connections.find(({ source }) => source === 'email');
+        assert.match(connection.path, inverse ? /^M 88 48 .*388 128$/ : /^M 88 128 .*388 48$/);
+        assert.deepEqual(connection.midpoint, { x: 238, y: 88 });
     });
 
     test(`${mode}: conflicts are checked for every source in a multiple destination`, () => {
@@ -549,12 +610,12 @@ for (const inverse of [false, true]) {
     test(`${inverse ? 'inverse' : 'forward'}: hover and focus highlight only the connection endpoints`, () => {
         const component = editor({ name: [sourceEntry('title'), sourceEntry('email')] }, false, { inverse, connectionModes: itemModes });
         component.refresh();
-        component.hoveredConnection = component.connections[0];
+        component.hoveredConnection = component.connections.find(({ source }) => source === 'title');
         assert.equal(component.rowClasses('source', 'title', false)['is-disconnecting'], true);
         assert.equal(component.rowClasses('target', 'name', false)['is-disconnecting'], true);
         assert.equal(component.rowClasses('source', 'email', false)['is-disconnecting'], false);
         assert.equal(component.rowClasses('target', 'contact', false)['is-disconnecting'], false);
-        component.focusedConnection = component.connections[1];
+        component.focusedConnection = component.connections.find(({ source }) => source === 'email');
         component.hoveredConnection = null;
         assert.equal(component.rowClasses('source', 'title', false)['is-disconnecting'], false);
         assert.equal(component.rowClasses('source', 'email', false)['is-disconnecting'], true);
@@ -582,7 +643,8 @@ for (const inverse of [false, true]) {
         test(`${inverse ? 'inverse' : 'forward'}: empty card footer connects ${firstSide} first without capturing controls`, () => {
             const component = editor({}, false, { inverse });
             const currentTarget = { contains: () => true };
-            const emptySpace = { currentTarget, target: { closest: () => null } };
+            const group = {};
+            const emptySpace = { currentTarget, target: { closest: selector => selector.includes('[role="group"]') ? group : null } };
             const control = { currentTarget, target: { closest: () => ({}) } };
             const firstId = firstSide === 'source' ? 'email' : 'contact';
             const secondSide = firstSide === 'source' ? 'target' : 'source';

@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Lang;
 use PHPinnacle\Ferry\Casts\PropertiesCast;
 use PHPinnacle\Ferry\Casts\SystemCast;
 use PHPinnacle\Ferry\Casts\ValuesCast;
+use PHPinnacle\Ferry\Data\SourceField;
 use PHPinnacle\Ferry\Enums\ColumnType;
 use PHPinnacle\Rosetta\Contracts\Field;
 use PHPinnacle\Rosetta\Data\EnumerationValue;
@@ -74,6 +75,12 @@ class ConnectionMetadata extends Model
         'revision',
     ];
 
+    /** @var array{string, string, string}|null */
+    private ?array $sourceFieldsCacheKey = null;
+
+    /** @var array<string, SourceField> */
+    private array $cachedSourceFields = [];
+
     /** @return HasMany<ConnectionMetadata, $this> */
     public function children(): HasMany
     {
@@ -93,54 +100,22 @@ class ConnectionMetadata extends Model
 
     public function field(string $source): ?Field
     {
-        $field = $this->system[$source] ?? null;
-
-        if ($field !== null) {
-            return $field;
-        }
-
-        foreach ($this->properties as $property) {
-            if ($property->id === $source) {
-                return $property->field;
-            }
-        }
-
-        return null;
+        return $this->sourceFields()[$source]->field ?? null;
     }
 
-    /**
-     * @return list<array{source: string, title: string, physical: string, type: ColumnType}>
-     */
+    /** @return list<array{source: string, title: string, physical: string, type: ColumnType}> */
     public function mappableFields(bool $withKey = true): array
     {
         $fields = [];
-
-        foreach ($this->system as $name => $field) {
-            $type = ColumnType::fromField($field);
-
-            if ($name === self::KEY_COLUMN && !$withKey || $type === null) {
+        foreach ($this->sourceFields() as $field) {
+            $type = ColumnType::fromField($field->field);
+            if ($field->source === self::KEY_COLUMN && !$withKey || $type === null) {
                 continue;
             }
-
             $fields[] = [
-                'source' => $name,
-                'title' => self::systemTitle($name),
-                'physical' => $name,
-                'type' => $type,
-            ];
-        }
-
-        foreach ($this->properties as $property) {
-            $type = ColumnType::fromField($property->field);
-
-            if ($type === null) {
-                continue;
-            }
-
-            $fields[] = [
-                'source' => $property->id,
-                'title' => self::firstFilled($property->title, $property->label, $property->name),
-                'physical' => $property->name,
+                'source' => $field->source,
+                'title' => $field->title,
+                'physical' => $field->physical,
                 'type' => $type,
             ];
         }
@@ -150,17 +125,32 @@ class ConnectionMetadata extends Model
 
     public function physicalColumn(string $source): ?string
     {
-        if (array_key_exists($source, $this->system)) {
-            return $source;
+        return $this->sourceFields()[$source]->physical ?? null;
+    }
+
+    /** @return array<string, SourceField> */
+    private function sourceFields(): array
+    {
+        /** @var array{system: string, properties: string} $attributes */
+        $attributes = $this->getAttributes();
+        $cacheKey = [$attributes['system'], $attributes['properties'], Lang::getLocale()];
+        if ($this->sourceFieldsCacheKey === $cacheKey) {
+            return $this->cachedSourceFields;
         }
 
+        $fields = [];
+        foreach ($this->system as $name => $field) {
+            $fields[$name] = new SourceField($name, $name, self::systemTitle($name), $field);
+        }
         foreach ($this->properties as $property) {
-            if ($property->id === $source) {
-                return $property->name;
+            foreach (SourceField::fromProperty($property) as $field) {
+                $fields[$field->source] = $field;
             }
         }
 
-        return null;
+        $this->sourceFieldsCacheKey = $cacheKey;
+
+        return $this->cachedSourceFields = $fields;
     }
 
     /** @return BelongsTo<ConnectionMetadata, $this> */

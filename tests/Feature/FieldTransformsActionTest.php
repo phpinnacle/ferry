@@ -2,8 +2,10 @@
 
 use Filament\Actions\Action;
 use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Schema;
 use Illuminate\Validation\ValidationException;
+use PHPinnacle\Ferry\Forms\Actions\FieldTransformsAction;
 use PHPinnacle\Ferry\Forms\FieldTransforms;
 use PHPinnacle\Ferry\Forms\JsonSchema;
 use PHPinnacle\Ferry\Services\TransformRegistry;
@@ -26,6 +28,21 @@ beforeEach(function () {
     $this->field = FieldTransforms::make('transforms')->label('Name')->inputSchema(['type' => 'string']);
     Schema::make(SchemaHost::make())->statePath('data')->components([$this->field])->fill();
     $this->action = $this->field->getAction('fieldTransforms');
+});
+
+it('builds parameter forms when opening a transform rather than rendering its menu', function () {
+    $builds = 0;
+    app(TransformRegistry::class)->register(Transformation::make('custom')->schema(function () use (&$builds) {
+        $builds++;
+
+        return [TextInput::make('value')->required()];
+    }));
+
+    $action = FieldTransformsAction::make($this->field, app(TransformRegistry::class))->schemaComponent($this->field);
+    expect($action->toHtml())->toContain('custom');
+    expect($builds)->toBe(0);
+    expect($action(['transform' => 'custom'])->shouldOpenModal())->toBeTrue();
+    expect($builds)->toBe(1);
 });
 
 it('validates repeated numeric casts and offers transforms for the final type', function () {

@@ -19,7 +19,7 @@
     x-load
     x-load-src="{{ FilamentAsset::getAlpineComponentSrc('field-transforms', FerryServiceProvider::PACKAGE) }}"
     :x-data="'fieldTransforms('.Js::from(['action' => $action->getName(), 'context' => $action->getContext(), 'disabled' => $disabled])->toHtml().')'"
-    x-on:click.stop="openFromSpace($event)"
+    x-on:click="openFromSpace($event)"
 >
     <div @class(['ferry-transforms-input', 'has-additions' => ! $disabled && $addable !== []])>
         <div class="ferry-transforms-add" x-ref="add">

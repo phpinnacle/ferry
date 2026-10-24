@@ -675,7 +675,11 @@ it('preserves binding metadata and values across presentation options', function
     expect(str_contains($html, 'x-tooltip="{ content:'))->toBe($compact);
     expect($html)->toContain($dense ? 'min-h-14' : 'min-h-20');
     expect($html)->not->toContain($dense ? 'min-h-20' : 'min-h-14');
-    expect(str_contains($text, 'Show unbound'))->toBe($contained);
+    expect(str_contains($text, 'Field visibility'))->toBe($contained);
+    expect(substr_count($html, 'type="radio"'))->toBe($contained ? 3 : 0);
+    if ($contained) {
+        expect($text)->toContain('All', 'Bound', 'Unbound');
+    }
     expect(str_contains($text, '1 of 6 sources bound'))->toBe($contained);
     expect($schema->getState()['bindings'])
         ->toBe(MappingState::binding(['name' => 'profile.name'], [], array_column($field->getSources(), 'id')));
@@ -694,7 +698,7 @@ it('keeps the binding toolbar around the empty state', function () {
         ->toContain('No fields available.')
         ->not->toContain('Incoming fields')
         ->not->toContain('Output fields')
-        ->not->toContain('type="search"')->toContain('Show unbound')->toContain('0 of 0 sources bound')
+        ->not->toContain('type="search"')->toContain('Field visibility')->toContain('0 of 0 sources bound')
         ->not->toContain(
             'Bind a source to configure it. Unbind to exclude it.',
         );

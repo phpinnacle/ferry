@@ -9,6 +9,8 @@ use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Components\Component;
 use Filament\Schemas\Components\Concerns\CanBeCompact;
+use Filament\Schemas\Components\Group;
+use Filament\Schemas\Components\View;
 use Filament\Schemas\Schema;
 use Filament\Support\Concerns\CanBeContained;
 use Illuminate\Support\Arr;
@@ -23,6 +25,7 @@ use PHPinnacle\Ferry\Forms\Concerns\Searchable;
 /**
  * @phpstan-import-type MappingItem from JsonSchema
  * @phpstan-import-type Definition from JsonSchema
+ * @phpstan-import-type Presentation from JsonSchema
  * @phpstan-type SourceEntry array{kind: 'source', source: string}
  * @phpstan-type ValueEntry array{kind: 'value', value: mixed}
  * @phpstan-type Entry SourceEntry|ValueEntry
@@ -75,6 +78,20 @@ class FieldMapping extends Field
 
     /** @var array<string, string>|Closure(): array<string, string> */
     protected array|Closure $targetWarnings = [];
+
+    /** @var Definition|null */
+    private ?array $cachedSourceDefinition = null;
+
+    /** @var list<MappingItem> */
+    private array $cachedSources = [];
+
+    /** @var array<string, Presentation>|null */
+    private ?array $sourcePresentationsBeforeUpdate = null;
+
+    /** @var array<string, true> */
+    private array $updatedSources = [];
+
+    private bool $shouldRenderStaticSources = false;
 
     /** @var list<string> */
     private array $cachedStaticTargets = [];
@@ -191,12 +208,16 @@ class FieldMapping extends Field
     /** @return array<Component> */
     protected function getSourceSettingsComponents(string $source): array
     {
-        return $this->evaluate($this->sourceSettingsSchema, [
+        $components = $this->evaluate($this->sourceSettingsSchema, [
             'source' => $source,
             'inputSchema' => array_key_exists($source, $this->getConstants())
                 ? fn () => fn () => JsonSchema::fromArray($this->getSourceSchema())->properties()[$source]
                 : null,
         ]);
+
+        return [Group::make($components)->afterStateUpdated(function () use ($source) {
+            $this->updatedSources[$source] = true;
+        })];
     }
 
     /** @return array<string, string> */
@@ -220,9 +241,12 @@ class FieldMapping extends Field
         return $this
             ->makeChildSchema(self::stateKey($target))
             ->statePath('targets.' . self::stateKey($target))
+            ->partiallyRender()
             ->components([
-                Hidden::make('kind')->default('value'),
-                $field,
+                Group::make([
+                    Hidden::make('kind')->default('value'),
+                    $field,
+                ])->key('staticValue', isInheritable: false)->partiallyRenderAfterStateUpdated(),
             ]);
     }
 
@@ -249,6 +273,7 @@ class FieldMapping extends Field
     /** @return array<Schema> */
     public function getDefaultChildSchemas(): array
     {
+        $this->sourcePresentationsBeforeUpdate ??= $this->getSourcePresentations();
         $this->cachedStaticTargets = $this->getStaticTargets();
         $schemas = $this->makeSourceSettingsSchemas();
         foreach (array_keys($this->getConstants()) as $source) {
@@ -260,6 +285,7 @@ class FieldMapping extends Field
                 $schemas[self::stateKey($target)] = $schema;
             }
         }
+        $schemas['sourceCards'] = $this->makeChildSchema('sourceCards')->inline()->components($this->sourceCards());
 
         return $schemas;
     }
@@ -545,7 +571,13 @@ class FieldMapping extends Field
     /** @return list<MappingItem> */
     public function getSources(): array
     {
-        return JsonSchema::fromArray($this->getSourceSchema())->toMappingItems();
+        $definition = $this->getSourceSchema();
+        if ($this->cachedSourceDefinition !== $definition) {
+            $this->cachedSources = JsonSchema::fromArray($definition)->toMappingItems();
+            $this->cachedSourceDefinition = $definition;
+        }
+
+        return $this->cachedSources;
     }
 
     /** @return list<MappingItem> */
@@ -559,8 +591,12 @@ class FieldMapping extends Field
         parent::setUp();
 
         $this->schema([]);
+        $this->childComponents([
+            View::make('phpinnacle-ferry::forms.field-mapping-configuration')->key('configuration'),
+            View::make('phpinnacle-ferry::forms.field-mapping-static-sources')->key('staticSources'),
+        ], 'mappingUi');
         $this->default([]);
-        $this->partiallyRenderAfterStateUpdated();
+        $this->afterStateUpdated(fn (self $component) => $component->renderMappingUpdates());
         $this->required(fn () => $this->getRequiredTargets() !== []);
         $this->mutateDehydratedStateUsing($this->dehydrateMapping(...));
         $this->rules(fn () => [
@@ -586,6 +622,8 @@ class FieldMapping extends Field
                 if ($this->isDisabled() || !$this->hasStaticValues()) {
                     return;
                 }
+                $this->sourcePresentationsBeforeUpdate ??= $this->getSourcePresentations();
+                $this->shouldRenderStaticSources = true;
                 /** @var array{constants: array<string, array{static: mixed}>, sources: array<string, array<string, mixed>>, targets: Targets} $state */
                 $state = $this->getRawState();
                 $source = $this->nextConstantName($this->getConstants());
@@ -618,6 +656,8 @@ class FieldMapping extends Field
                 if ($this->isSourceUsed($source)) {
                     return;
                 }
+                $this->sourcePresentationsBeforeUpdate ??= $this->getSourcePresentations();
+                $this->shouldRenderStaticSources = true;
                 /** @var array{constants: array<string, array{static: mixed}>, sources: array<string, array<string, mixed>>, targets: Targets} $state */
                 $state = $this->getRawState();
                 unset($state['constants'][$source], $state['sources'][$this->getSourceStateKeys()[$source]]);
@@ -625,6 +665,83 @@ class FieldMapping extends Field
                 $this->clearCachedChildSchemas();
                 $this->callAfterStateUpdated();
             });
+    }
+
+    /** @return array<string, Presentation> */
+    public function getSourcePresentations(): array
+    {
+        return array_map(
+            fn (JsonSchema $property) => $property->presentation(),
+            JsonSchema::fromArray($this->getOutputSchema())->properties(),
+        );
+    }
+
+    /** @return list<View> */
+    private function sourceCards(): array
+    {
+        $presentations = $this->getSourcePresentations();
+        $keys = $this->getSourceStateKeys();
+
+        $components = [];
+        foreach ($this->getSources() as $item) {
+            $data = [
+                'item' => $item,
+                'presentation' => $presentations[$item['id']] ?? JsonSchema::fromArray([])->presentation(),
+            ];
+            $components[] = View::make('phpinnacle-ferry::forms.field-mapping-source-card')
+                ->key('card_' . $keys[$item['id']])->viewData($data);
+            $components[] = View::make('phpinnacle-ferry::forms.field-mapping-source-heading')
+                ->key('heading_' . $keys[$item['id']])
+                ->viewData($data);
+        }
+
+        return $components;
+    }
+
+    private function renderMappingUpdates(): void
+    {
+        if ($this->sourceSchema instanceof Closure || $this->targetSchema instanceof Closure) {
+            $this->partiallyRender();
+
+            return;
+        }
+        // Live updates can reach the parent before its child schemas have been resolved.
+        $refreshHeadings = $this->sourcePresentationsBeforeUpdate === null;
+        $presentations = $this->getSourcePresentations();
+        $schemas = $this->getChildSchemas();
+        $keys = $this->getSourceStateKeys();
+        $constants = $this->getConstants();
+        foreach ($this->getSources() as $item) {
+            $source = $item['id'];
+            $presentation = $presentations[$source] ?? JsonSchema::fromArray([])->presentation();
+            if ($this->shouldRenderStaticSources && array_key_exists($source, $constants)) {
+                continue;
+            }
+            if (
+                !array_key_exists($source, $this->updatedSources)
+                && $presentation === ($this->sourcePresentationsBeforeUpdate[$source] ?? null)
+                && !$refreshHeadings
+            ) {
+                continue;
+            }
+            /** @var View $heading */
+            $heading = $schemas['sourceCards']->getComponent('heading_' . $keys[$source]);
+            $heading->viewData(['item' => $item, 'presentation' => $presentation]);
+            /** @var View $card */
+            $card = $schemas['sourceCards']->getComponent(($refreshHeadings ? 'heading_' : 'card_') . $keys[$source]);
+            $card->viewData(['item' => $item, 'presentation' => $presentation])->partiallyRender();
+        }
+        if ($this->shouldRenderStaticSources) {
+            /** @var View $staticSources */
+            $staticSources = $schemas['mappingUi']->getComponent('staticSources');
+            $staticSources->partiallyRender();
+        }
+        /** @var View $configuration */
+        $configuration = $schemas['mappingUi']->getComponent('configuration');
+        $configuration->partiallyRender();
+        $this->sourcePresentationsBeforeUpdate = $presentations;
+        $this->updatedSources = [];
+        $this->shouldRenderStaticSources = false;
     }
 
     /** @param array<string, array{static: mixed}> $constants */

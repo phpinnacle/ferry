@@ -46,11 +46,11 @@ class FieldTransformsAction
                 'allowedMoves' => $component->getAllowedMoves($transforms),
                 'object' => $object,
             ])
-            ->modal(
+            ->modalHidden(
                 fn (Action $action, array $arguments) => (
-                    !$action->isDisabled()
-                    && self::hasForm($arguments)
-                    && $selected($arguments)->getSchema($object) !== []
+                    $action->isDisabled()
+                    || !self::hasForm($arguments)
+                    || $selected($arguments)->getSchema($object) === []
                 ),
             )
             ->modalIcon(fn (array $arguments) => $selected($arguments)->getIcon())

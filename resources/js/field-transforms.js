@@ -23,8 +23,13 @@ export default function fieldTransforms({ action, context, disabled }) {
         },
 
         openFromSpace(event) {
-            if (disabled || event.defaultPrevented || event.target.closest('button, a, .ferry-transform')) return;
+            if (disabled || event.defaultPrevented) return;
+            if (event.target.closest('button, a, .ferry-transform')) {
+                event.stopPropagation();
+                return;
+            }
             if (this.$refs.items.children.length === 0 && !event.target.closest('.ferry-transforms-placeholder')) return;
+            event.stopPropagation();
             const button = this.$refs.add.querySelector('button');
             if (button.disabled) return;
             button.focus();

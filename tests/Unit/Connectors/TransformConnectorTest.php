@@ -4,6 +4,7 @@ use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Queue;
 use PHPinnacle\Ferry\Data\TransformSetting;
 use PHPinnacle\Ferry\Enums\StructureStatus;
+use PHPinnacle\Ferry\Models\ConnectionMetadata;
 use PHPinnacle\Ferry\Rules\SyncSchema;
 use PHPinnacle\Ferry\Services\DestinationFactory;
 use PHPinnacle\Ferry\Services\SourceFactory;
@@ -16,8 +17,10 @@ use PHPinnacle\Ferry\Transformations\Trim;
 use PHPinnacle\Rosetta\Data\MetadataProperty;
 use PHPinnacle\Rosetta\Enums\FieldType;
 use PHPinnacle\Rosetta\Enums\PropertyKind;
+use PHPinnacle\Rosetta\Fields\ReferenceField;
 use PHPinnacle\Rosetta\Fields\ScalarField;
 use PHPinnacle\Rosetta\Fields\StringField;
+use PHPinnacle\Rosetta\Fields\UnionField;
 
 require_once __DIR__ . '/../../TestCase.php';
 
@@ -216,4 +219,84 @@ it('builds installed string transforms before renames and guards masking against
         ->toBe('org.apache.kafka.connect.transforms.predicates.RecordIsTombstone')
         ->and($config['transforms.rename_values.renames'])
         ->toBe('_idrref:idrref,_description:contact');
+});
+
+it('scopes and transforms independently selected reference components using their real columns', function () {
+    $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
+    $object = TestCase::makeMetadata($connection, ['properties' => [
+        new MetadataProperty(
+            'single-id',
+            '_fld16',
+            16,
+            PropertyKind::Reference,
+            'Supplier',
+            'Supplier',
+            new ReferenceField('catalog-a'),
+        ),
+        new MetadataProperty('union-id', '_fld17', 17, PropertyKind::Field, 'Owner', 'Owner', new UnionField([
+            new ReferenceField('catalog-a'),
+            new ReferenceField('catalog-b'),
+        ])),
+    ]]);
+    $sync = TestCase::makeSync([
+        'connection_id' => $connection->id,
+        'schema' => SyncSchema::fromBindings(
+            $object,
+            ['single-id' => 'supplier', 'union-id:rrref' => 'owner'],
+            app(TransformRegistry::class),
+            transforms: [
+                'fields' => ['union-id:type' => [new TransformSetting('filter', [
+                    'condition' => "@ == '08'",
+                    'mode' => 'include',
+                    'missing_or_null_behavior' => 'include',
+                ])]],
+            ],
+        ),
+    ]);
+    $source = new SourceFactory;
+    $config = $source->source($connection, new Collection([$sync]));
+    $sink = new DestinationFactory()
+        ->resolve($sync)
+        ->connector($sync, $object, $source->topic($connection, $object), app(TransformFactory::class));
+
+    expect(explode(',', $config['column.include.list']))
+        ->toBe([
+            'public._reference0._idrref',
+            'public._reference0._fld16rref',
+            'public._reference0._fld17_rrref',
+            'public._reference0._fld17_type',
+        ])
+        ->and($sink['transforms.rename_values.renames'])
+        ->toBe('_idrref:idrref,_fld16rref:supplier,_fld17_rrref:owner')
+        ->and($sink['transforms.field_2_0.filter.condition'])
+        ->toBe("$[?(@['_fld17_type'] == '08')]")
+        ->and($sink['fields.whitelist'])
+        ->toBe('idrref,supplier,owner')
+        ->and($sync->fresh()->schema)
+        ->toEqual($sync->schema)
+        ->and($sync->hasValidSchema($object))
+        ->toBeTrue();
+
+    $renamed = new ConnectionMetadata([
+        'system' => $object->system,
+        'properties' => [
+            new MetadataProperty(
+                'single-id',
+                '_fld26',
+                26,
+                PropertyKind::Reference,
+                'Supplier',
+                'Supplier',
+                new ReferenceField('catalog-a'),
+            ),
+            new MetadataProperty('union-id', '_fld27', 27, PropertyKind::Field, 'Owner', 'Owner', new UnionField([
+                new ReferenceField('catalog-a'),
+                new ReferenceField('catalog-b'),
+            ])),
+        ],
+    ]);
+    expect($sync->hasValidSchema($renamed))
+        ->toBeTrue()
+        ->and($sync->columnMap($renamed))
+        ->toBe(['_idrref' => 'idrref', '_fld26rref' => 'supplier', '_fld27_rrref' => 'owner']);
 });

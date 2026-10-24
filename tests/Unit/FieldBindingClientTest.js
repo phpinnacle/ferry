@@ -56,3 +56,36 @@ test('disabled bindings cannot be bound or unbound', () => {
     component.unbind('name');
     assert.deepEqual(component.state, original);
 });
+
+test('all, bound and unbound filters combine with search without changing editors or constants', () => {
+    const component = editor();
+    const state = structuredClone(component.state);
+    assert.equal(component.visibilityFilter, 'all');
+    for (const [filter, boundVisible, unboundVisible] of [
+        ['all', true, true], ['bound', true, false], ['unbound', false, true],
+    ]) {
+        component.visibilityFilter = filter;
+        assert.equal(component.isVisible('name', 'Customer name'), boundVisible);
+        assert.equal(component.isVisible('email', 'Email address'), unboundVisible);
+        assert.equal(component.matchesFilter(true), boundVisible);
+        component.search = ' EMAIL ';
+        assert.equal(component.isVisible('name', 'Customer name'), false);
+        assert.equal(component.isVisible('email', 'Email address'), unboundVisible);
+        component.search = '';
+    }
+    assert.deepEqual(component.state, state);
+});
+
+test('binding and unbinding immediately update visibility under the active filter', () => {
+    const component = editor();
+    component.visibilityFilter = 'unbound';
+    assert.equal(component.isVisible('email', 'Email'), true);
+    component.bind('email');
+    assert.equal(component.isVisible('email', 'Email'), false);
+    component.visibilityFilter = 'bound';
+    assert.equal(component.isVisible('email', 'Email'), true);
+    component.unbind('email');
+    assert.equal(component.isVisible('email', 'Email'), false);
+    component.visibilityFilter = 'all';
+    assert.equal(component.isVisible('email', 'Email'), true);
+});

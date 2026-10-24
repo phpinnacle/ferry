@@ -107,6 +107,15 @@ return [
             'add_transform' => 'Add transform',
             'sink_connector_status' => 'Sink Connector Status',
         ],
+        'components' => [
+            'type' => 'Value type',
+            'l' => 'Boolean',
+            'n' => 'Number',
+            't' => 'Date and time',
+            's' => 'String',
+            'rtref' => 'Reference type',
+            'rrref' => 'Reference',
+        ],
         'system_fields' => [
             '_idrref' => 'Identifier',
             '_version' => 'Data version',
@@ -177,7 +186,12 @@ return [
     'binding' => [
         'bind' => 'Bind',
         'unbind' => 'Unbind',
-        'show_unbound' => 'Show unbound',
+        'filter' => [
+            'label' => 'Field visibility',
+            'all' => 'All',
+            'bound' => 'Bound',
+            'unbound' => 'Unbound',
+        ],
         'bound_count' => ':bound of :total sources bound',
         'search_placeholder' => 'Search fields…',
         'search_label' => 'Search :label',
@@ -186,7 +200,12 @@ return [
         'remove_constant' => 'Remove',
     ],
     'mapping' => [
-        'show_unmapped' => 'Show unmapped',
+        'filter' => [
+            'label' => 'Field visibility',
+            'all' => 'All',
+            'mapped' => 'Mapped',
+            'unmapped' => 'Unmapped',
+        ],
         'mapped_count' => ':mapped of :total destinations mapped',
         'required_remaining' => ':count required remaining',
         'search_placeholder' => 'Search fields…',

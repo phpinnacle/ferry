@@ -117,6 +117,7 @@ class FieldTransforms extends Field
 
         $this->hiddenLabel();
         $this->default([]);
+        $this->partiallyRenderAfterStateUpdated();
         $this->mutateDehydratedStateUsing(self::dehydrateFieldSettings(...));
         $this->rules(fn (self $component) => [
             $component->validateSettings(...),

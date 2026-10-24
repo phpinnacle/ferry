@@ -3,10 +3,19 @@ export default function fieldBinding({ state, disabled, sourceKeys }) {
         state,
         disabled,
         search: '',
-        unboundOnly: false,
+        visibilityFilter: 'all',
 
         isBound(key) {
             return this.state.bound[key] === true;
+        },
+
+        matchesFilter(bound) {
+            return this.visibilityFilter === 'all' || bound === (this.visibilityFilter === 'bound');
+        },
+
+        isVisible(key, text) {
+            return this.matchesFilter(this.isBound(key))
+                && text.toLocaleLowerCase().includes(this.search.trim().toLocaleLowerCase());
         },
 
         boundCount() {

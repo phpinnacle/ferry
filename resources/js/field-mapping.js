@@ -1,4 +1,4 @@
-export default function fieldMapping({ state, disabled, inverse = false, requiredTargets = [], connectionModes, stateKeys = {}, staticDefaults = {} }) {
+export default function fieldMapping({ element, state, disabled, inverse = false, requiredTargets = [], connectionModes, stateKeys = {}, staticDefaults = {} }) {
     let ports;
     const idsByStateKey = Object.fromEntries(Object.entries(stateKeys).map(([id, key]) => [key, id]));
     const isStaticValue = (entry) => entry?.kind === 'value';
@@ -9,9 +9,10 @@ export default function fieldMapping({ state, disabled, inverse = false, require
         inverse,
         requiredTargets,
         connectionModes,
+        sourceTypes: {},
         sourceSearch: '',
         targetSearch: '',
-        unmappedOnly: false,
+        visibilityFilter: 'all',
         selected: null,
         connections: [],
         hoveredConnection: null,
@@ -24,8 +25,8 @@ export default function fieldMapping({ state, disabled, inverse = false, require
         init() {
             this.observer = new ResizeObserver(() => this.refresh());
             this.observer.observe(this.$refs.canvas);
-            this.$root.querySelectorAll('[data-mapping-row], [data-mapping-anchor]').forEach((element) => this.observer.observe(element));
-            ['state', 'sourceSearch', 'targetSearch', 'unmappedOnly'].forEach((property) => {
+            element.querySelectorAll('[data-mapping-row], [data-mapping-anchor]').forEach((element) => this.observer.observe(element));
+            ['state', 'sourceSearch', 'targetSearch', 'visibilityFilter'].forEach((property) => {
                 this.$watch(property, () => {
                     if (property !== 'state') this.cancel();
                     this.$nextTick(() => this.refresh());
@@ -36,6 +37,19 @@ export default function fieldMapping({ state, disabled, inverse = false, require
 
         destroy() {
             this.observer?.disconnect();
+        },
+
+        updateConfiguration(connectionModes, sourceIds, sourceTypes) {
+            this.connectionModes = connectionModes;
+            this.sourceTypes = sourceTypes;
+            if (this.selected?.side === 'source' && !sourceIds.includes(this.selected.id)) this.cancel();
+            ports = undefined;
+            this.$nextTick(() => {
+                this.observer?.disconnect();
+                this.observer?.observe(this.$refs.canvas);
+                element.querySelectorAll('[data-mapping-row], [data-mapping-anchor]').forEach(element => this.observer?.observe(element));
+                this.refresh();
+            });
         },
 
         mappings() {
@@ -139,12 +153,13 @@ export default function fieldMapping({ state, disabled, inverse = false, require
 
         isVisible(side, id, text) {
             const search = side === 'source' ? this.sourceSearch : this.targetSearch;
-            return text.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase())
-                && (!this.unmappedOnly || !this.isMapped(side, id));
+            const searchableText = side === 'source' ? `${text} ${this.sourceTypes[id] ?? ''}` : text;
+            return searchableText.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase())
+                && (this.visibilityFilter === 'all' || this.isMapped(side, id) === (this.visibilityFilter === 'mapped'));
         },
 
         selectFromCard(event, side, id) {
-            const control = event.target.closest('button, a, input, select, textarea, label, [role="button"], [role="group"], [role="combobox"], [contenteditable]');
+            const control = event.target.closest('button, a, input, select, textarea, label, [role="button"], .ferry-transform, [role="combobox"], [contenteditable]');
             if (control && event.currentTarget.contains(control)) return;
             this.select(side, id);
         },
@@ -205,7 +220,7 @@ export default function fieldMapping({ state, disabled, inverse = false, require
         },
 
         port(side, id) {
-            ports ??= new Map(Array.from(this.$root.querySelectorAll('[data-mapping-port]'), port => [
+            ports ??= new Map(Array.from(element.querySelectorAll('[data-mapping-port]'), port => [
                 `${port.dataset.side}:${port.dataset.id}`, port,
             ]));
 
@@ -228,6 +243,7 @@ export default function fieldMapping({ state, disabled, inverse = false, require
         },
 
         refresh() {
+            ports = undefined;
             const canvas = this.$refs.canvas.getBoundingClientRect();
             this.width = Math.max(1, canvas.width);
             this.height = Math.max(1, canvas.height);

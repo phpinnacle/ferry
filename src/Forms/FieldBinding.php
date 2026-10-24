@@ -9,6 +9,7 @@ use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Components\Component;
 use Filament\Schemas\Components\Concerns\CanBeCompact;
 use Filament\Schemas\Components\Group;
+use Filament\Schemas\Components\View;
 use Filament\Schemas\Schema;
 use Filament\Support\Concerns\CanBeContained;
 use Illuminate\Support\Arr;
@@ -59,6 +60,12 @@ class FieldBinding extends Field
     /** @var array<string, string>|Closure(): array<string, string> */
     protected array|Closure $warnings = [];
 
+    /** @var Definition|null */
+    private ?array $cachedSourceDefinition = null;
+
+    /** @var list<MappingItem> */
+    private array $cachedSources = [];
+
     /** @param array<string, string>|Closure(): array<string, string> $warnings */
     public function warnings(array|Closure $warnings): static
     {
@@ -106,7 +113,13 @@ class FieldBinding extends Field
     /** @return list<MappingItem> */
     public function getSources(): array
     {
-        return JsonSchema::fromArray($this->evaluate($this->jsonSchema))->toMappingItems();
+        $definition = $this->evaluate($this->jsonSchema);
+        if ($this->cachedSourceDefinition !== $definition) {
+            $this->cachedSources = JsonSchema::fromArray($definition)->toMappingItems();
+            $this->cachedSourceDefinition = $definition;
+        }
+
+        return $this->cachedSources;
     }
 
     /** @param Field|Closure(): Field|null $field */
@@ -389,7 +402,8 @@ class FieldBinding extends Field
             ->color('gray')
             ->button()
             ->disabled(fn (self $component) => $component->isDisabled() || !$component->hasStaticValues())
-            ->action(fn (self $component) => $component->addConstant());
+            ->action(fn (self $component) => $component->addConstant())
+            ->after(fn (self $component) => $component->renderStaticValues());
     }
 
     public function getRemoveConstantAction(): Action
@@ -400,7 +414,8 @@ class FieldBinding extends Field
             ->color('danger')
             ->iconButton()
             ->disabled(fn (self $component) => $component->isDisabled() || !$component->hasStaticValues())
-            ->action(fn (array $arguments, self $component) => $component->removeConstant($arguments));
+            ->action(fn (array $arguments, self $component) => $component->removeConstant($arguments))
+            ->after(fn (self $component) => $component->renderStaticValues());
     }
 
     protected function setUp(): void
@@ -408,6 +423,9 @@ class FieldBinding extends Field
         parent::setUp();
 
         $this->schema([]);
+        $this->childComponents([
+            View::make('phpinnacle-ferry::forms.field-binding-static-values')->key('staticValues'),
+        ], 'staticValues');
         $this->default([]);
         $this->rules(fn (self $component) => ['bail', 'array', $component->validateBindings(...)]);
         $this->registerActions([
@@ -417,6 +435,13 @@ class FieldBinding extends Field
             fn (self $component) => $component->getRemoveConstantAction(),
         ]);
         $this->mutateDehydratedStateUsing($this->dehydrateBindings(...));
+    }
+
+    private function renderStaticValues(): void
+    {
+        /** @var Component $component */
+        $component = $this->getChildSchemas()['staticValues']->getComponent('staticValues');
+        $component->partiallyRender();
     }
 
     /**

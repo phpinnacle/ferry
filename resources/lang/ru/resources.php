@@ -107,6 +107,15 @@ return [
             'add_transform' => 'Добавить трансформацию',
             'sink_connector_status' => 'Статус Sink Connector',
         ],
+        'components' => [
+            'type' => 'Тип значения',
+            'l' => 'Булево',
+            'n' => 'Число',
+            't' => 'Дата и время',
+            's' => 'Строка',
+            'rtref' => 'Тип ссылки',
+            'rrref' => 'Ссылка',
+        ],
         'system_fields' => [
             '_idrref' => 'Идентификатор',
             '_version' => 'Версия данных',
@@ -177,7 +186,12 @@ return [
     'binding' => [
         'bind' => 'Привязать',
         'unbind' => 'Отвязать',
-        'show_unbound' => 'Только непривязанные',
+        'filter' => [
+            'label' => 'Отображение полей',
+            'all' => 'Все',
+            'bound' => 'Привязанные',
+            'unbound' => 'Непривязанные',
+        ],
         'bound_count' => 'Привязано полей: :bound из :total',
         'search_placeholder' => 'Поиск полей…',
         'search_label' => 'Поиск: :label',
@@ -186,7 +200,12 @@ return [
         'remove_constant' => 'Удалить',
     ],
     'mapping' => [
-        'show_unmapped' => 'Только несопоставленные',
+        'filter' => [
+            'label' => 'Отображение полей',
+            'all' => 'Все',
+            'mapped' => 'Сопоставленные',
+            'unmapped' => 'Несопоставленные',
+        ],
         'mapped_count' => 'Сопоставлено назначений: :mapped из :total',
         'required_remaining' => 'Осталось обязательных: :count',
         'search_placeholder' => 'Поиск полей…',
