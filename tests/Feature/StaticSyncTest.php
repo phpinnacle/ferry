@@ -299,7 +299,10 @@ it('resets source settings with mappings when the destination or source changes'
     ]);
     $mapping = $form->getComponentByStatePath('schema');
     expect($mapping->isSourceUsed('_code'))->toBeTrue();
-    expect($mapping->getSourceSettings()['_code']['transforms'])->toBe($fieldTransforms);
+    expect($mapping->getSourceSettings()['_code']['transforms'])->toBe([[
+        'type' => 'cast',
+        'data' => ['type' => 'string', 'replace_null_with_default' => 'true'],
+    ]]);
 
     $form
         ->getComponent($changed)
@@ -393,15 +396,16 @@ it('persists and restores transforms on every source independently of its target
         'fieldTransforms',
     );
     $cast = ['type' => 'cast', 'data' => ['type' => 'integer']];
+    $hydratedCast = ['type' => 'cast', 'data' => ['type' => 'integer', 'replace_null_with_default' => 'true']];
 
     expect($form->toHtml())->toContain('data-binding-source-settings="_description"');
     $action(['block' => 'cast'])->data(['data' => $cast['data']])->call();
-    expect($mapping->getSourceSettings()['_code']['transforms'])->toBe([$cast]);
+    expect($mapping->getSourceSettings()['_code']['transforms'])->toBe([$hydratedCast]);
     $description = $form->getComponentByStatePath('schema.sources.' . $keys['_description'] . '.transforms')->getAction(
         'fieldTransforms',
     );
     $description(['block' => 'cast'])->data(['data' => $cast['data']])->call();
-    expect($mapping->getSourceSettings()['_description']['transforms'])->toBe([$cast]);
+    expect($mapping->getSourceSettings()['_description']['transforms'])->toBe([$hydratedCast]);
     $attributes = SyncForm::forCreate(
         $form->getState(),
         app(DestinationFactory::class),

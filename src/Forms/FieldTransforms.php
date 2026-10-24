@@ -13,6 +13,7 @@ use PHPinnacle\Ferry\Transformation;
 
 /**
  * @phpstan-type Transform array{type: string, data?: array<string, string>}
+ * @phpstan-import-type BuilderItem from InlineBuilder
  * @phpstan-import-type Definition from JsonSchema
  */
 class FieldTransforms extends InlineBuilder
@@ -134,14 +135,18 @@ class FieldTransforms extends InlineBuilder
     /** @param Closure(string): PotentiallyTranslatedString $fail */
     private function validateSettings(string $attribute, mixed $value, Closure $fail): void
     {
-        $validator = Validator::make(['transforms' => $value], ['transforms.*.data.*' => ['string']]);
+        /** @var list<BuilderItem> $settings */
+        $settings = $value;
+        foreach (array_keys($settings) as $index) {
+            $settings[$index]['data'] = $this->getItemData($index);
+        }
+        $validator = Validator::make(['transforms' => $settings], ['transforms.*.data.*' => ['string']]);
         if ($validator->fails()) {
             $fail($validator->errors()->first())->translate();
 
             return;
         }
         /** @var list<Transform> $settings */
-        $settings = $value;
         $transforms = app(TransformRegistry::class);
         $schema = JsonSchema::fromArray($this->evaluate($this->inputSchema));
         foreach ($settings as $setting) {

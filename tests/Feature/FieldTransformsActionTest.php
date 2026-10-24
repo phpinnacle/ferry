@@ -317,6 +317,15 @@ it('accepts nullable string inputs and rejects invalid parameters', function () 
     expect($this->field->getContainer()->getState(...))->toThrow(ValidationException::class);
 });
 
+it('validates hydrated numeric controls through their serialized string parameters', function () {
+    app(TransformRegistry::class)->register(Substring::make());
+    $settings = [['type' => 'substring', 'data' => ['start' => '1', 'end' => '4']]];
+    $this->field->getContainer()->fill(['transforms' => $settings]);
+
+    expect($this->field->getItems()[0]['data'])->toBe(['start' => 1, 'end' => 4]);
+    expect($this->field->getContainer()->getState()['transforms'])->toBe($settings);
+});
+
 it('validates stored parameters through the description form without configured handlers', function () {
     app(TransformRegistry::class)->register(Substring::make());
     $this->field->state([['type' => 'substring', 'data' => ['start' => '5', 'end' => '2']]]);

@@ -41,7 +41,7 @@ return new class extends Migration {
                             ->table('syncs')
                             ->where('id', $row->id)
                             ->update([
-                                'schema' => json_encode($schema, JSON_THROW_ON_ERROR),
+                                'schema' => json_encode($schema, JSON_THROW_ON_ERROR | JSON_PRESERVE_ZERO_FRACTION),
                                 'transforms' => json_encode(
                                     $convert(json_decode($row->transforms, true, flags: JSON_THROW_ON_ERROR)),
                                     JSON_THROW_ON_ERROR,

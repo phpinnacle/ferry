@@ -34,10 +34,11 @@ it('migrates persisted source, static and record transform settings and restores
         'result' => ['type' => 'integer'],
         'transforms' => [['key' => 'cast', 'params' => ['type' => 'integer']]],
     ];
+    $schema[] = ['kind' => 'static', 'target' => 'decimal_constant', 'static' => 1.0];
     $transforms = [['key' => 'filter', 'params' => ['condition' => '@ != null']]];
     $query = $sync->getConnection()->table('syncs')->where('id', $sync->id);
     $query->update([
-        'schema' => json_encode($schema, JSON_THROW_ON_ERROR),
+        'schema' => json_encode($schema, JSON_THROW_ON_ERROR | JSON_PRESERVE_ZERO_FRACTION),
         'transforms' => json_encode($transforms, JSON_THROW_ON_ERROR),
     ]);
     $migration = require __DIR__ . '/../../database/migrations/update_ferry_transform_settings.php';
@@ -54,6 +55,8 @@ it('migrates persisted source, static and record transform settings and restores
         'data' => ['type' => 'integer'],
     ]);
     expect($saved->transforms[0]->jsonSerialize())->toBe(['type' => 'filter', 'data' => ['condition' => '@ != null']]);
+    expect($saved->schema[2]->static)->toBe(1.0);
+    expect($saved->schema[2]->type())->toBe(ColumnType::Decimal);
     $migration->down();
     expect(json_decode($query->value('schema'), true, flags: JSON_THROW_ON_ERROR))->toBe($schema);
     expect(json_decode($query->value('transforms'), true, flags: JSON_THROW_ON_ERROR))->toBe($transforms);
