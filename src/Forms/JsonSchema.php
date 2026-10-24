@@ -2,6 +2,8 @@
 
 namespace PHPinnacle\Ferry\Forms;
 
+use InvalidArgumentException;
+use PHPinnacle\Jason\Schema;
 use stdClass;
 
 /**
@@ -36,35 +38,42 @@ use stdClass;
  */
 final readonly class JsonSchema
 {
-    /**
-     * @param Definition $definition
-     * @param array<string, self> $declaredProperties
-     * @param list<self> $allOf
-     * @param list<self> $anyOf
-     * @param list<self> $oneOf
-     */
-    private function __construct(
-        private array $definition,
-        private array $declaredProperties = [],
-        private ?self $declaredItems = null,
-        private array $allOf = [],
-        private array $anyOf = [],
-        private array $oneOf = [],
-    ) {}
+    /** @var Definition */
+    private array $definition;
 
-    /** @param array<string, mixed> $definition Valid inline JSON Schema, including recursive child definitions. */
+    /** @param array<string, mixed> $definition */
+    private function __construct(
+        array $definition,
+        private Schema $resolved,
+    ) {
+        // PHPStan cannot express recursive definitions at the serialization boundary.
+        /** @var Definition $definition */
+        $this->definition = $definition;
+    }
+
+    /** @param array<string, mixed> $definition Valid inline mapping schema. */
     public static function fromArray(array $definition): self
     {
-        // PHPStan cannot express recursive array shapes at the serialization boundary.
-        /** @var Definition $definition */
-        return new self(
-            $definition,
-            array_map(self::fromArray(...), $definition['properties'] ?? []),
-            array_key_exists('items', $definition) ? self::fromArray($definition['items']) : null,
-            array_map(self::fromArray(...), $definition['allOf'] ?? []),
-            array_map(self::fromArray(...), $definition['anyOf'] ?? []),
-            array_map(self::fromArray(...), $definition['oneOf'] ?? []),
-        );
+        return new self($definition, Schema::fromArray($definition)->resolveReferences());
+    }
+
+    private static function fromSchema(Schema $schema): self
+    {
+        $definition = $schema->toArray();
+        if (is_bool($definition)) {
+            throw new InvalidArgumentException('Boolean schemas cannot be used as mapping fields.');
+        }
+
+        return new self($definition, $schema);
+    }
+
+    /**
+     * @param 'allOf'|'anyOf'|'oneOf' $keyword
+     * @return list<self>
+     */
+    private function branches(string $keyword): array
+    {
+        return array_map(self::fromSchema(...), $this->resolved->branches($keyword));
     }
 
     /** @return list<MappingItem> */
@@ -94,8 +103,8 @@ final readonly class JsonSchema
     /** @return array<string, self> */
     public function properties(): array
     {
-        $properties = $this->declaredProperties;
-        foreach ($this->allOf as $branch) {
+        $properties = array_map(self::fromSchema(...), $this->resolved->properties());
+        foreach ($this->branches('allOf') as $branch) {
             foreach ($branch->properties() as $name => $property) {
                 $properties[$name] = array_key_exists($name, $properties)
                     ? self::compose('allOf', [$properties[$name], $property])
@@ -109,8 +118,8 @@ final readonly class JsonSchema
     /** @return list<string> */
     public function required(): array
     {
-        $required = $this->definition['required'] ?? [];
-        foreach ($this->allOf as $branch) {
+        $required = $this->resolved->keyword('required') ?? [];
+        foreach ($this->branches('allOf') as $branch) {
             $required = array_merge($required, $branch->required());
         }
 
@@ -128,14 +137,15 @@ final readonly class JsonSchema
 
     private function itemSchema(): ?self
     {
-        $constraints = $this->declaredItems === null ? [] : [$this->declaredItems];
-        foreach ($this->allOf as $branch) {
+        $items = $this->resolved->itemSchema();
+        $constraints = $items === null ? [] : [self::fromSchema($items)];
+        foreach ($this->branches('allOf') as $branch) {
             $items = $branch->itemSchema();
             if ($items !== null) {
                 $constraints[] = $items;
             }
         }
-        foreach ([$this->anyOf, $this->oneOf] as $branches) {
+        foreach ([$this->branches('anyOf'), $this->branches('oneOf')] as $branches) {
             $items = [];
             foreach ($branches as $branch) {
                 if ($branch->types() === [] || in_array('array', $branch->types(), true)) {
@@ -160,18 +170,14 @@ final readonly class JsonSchema
             return $schemas[0];
         }
 
-        return new self(
-            definition: [$keyword => array_map(fn (self $schema) => $schema->definition, $schemas)],
-            allOf: $keyword === 'allOf' ? $schemas : [],
-            anyOf: $keyword === 'anyOf' ? $schemas : [],
-        );
+        return self::fromArray([$keyword => array_map(fn (self $schema) => $schema->resolved->keywords(), $schemas)]);
     }
 
     public function label(bool $formatted = false): string
     {
         $types = $this->types();
         if ($formatted) {
-            if (($this->definition['enum'] ?? null) !== null) {
+            if (($this->resolved->keyword('enum') ?? null) !== null) {
                 return 'enum';
             }
             $alternatives = $this->alternatives();
@@ -224,7 +230,7 @@ final readonly class JsonSchema
                     $value,
                     JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR,
                 ),
-                $this->definition['enum'] ?? [],
+                $this->resolved->keyword('enum') ?? [],
             ),
         ];
     }
@@ -258,8 +264,8 @@ final readonly class JsonSchema
             ['length', 'minLength', 'maxLength'],
             ['items',  'minItems',  'maxItems'],
         ] as [$kind, $minimum, $maximum]) {
-            $min = $this->definition[$minimum] ?? null;
-            $max = $this->definition[$maximum] ?? null;
+            $min = $this->resolved->keyword($minimum);
+            $max = $this->resolved->keyword($maximum);
             if ($min !== null || $max !== null) {
                 $constraints[] = [
                     'kind' => $kind,
@@ -280,31 +286,35 @@ final readonly class JsonSchema
             'exclusiveMinimum' => '>',
             'exclusiveMaximum' => '<',
         ] as $key => $symbol) {
-            if (($this->definition[$key] ?? null) !== null) {
-                $range[] = $symbol . ' ' . $this->definition[$key];
+            if (($value = $this->resolved->keyword($key)) !== null) {
+                $range[] = $symbol . ' ' . $value;
             }
         }
         if ($range !== []) {
             $constraints[] = ['kind' => 'range', 'value' => implode(' · ', $range), 'scope' => $scope];
         }
-        if (array_key_exists('pattern', $this->definition)) {
+        if ($this->resolved->hasKeyword('pattern')) {
             $constraints[] = [
                 'kind' => 'pattern',
-                'value' => '/' . $this->definition['pattern'] . '/',
+                'value' => '/' . $this->resolved->keyword('pattern') . '/',
                 'scope' => $scope,
             ];
         }
-        if (array_key_exists('multipleOf', $this->definition)) {
+        if ($this->resolved->hasKeyword('multipleOf')) {
             $constraints[] = [
                 'kind' => 'multiple',
-                'value' => '× ' . $this->definition['multipleOf'],
+                'value' => '× ' . $this->resolved->keyword('multipleOf'),
                 'scope' => $scope,
             ];
         }
-        if ($this->definition['uniqueItems'] ?? false) {
+        if ($this->resolved->keyword('uniqueItems') ?? false) {
             $constraints[] = ['kind' => 'unique', 'value' => '', 'scope' => $scope];
         }
-        foreach (['allOf' => $this->allOf, 'anyOf' => $this->anyOf, 'oneOf' => $this->oneOf] as $keyword => $branches) {
+        foreach ([
+            'allOf' => $this->branches('allOf'),
+            'anyOf' => $this->branches('anyOf'),
+            'oneOf' => $this->branches('oneOf'),
+        ] as $keyword => $branches) {
             foreach ($branches as $index => $branch) {
                 $constraints = [...$constraints, ...$branch->constraints([...$scope, $keyword . ' ' . ($index + 1)])];
             }
@@ -316,11 +326,11 @@ final readonly class JsonSchema
     /** @return list<string> */
     public function types(): array
     {
-        $types = (array) ($this->definition['type'] ?? []);
-        foreach ([...$this->anyOf, ...$this->oneOf] as $branch) {
+        $types = (array) ($this->resolved->keyword('type') ?? []);
+        foreach ([...$this->branches('anyOf'), ...$this->branches('oneOf')] as $branch) {
             $types = array_merge($types, $branch->types());
         }
-        foreach ($this->allOf as $branch) {
+        foreach ($this->branches('allOf') as $branch) {
             $branchTypes = $branch->types();
             if ($branchTypes !== []) {
                 if (in_array('number', $types, true) && in_array('integer', $branchTypes, true)) {
@@ -348,14 +358,14 @@ final readonly class JsonSchema
     }
 
     /**
-     * @return ($name is 'title'|'description'|'format'|'x-icon'|'x-color' ? string|null : mixed)
+     * @return ($name is 'title'|'description'|'format'|'x-icon'|'x-color' ? string|null : ($name is 'x-badges' ? list<Badge>|null : mixed))
      */
     public function annotation(string $name): mixed
     {
-        if (array_key_exists($name, $this->definition)) {
-            return $this->definition[$name];
+        if ($this->resolved->hasKeyword($name)) {
+            return $this->resolved->keyword($name);
         }
-        foreach ([...$this->allOf, ...$this->anyOf, ...$this->oneOf] as $branch) {
+        foreach ([...$this->branches('allOf'), ...$this->branches('anyOf'), ...$this->branches('oneOf')] as $branch) {
             $value = $branch->annotation($name);
             if ($value !== null) {
                 return $value;
@@ -368,8 +378,9 @@ final readonly class JsonSchema
     /** @return list<Badge> */
     public function badges(): array
     {
-        $badges = $this->definition['x-badges'] ?? [];
-        foreach ($this->allOf as $branch) {
+        /** @var list<Badge> $badges */
+        $badges = $this->resolved->keyword('x-badges') ?? [];
+        foreach ($this->branches('allOf') as $branch) {
             $badges = [...$badges, ...$branch->badges()];
         }
 
@@ -433,8 +444,8 @@ final readonly class JsonSchema
     /** @return list<mixed>|null */
     private function enumValues(): ?array
     {
-        $values = $this->definition['enum'] ?? null;
-        foreach ($this->allOf as $branch) {
+        $values = $this->resolved->keyword('enum') ?? null;
+        foreach ($this->branches('allOf') as $branch) {
             $allowed = $branch->enumValues();
             if ($allowed !== null) {
                 $values = $values === null
@@ -532,8 +543,8 @@ final readonly class JsonSchema
     /** @param 'minLength'|'maxLength' $keyword */
     private function lengthBound(string $keyword): ?int
     {
-        $bound = $this->definition[$keyword] ?? null;
-        foreach ($this->allOf as $branch) {
+        $bound = $this->resolved->keyword($keyword) ?? null;
+        foreach ($this->branches('allOf') as $branch) {
             $value = $branch->lengthBound($keyword);
             if ($value === null) {
                 continue;
@@ -552,17 +563,19 @@ final readonly class JsonSchema
     /** @return list<self> */
     private function alternatives(): array
     {
-        $keyword = $this->anyOf !== [] ? 'anyOf' : 'oneOf';
-        $branches = $this->anyOf !== [] ? $this->anyOf : $this->oneOf;
-        $siblings = $this->definition;
+        $branches = $this->branches('anyOf');
+        $keyword = $branches !== [] ? 'anyOf' : 'oneOf';
+        $branches = $branches !== [] ? $branches : $this->branches('oneOf');
+        $siblings = $this->resolved->keywords();
         unset($siblings[$keyword]);
 
         if ($branches === []) {
-            foreach ($this->allOf as $index => $branch) {
+            foreach ($this->branches('allOf') as $index => $branch) {
                 $alternatives = $branch->alternatives();
                 if ($alternatives !== []) {
-                    unset($siblings['allOf'][$index]);
-                    $siblings['allOf'] = array_values($siblings['allOf']);
+                    $allOf = $this->resolved->branches('allOf');
+                    unset($allOf[$index]);
+                    $siblings['allOf'] = array_values(array_map(fn (Schema $schema) => $schema->toArray(), $allOf));
 
                     $branches = $alternatives;
 

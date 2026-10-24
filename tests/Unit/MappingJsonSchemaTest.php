@@ -3,6 +3,16 @@
 use PHPinnacle\Ferry\Forms\JsonSchema;
 use PHPinnacle\Ferry\Forms\SchemaCompatibility;
 
+it('collects each declared badge once across conjunctive branches', function () {
+    $first = ['label' => 'First', 'color' => 'success'];
+    $second = ['label' => 'Second', 'color' => 'warning'];
+    $schema = JsonSchema::fromArray([
+        'allOf' => [['x-badges' => [$first]], ['x-badges' => [$second]]],
+    ]);
+
+    expect($schema->badges())->toBe([$first, $second]);
+});
+
 it('resolves maximum string lengths across composed output schemas', function (array $definition, ?int $maximum) {
     expect(JsonSchema::fromArray($definition)->maxLength())->toBe($maximum);
 })->with([
@@ -493,3 +503,17 @@ it('requires source enum values to fit the destination enum', function (
         true,
     ],
 ]);
+
+it('uses Jason reference projections without changing the serialized mapping schema', function () {
+    $definition = [
+        '$defs' => ['code' => ['type' => 'string', 'maxLength' => 5]],
+        'properties' => ['code' => ['$ref' => '#/$defs/code', 'maxLength' => 10]],
+    ];
+    $schema = JsonSchema::fromArray($definition);
+    expect($schema->properties()['code']->maxLength())->toBe(5)->and($schema->toArray())->toBe($definition);
+});
+
+it('rejects boolean mapping fields instead of changing them into unconstrained definitions', function () {
+    $schema = JsonSchema::fromArray(['properties' => ['forbidden' => false]]);
+    expect($schema->properties(...))->toThrow(InvalidArgumentException::class, 'Boolean schemas');
+});
