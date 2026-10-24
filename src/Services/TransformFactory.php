@@ -61,7 +61,7 @@ class TransformFactory
                 $target = $mapping->target;
                 foreach ($mapping->transforms as $position => $setting) {
                     $name = sprintf('field_%d_%d', $index, $position + 1);
-                    $after += $this->handlerOrFail($setting->key)->connector($name, $target, $setting->params);
+                    $after += $this->handlerOrFail($setting->type)->connector($name, $target, $setting->data);
                 }
 
                 continue;
@@ -75,7 +75,7 @@ class TransformFactory
             foreach ($mapping->transforms as $position => $setting) {
                 $name = sprintf('field_%d_%d', $index, $position);
 
-                $pipeline += $this->handlerOrFail($setting->key)->connector($name, $source, $setting->params);
+                $pipeline += $this->handlerOrFail($setting->type)->connector($name, $source, $setting->data);
             }
         }
 
@@ -162,7 +162,7 @@ class TransformFactory
     {
         foreach ($sync->schema as $mapping) {
             foreach ($mapping->transforms as $setting) {
-                if ($this->handler($setting->key) === null) {
+                if ($this->handler($setting->type) === null) {
                     return false;
                 }
             }

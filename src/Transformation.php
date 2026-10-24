@@ -159,6 +159,11 @@ final class Transformation implements HasColor, HasDescription, HasIcon, HasLabe
         return $transformation;
     }
 
+    public function hasSchema(): bool
+    {
+        return $this->schema !== [];
+    }
+
     /** @return array<Component> */
     public function getSchema(?ConnectionMetadata $object, ?JsonSchema $input = null): array
     {

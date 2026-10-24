@@ -87,12 +87,12 @@ it('updates only static cards and the changed transform editor in a large dynami
 
     $path = 'schema.sources.' . $field->getSourceStateKeys()['_fld0'] . '.transforms';
     $action = TestAction::make('fieldTransforms')->schemaComponent($path, 'form');
-    $page->callAction($action->arguments(['transform' => 'trim']));
-    $page->assertSet('data.' . $path, [['key' => 'trim', 'params' => []]]);
+    $page->callAction($action->arguments(['block' => 'trim']));
+    $page->assertSet('data.' . $path, [['type' => 'trim', 'data' => []]]);
     expect($page->effects)->not->toHaveKey('html');
     expect(array_keys($page->effects['partials']))->toBe(['schema-component::form.' . $path]);
 
-    $page->callAction($action->arguments(['transform' => 'trim', 'index' => 0, 'remove' => true]));
+    $page->callAction($action->arguments(['block' => 'trim', 'index' => 0, 'remove' => true]));
     $page->assertSet('data.' . $path, []);
     expect(array_keys($page->effects['partials']))->toBe(['schema-component::form.' . $path]);
     expect($page->get('data.schema'))->toBe($draft);
@@ -128,7 +128,7 @@ it('refreshes mapping compatibility when transform actions change the source typ
     $targets = [$field->getStateKeys()['name'] => MappingState::source('_description')];
     $page->set('data.schema.targets', $targets);
     $action = TestAction::make('fieldTransforms')->schemaComponent($path, 'form');
-    $page->callAction($action->arguments(['transform' => 'cast']), ['params' => ['type' => 'boolean']]);
+    $page->callAction($action->arguments(['block' => 'cast']), ['data' => ['type' => 'boolean']]);
     expect($page->instance()->form->getComponentByStatePath('schema')->getConnectionModes()['_description'])
         ->toBe(['is_active' => 'whole']);
     $card = 'schema-component::form.schema.card_' . $field->getSourceStateKeys()['_description'];
@@ -139,7 +139,7 @@ it('refreshes mapping compatibility when transform actions change the source typ
         ->not->toContain('data-mapping-source-settings="_code"');
     expect($page->effects['partials']['schema-component::form.schema.configuration'])
         ->toContain('updateConfiguration(');
-    $page->callAction($action->arguments(['transform' => 'cast', 'index' => 0, 'remove' => true]));
+    $page->callAction($action->arguments(['block' => 'cast', 'index' => 0, 'remove' => true]));
     expect($page->instance()->form->getComponentByStatePath('schema')->getConnectionModes()['_description'])
         ->toHaveKeys(['name', 'tax_number'])
         ->not->toHaveKey('is_active');
@@ -160,13 +160,13 @@ it('refreshes mapping compatibility when transform actions change the source typ
     $staticPath = 'schema.sources.' . $field->getSourceStateKeys()['static_1'] . '.transforms';
     $page->update(calls: [[
         'method' => 'mountAction',
-        'params' => ['fieldTransforms', ['transform' => 'trim'], ['schemaComponent' => 'form.' . $staticPath]],
+        'params' => ['fieldTransforms', ['block' => 'trim'], ['schemaComponent' => 'form.' . $staticPath]],
         'path' => '',
     ]], updates: ['data.schema.constants.static_1.static' => '  draft  ']);
     $page
         ->assertHasNoErrors()
         ->assertSet('data.schema.constants.static_1.static', '  draft  ')
-        ->assertSet('data.' . $staticPath, [['key' => 'trim', 'params' => []]]);
+        ->assertSet('data.' . $staticPath, [['type' => 'trim', 'data' => []]]);
     expect($page->effects)->not->toHaveKey('html');
     expect($page->effects['partials'])->not->toHaveKey('schema-component::form.schema');
     $page->callAction(TestAction::make('removeConstant')
@@ -383,7 +383,7 @@ it('binds dynamic fields and connects static fields to the declared destination 
     $key = $mapping->getSourceStateKeys()['_fld1'];
     $schema
         ->getComponentByStatePath('schema.sources.' . $key . '.transforms')
-        ->state([['key' => 'cast', 'params' => ['type' => 'string']]]);
+        ->state([['type' => 'cast', 'data' => ['type' => 'string']]]);
     expect($mapping->getConnectionModes()['_fld1'])
         ->toBe(['name' => 'whole', 'tax_number' => 'whole']);
 });
@@ -511,7 +511,7 @@ it('creates every parameter of a chosen transform so that live inputs can bind t
     $mapping = $schema->getComponentByStatePath('schema');
     $key = $mapping->getSourceStateKeys()['_folder'];
     $field = $schema->getComponentByStatePath('schema.sources.' . $key . '.transforms');
-    $action = $field->getAction('fieldTransforms')(['transform' => 'filter']);
+    $action = $field->getAction('fieldTransforms')(['block' => 'filter']);
     $components = $action->getSchema(FilamentSchema::make($livewire))->getFlatComponents();
     $value = collect($components)->first(
         fn ($component) => $component instanceof Textarea && $component->getName() === 'condition',
@@ -744,8 +744,8 @@ it('edits physical source names while keeping metadata identities through column
         'properties' => [$property],
     ]);
     $transforms = [[
-        'key' => 'filter',
-        'params' => [
+        'type' => 'filter',
+        'data' => [
             'mode' => 'exclude',
             'condition' => "@ == 'blocked'",
             'missing_or_null_behavior' => 'include',

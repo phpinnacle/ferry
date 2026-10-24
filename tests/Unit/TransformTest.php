@@ -152,8 +152,8 @@ it('uses each cast result as the input to the next cast without resolving handle
     config(['phpinnacle-ferry.transforms' => []]);
 
     expect(app(TransformRegistry::class)->resultSchema(JsonSchema::fromArray(['type' => 'string']), [
-        ['key' => 'cast', 'params' => ['type' => $intermediate]],
-        ['key' => 'cast', 'params' => ['type' => $result->value]],
+        ['type' => 'cast', 'data' => ['type' => $intermediate]],
+        ['type' => 'cast', 'data' => ['type' => $result->value]],
     ])?->toArray())
         ->toBe($result->jsonSchema());
 })->with([
@@ -269,12 +269,12 @@ it('registers optional installed field transforms through the public plugin API'
         'mask',
     ]);
     expect($registry->resultSchema(JsonSchema::fromArray(['type' => 'string']), [
-        ['key' => 'trim', 'params' => []],
-        ['key' => 'substring', 'params' => ['start' => '0']],
-        ['key' => 'mask', 'params' => ['replacement' => '***']],
+        ['type' => 'trim', 'data' => []],
+        ['type' => 'substring', 'data' => ['start' => '0']],
+        ['type' => 'mask', 'data' => ['replacement' => '***']],
     ])?->toArray())->toBe(['type' => 'string']);
     expect($registry->resultSchema(JsonSchema::fromArray(['type' => 'boolean']), [
-        ['key' => 'mask', 'params' => ['replacement' => '***']],
+        ['type' => 'mask', 'data' => ['replacement' => '***']],
     ]))->toBeNull();
 });
 
@@ -456,12 +456,12 @@ it('passes the complete preceding output schema to callbacks in an ordered chain
     expect(
         $registry
             ->resultSchema($input, [
-                ['key' => 'limit', 'params' => ['length' => '80']],
-                ['key' => 'limit', 'params' => ['length' => '40']],
+                ['type' => 'limit', 'data' => ['length' => '80']],
+                ['type' => 'limit', 'data' => ['length' => '40']],
             ])
             ?->toArray(),
     )->toBe(['type' => 'string', 'format' => 'email', 'maxLength' => 40]);
-    expect($registry->resultSchema($input, [['key' => 'cast']]))->toBeNull();
+    expect($registry->resultSchema($input, [['type' => 'cast']]))->toBeNull();
 });
 
 it('builds editor descriptions without resolving execution handlers', function () {
@@ -513,7 +513,7 @@ it('persists and executes static chains on their destination without renaming', 
         'target' => 'discount',
         'static' => '10',
         'result' => ['type' => 'integer'],
-        'transforms' => [['key' => 'cast', 'params' => ['type' => 'integer']]],
+        'transforms' => [['type' => 'cast', 'data' => ['type' => 'integer']]],
     ];
     $mapping = FieldMapping::fromArray($row);
     expect($mapping->jsonSerialize())

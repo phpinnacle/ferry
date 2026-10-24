@@ -238,7 +238,7 @@ it('keeps transforms through creating, filling and updating a synchronization', 
             'name' => MappingState::source('_description'),
             'is_active' => MappingState::source('_code'),
             'tax_number' => MappingState::value('none'),
-        ], ['_code' => ['transforms' => [['key' => 'cast', 'params' => ['type' => 'boolean']]]]]),
+        ], ['_code' => ['transforms' => [['type' => 'cast', 'data' => ['type' => 'boolean']]]]]),
     ]);
     $attributes = SyncForm::forCreate(
         $createForm->getState(),
@@ -261,7 +261,7 @@ it('keeps transforms through creating, filling and updating a synchronization', 
         ->not
         ->toHaveKeys(['transforms', 'field_transforms'])
         ->and(array_column($state['schema'], null, 'source')['_code']['transforms'])
-        ->toBe([['key' => 'cast', 'params' => ['type' => 'boolean']]]);
+        ->toBe([['type' => 'cast', 'data' => ['type' => 'boolean']]]);
 
     $sync->update(SyncForm::forUpdate($state, $sync, $destinations));
 
@@ -288,7 +288,7 @@ it('resets source settings with mappings when the destination or source changes'
     TestCase::makeMetadata($connection, ['system' => ['_code' => new StringField(length: 11, fixed: true)]]);
     $livewire = SchemaHost::make();
     $form = SyncForm::configure(FormSchema::make($livewire)->statePath('data')->operation('create'));
-    $fieldTransforms = [['key' => 'cast', 'params' => ['type' => 'string']]];
+    $fieldTransforms = [['type' => 'cast', 'data' => ['type' => 'string']]];
     $form->fill([
         'connection_id' => $connection->id,
         'source' => 'object-0',
@@ -341,21 +341,21 @@ it('validates transform parameters through their native form schemas', function 
 })->with([
     'unsupported cast target' => [[
         'schema' => MappingState::binding(['_description' => 'title'], [
-            '_description' => ['transforms' => [['key' => 'cast', 'params' => ['type' => 'reference']]]],
+            '_description' => ['transforms' => [['type' => 'cast', 'data' => ['type' => 'reference']]]],
         ]),
     ]],
     'missing filter condition' => [[
         'schema' => MappingState::binding(['_description' => 'title'], [
-            '_description' => ['transforms' => [['key' => 'filter', 'params' => ['mode' => 'exclude']]]],
+            '_description' => ['transforms' => [['type' => 'filter', 'data' => ['mode' => 'exclude']]]],
         ]),
     ]],
 ]);
 
 it('allows repeated transforms on submission', function () {
     $settings = [
-        ['key' => 'cast', 'params' => ['type' => 'integer']],
-        ['key' => 'cast', 'params' => ['type' => 'string']],
-        ['key' => 'cast', 'params' => ['type' => 'integer']],
+        ['type' => 'cast', 'data' => ['type' => 'integer']],
+        ['type' => 'cast', 'data' => ['type' => 'string']],
+        ['type' => 'cast', 'data' => ['type' => 'integer']],
     ];
     $schema = FormSchema::make(SchemaHost::make())
         ->statePath('data')
@@ -392,15 +392,15 @@ it('persists and restores transforms on every source independently of its target
     $action = $form->getComponentByStatePath('schema.sources.' . $keys['_code'] . '.transforms')->getAction(
         'fieldTransforms',
     );
-    $cast = ['key' => 'cast', 'params' => ['type' => 'integer']];
+    $cast = ['type' => 'cast', 'data' => ['type' => 'integer']];
 
     expect($form->toHtml())->toContain('data-binding-source-settings="_description"');
-    $action(['transform' => 'cast'])->data(['params' => $cast['params']])->call();
+    $action(['block' => 'cast'])->data(['data' => $cast['data']])->call();
     expect($mapping->getSourceSettings()['_code']['transforms'])->toBe([$cast]);
     $description = $form->getComponentByStatePath('schema.sources.' . $keys['_description'] . '.transforms')->getAction(
         'fieldTransforms',
     );
-    $description(['transform' => 'cast'])->data(['params' => $cast['params']])->call();
+    $description(['block' => 'cast'])->data(['data' => $cast['data']])->call();
     expect($mapping->getSourceSettings()['_description']['transforms'])->toBe([$cast]);
     $attributes = SyncForm::forCreate(
         $form->getState(),
@@ -412,9 +412,9 @@ it('persists and restores transforms on every source independently of its target
         ->and($attributes['schema'][1]['target'])
         ->toBeNull()
         ->and($attributes['schema'][1]['transforms'])
-        ->toBe([['key' => 'cast', 'params' => ['type' => 'integer']]])
+        ->toBe([['type' => 'cast', 'data' => ['type' => 'integer']]])
         ->and($attributes['schema'][0]['transforms'])
-        ->toBe([['key' => 'cast', 'params' => ['type' => 'integer']]]);
+        ->toBe([['type' => 'cast', 'data' => ['type' => 'integer']]]);
 });
 
 it('validates destination columns directly for bindings and static values', function (array $bindings) {
@@ -679,7 +679,7 @@ it('creates a static source and persists its cast through the synchronization fo
     $mapping->getConstantValueSchema('static_1')->getComponent('static')->state('false');
     $sourceKey = $mapping->getSourceStateKeys()['static_1'];
     $form->getComponentByStatePath('schema.sources.' . $sourceKey . '.transforms')->state([
-        ['key' => 'cast', 'params' => ['type' => 'boolean']],
+        ['type' => 'cast', 'data' => ['type' => 'boolean']],
     ]);
     expect($mapping->getConnectionModes()['static_1']['is_active'])->toBe('whole');
     $livewire->data['schema']['targets'][$mapping->getStateKeys()['is_active']] = MappingState::source('static_1');
@@ -690,7 +690,7 @@ it('creates a static source and persists its cast through the synchronization fo
         'target' => 'is_active',
         'static' => 'false',
         'result' => ['type' => 'boolean'],
-        'transforms' => [['key' => 'cast', 'params' => ['type' => 'boolean']]],
+        'transforms' => [['type' => 'cast', 'data' => ['type' => 'boolean']]],
     ]);
     $sync = Sync::create(SyncForm::forCreate($state, app(DestinationFactory::class)));
     expect(collect($sync->schema)->firstWhere('target', 'is_active')->type())->toBe(ColumnType::Boolean);

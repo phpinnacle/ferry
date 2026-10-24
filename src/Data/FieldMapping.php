@@ -13,7 +13,7 @@ use PHPinnacle\Rosetta\Fields\StringField;
 /**
  * @phpstan-import-type FieldData from FieldDecoder
  * @phpstan-import-type Definition from JsonSchema
- * @phpstan-type MappingData array{kind: 'source', source: string, target: string|null, field: FieldData, result?: Definition|null, transforms?: list<array{key: string, params: array<string, string>}>}|array{kind: 'static', target: string, static: string|int|float|bool, result?: Definition|null, transforms?: list<array{key: string, params: array<string, string>}>}
+ * @phpstan-type MappingData array{kind: 'source', source: string, target: string|null, field: FieldData, result?: Definition|null, transforms?: list<array{type: string, data: array<string, string>}>}|array{kind: 'static', target: string, static: string|int|float|bool, result?: Definition|null, transforms?: list<array{type: string, data: array<string, string>}>}
  */
 final readonly class FieldMapping implements JsonSerializable
 {

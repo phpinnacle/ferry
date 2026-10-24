@@ -29,7 +29,7 @@ function editor(state = {}, disabled = false, options = {}) {
 }
 
 test('partial configuration updates refresh compatibility and ports while keeping drafts and filters', () => {
-    const component = editor({ name: sourceEntry('title') }, false, { sourceSettings: { title: { transforms: [{ key: 'trim' }] } } });
+    const component = editor({ name: sourceEntry('title') }, false, { sourceSettings: { title: { transforms: [{ type: 'trim' }] } } });
     component.sourceSearch = 'title';
     component.visibilityFilter = 'mapped';
     component.refresh();

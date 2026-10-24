@@ -101,8 +101,6 @@ return [
             'target_column' => 'Поле назначения',
             'constant_type' => 'Тип',
             'constant_value' => 'Значение',
-            'field_transform_heading' => ':transform — :field',
-            'remove_transform' => 'Удалить: :transform',
             'transform' => 'Трансформация',
             'add_transform' => 'Добавить трансформацию',
             'sink_connector_status' => 'Статус Sink Connector',

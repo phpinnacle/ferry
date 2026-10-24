@@ -5,7 +5,7 @@ use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Schema;
 use Illuminate\Validation\ValidationException;
-use PHPinnacle\Ferry\Forms\Actions\FieldTransformsAction;
+use PHPinnacle\Common\Forms\InlineBuilder\BuilderAction;
 use PHPinnacle\Ferry\Forms\FieldTransforms;
 use PHPinnacle\Ferry\Forms\JsonSchema;
 use PHPinnacle\Ferry\Services\TransformRegistry;
@@ -38,17 +38,17 @@ it('builds parameter forms when opening a transform rather than rendering its me
         return [TextInput::make('value')->required()];
     }));
 
-    $action = FieldTransformsAction::make($this->field, app(TransformRegistry::class))->schemaComponent($this->field);
+    $action = BuilderAction::make($this->field)->schemaComponent($this->field);
     expect($action->toHtml())->toContain('custom');
     expect($builds)->toBe(0);
-    expect($action(['transform' => 'custom'])->shouldOpenModal())->toBeTrue();
+    expect($action(['block' => 'custom'])->shouldOpenModal())->toBeTrue();
     expect($builds)->toBe(1);
 });
 
 it('validates repeated numeric casts and offers transforms for the final type', function () {
     $settings = [
-        ['key' => 'cast', 'params' => ['type' => 'integer']],
-        ['key' => 'cast', 'params' => ['type' => 'boolean']],
+        ['type' => 'cast', 'data' => ['type' => 'integer']],
+        ['type' => 'cast', 'data' => ['type' => 'boolean']],
     ];
     $this->field->state($settings);
 
@@ -57,7 +57,7 @@ it('validates repeated numeric casts and offers transforms for the final type', 
         ->and(array_keys($this->field->getAvailableTransforms(app(TransformRegistry::class))))
         ->toBe(['cast', 'filter']);
 
-    $settings[] = ['key' => 'cast', 'params' => ['type' => 'string']];
+    $settings[] = ['type' => 'cast', 'data' => ['type' => 'string']];
     $this->field->state($settings);
 
     expect($this->field->getContainer()->getState()['transforms'])
@@ -68,8 +68,8 @@ it('validates repeated numeric casts and offers transforms for the final type', 
 
 it('uses description colors for configurable and settings-free badges', function () {
     $this->field->state([
-        ['key' => 'trim', 'params' => []],
-        ['key' => 'mask', 'params' => ['replacement' => 'hidden']],
+        ['type' => 'trim', 'data' => []],
+        ['type' => 'mask', 'data' => ['replacement' => 'hidden']],
     ]);
 
     $html = ($this->action)([])->toHtml();
@@ -82,35 +82,35 @@ it('uses description colors for configurable and settings-free badges', function
         'Remove Trim whitespace',
         'Remove Mask field',
     );
-    expect($html)->toContain('fieldTransforms(')->not->toContain('@js(');
+    expect($html)->toContain('inlineBuilder(')->not->toContain('@js(');
 });
 
 it('adds repeated transforms and edits only the selected instance', function () {
-    ($this->action)(['transform' => 'trim'])->data([])->call();
-    ($this->action)(['transform' => 'mask'])->data(['params' => [
+    ($this->action)(['block' => 'trim'])->data([])->call();
+    ($this->action)(['block' => 'mask'])->data(['data' => [
         'replacement' => '***',
     ]])->call();
-    ($this->action)(['transform' => 'trim'])->data([])->call();
-    ($this->action)(['transform' => 'mask'])->data(['params' => [
+    ($this->action)(['block' => 'trim'])->data([])->call();
+    ($this->action)(['block' => 'mask'])->data(['data' => [
         'replacement' => 'second',
     ]])->call();
-    ($this->action)(['transform' => 'mask', 'index' => 3])->data(['params' => [
+    ($this->action)(['block' => 'mask', 'index' => 3])->data(['data' => [
         'replacement' => 'hidden',
     ]])->call();
 
     expect($this->field->getRawState())->toBe([
-        ['key' => 'trim', 'params' => []],
-        ['key' => 'mask', 'params' => ['replacement' => '***']],
-        ['key' => 'trim', 'params' => []],
-        ['key' => 'mask', 'params' => ['replacement' => 'hidden']],
+        ['type' => 'trim', 'data' => []],
+        ['type' => 'mask', 'data' => ['replacement' => '***']],
+        ['type' => 'trim', 'data' => []],
+        ['type' => 'mask', 'data' => ['replacement' => 'hidden']],
     ]);
 });
 
 it('reorders repeated transforms while preserving their individual parameters', function () {
     $settings = [
-        ['key' => 'mask', 'params' => ['replacement' => 'first']],
-        ['key' => 'mask', 'params' => ['replacement' => 'second']],
-        ['key' => 'trim', 'params' => []],
+        ['type' => 'mask', 'data' => ['replacement' => 'first']],
+        ['type' => 'mask', 'data' => ['replacement' => 'second']],
+        ['type' => 'trim', 'data' => []],
     ];
     $this->field->state($settings);
 
@@ -124,47 +124,47 @@ it('reorders repeated transforms while preserving their individual parameters', 
 
 it('skips the modal for transforms without settings and removes them without changing their neighbors', function () {
     $this->field->state([
-        ['key' => 'mask', 'params' => ['replacement' => 'hidden']],
+        ['type' => 'mask', 'data' => ['replacement' => 'hidden']],
     ]);
-    $add = ($this->action)(['transform' => 'trim']);
+    $add = ($this->action)(['block' => 'trim']);
     expect($add->shouldOpenModal())->toBeFalse();
     $add->data([])->call();
 
     expect($this->field->getRawState())->toBe([
-        ['key' => 'mask', 'params' => ['replacement' => 'hidden']],
-        ['key' => 'trim', 'params' => []],
+        ['type' => 'mask', 'data' => ['replacement' => 'hidden']],
+        ['type' => 'trim', 'data' => []],
     ]);
 
-    $remove = ($this->action)(['transform' => 'trim', 'index' => 1, 'remove' => true]);
+    $remove = ($this->action)(['block' => 'trim', 'index' => 1, 'remove' => true]);
     expect($remove->shouldOpenModal())->toBeFalse();
     $remove->call();
 
     expect($this->field->getRawState())->toBe([
-        ['key' => 'mask', 'params' => ['replacement' => 'hidden']],
+        ['type' => 'mask', 'data' => ['replacement' => 'hidden']],
     ]);
 });
 
 it('removes only the selected configurable instance directly and keeps deletion out of its settings modal', function () {
     $this->field->state([
-        ['key' => 'mask', 'params' => ['replacement' => 'first']],
-        ['key' => 'mask', 'params' => ['replacement' => 'hidden']],
+        ['type' => 'mask', 'data' => ['replacement' => 'first']],
+        ['type' => 'mask', 'data' => ['replacement' => 'hidden']],
     ]);
-    $edit = ($this->action)(['transform' => 'mask', 'index' => 1]);
+    $edit = ($this->action)(['block' => 'mask', 'index' => 1]);
     expect($edit->getExtraModalFooterActions())->toBe([]);
 
-    $remove = ($this->action)(['transform' => 'mask', 'index' => 1, 'remove' => true]);
+    $remove = ($this->action)(['block' => 'mask', 'index' => 1, 'remove' => true]);
     expect($remove->shouldOpenModal())->toBeFalse();
     $remove->call();
 
     expect($this->field->getRawState())->toBe([
-        ['key' => 'mask', 'params' => ['replacement' => 'first']],
+        ['type' => 'mask', 'data' => ['replacement' => 'first']],
     ]);
 });
 
 it('rejects reorder requests that would remove, duplicate or introduce a transform', function (array $order) {
     $settings = [
-        ['key' => 'trim', 'params' => []],
-        ['key' => 'mask', 'params' => ['replacement' => 'hidden']],
+        ['type' => 'trim', 'data' => []],
+        ['type' => 'mask', 'data' => ['replacement' => 'hidden']],
     ];
     $this->field->state($settings);
 
@@ -179,16 +179,16 @@ it('rejects reorder requests that would remove, duplicate or introduce a transfo
 ]);
 
 it('rejects edits and removals outside the selected transform instances', function (array $arguments) {
-    $settings = [['key' => 'mask', 'params' => ['replacement' => 'first']]];
+    $settings = [['type' => 'mask', 'data' => ['replacement' => 'first']]];
     $this->field->state($settings);
 
     expect(fn () => ($this->action)([...$arguments])->data([])->call())
         ->toThrow(ValidationException::class);
     expect($this->field->getRawState())->toBe($settings);
 })->with([
-    'missing removal index' => [['transform' => 'mask', 'remove' => true]],
-    'unknown instance' => [['transform' => 'mask', 'index' => 1]],
-    'different transform' => [['transform' => 'trim', 'index' => 0]],
+    'missing removal index' => [['block' => 'mask', 'remove' => true]],
+    'unknown instance' => [['block' => 'mask', 'index' => 1]],
+    'different transform' => [['block' => 'trim', 'index' => 0]],
 ]);
 
 it('validates transform state at the standalone field boundary', function (array $settings) {
@@ -196,15 +196,15 @@ it('validates transform state at the standalone field boundary', function (array
 
     expect(fn () => $this->field->getContainer()->getState())->toThrow(ValidationException::class);
 })->with([
-    'missing key' => [[['params' => []]]],
-    'non-string parameters' => [[['key' => 'mask', 'params' => ['replacement' => []]]]],
-    'non-list settings' => [['mask' => ['key' => 'mask', 'params' => []]]],
-    'unexpected setting data' => [[['key' => 'trim', 'extra' => true]]],
+    'missing key' => [[['data' => []]]],
+    'non-string parameters' => [[['type' => 'mask', 'data' => ['replacement' => []]]]],
+    'non-list settings' => [['mask' => ['type' => 'mask', 'data' => []]]],
+    'unexpected setting data' => [[['type' => 'trim', 'extra' => true]]],
 ]);
 
 it('does not mutate a disabled transform field', function () {
     $this->field->disabled();
-    expect(($this->action)(['transform' => 'trim'])->isDisabled())->toBeTrue();
+    expect(($this->action)(['block' => 'trim'])->isDisabled())->toBeTrue();
     expect($this->field->getRawState())->toBe([]);
 });
 
@@ -215,11 +215,11 @@ it('offers only transforms that accept the output of the current chain', functio
 
     expect(array_keys($this->field->getAvailableTransforms($registry)))->toBe(['cast', 'filter']);
     expect(($this->action)([])->toHtml())->not->toContain('Trim whitespace', 'Extract substring', 'Mask field');
-    expect(($this->action)(['transform' => 'trim'])->isDisabled())->toBeTrue();
-    expect(fn () => ($this->action)(['transform' => 'trim'])->data([])->call())->toThrow(ValidationException::class);
+    expect(($this->action)(['block' => 'trim'])->isDisabled())->toBeTrue();
+    expect(fn () => ($this->action)(['block' => 'trim'])->data([])->call())->toThrow(ValidationException::class);
     expect($this->field->getSettings())->toBe([]);
 
-    ($this->action)(['transform' => 'cast'])->data(['params' => ['type' => 'string']])->call();
+    ($this->action)(['block' => 'cast'])->data(['data' => ['type' => 'string']])->call();
     expect(array_keys($this->field->getAvailableTransforms($registry)))->toBe([
         'cast',
         'filter',
@@ -227,36 +227,36 @@ it('offers only transforms that accept the output of the current chain', functio
         'mask',
         'substring',
     ]);
-    ($this->action)(['transform' => 'trim'])->data([])->call();
+    ($this->action)(['block' => 'trim'])->data([])->call();
     expect($this->field->getContainer()->getState()['transforms'])->toBe([
-        ['key' => 'cast', 'params' => ['type' => 'string']],
-        ['key' => 'trim', 'params' => []],
+        ['type' => 'cast', 'data' => ['type' => 'string']],
+        ['type' => 'trim', 'data' => []],
     ]);
 
-    ($this->action)(['transform' => 'cast', 'index' => 0])->data(['params' => ['type' => 'integer']])->call();
+    ($this->action)(['block' => 'cast', 'index' => 0])->data(['data' => ['type' => 'integer']])->call();
     expect($this->field->getContainer()->getState(...))->toThrow(ValidationException::class);
     expect($this->field->getAvailableTransforms($registry))->toBe([]);
     expect(($this->action)([])->toHtml())->toContain('Remove Trim whitespace');
-    ($this->action)(['transform' => 'trim', 'index' => 1, 'remove' => true])->call();
+    ($this->action)(['block' => 'trim', 'index' => 1, 'remove' => true])->call();
     expect($this->field->getContainer()->getState()['transforms'])->toBe([
-        ['key' => 'cast', 'params' => ['type' => 'integer']],
+        ['type' => 'cast', 'data' => ['type' => 'integer']],
     ]);
     expect(array_keys($this->field->getAvailableTransforms($registry)))->toBe(['cast', 'filter']);
 });
 
 it('rejects incompatible reordering and validates removal of a preceding cast', function () {
     $this->field->inputSchema(['type' => 'boolean'])->state([
-        ['key' => 'cast', 'params' => ['type' => 'string']],
-        ['key' => 'trim', 'params' => []],
+        ['type' => 'cast', 'data' => ['type' => 'string']],
+        ['type' => 'trim', 'data' => []],
     ]);
     $original = $this->field->getSettings();
     expect(fn () => ($this->action)(['order' => [1, 0]])->call())->toThrow(ValidationException::class);
     expect($this->field->getSettings())->toBe($original);
     expect($this->field->getContainer()->getState()['transforms'])->toHaveCount(2);
 
-    ($this->action)(['transform' => 'cast', 'index' => 0, 'remove' => true])->call();
+    ($this->action)(['block' => 'cast', 'index' => 0, 'remove' => true])->call();
     expect($this->field->getContainer()->getState(...))->toThrow(ValidationException::class);
-    ($this->action)(['transform' => 'trim', 'index' => 0, 'remove' => true])->call();
+    ($this->action)(['block' => 'trim', 'index' => 0, 'remove' => true])->call();
     expect($this->field->getContainer()->getState()['transforms'])->toBe([]);
 });
 
@@ -273,12 +273,12 @@ it('offers and validates string transforms for formatted strings', function (arr
         'substring',
     ]);
 
-    ($this->action)(['transform' => 'trim'])->data([])->call();
-    ($this->action)(['transform' => 'mask'])->data(['params' => ['replacement' => 'hidden']])->call();
+    ($this->action)(['block' => 'trim'])->data([])->call();
+    ($this->action)(['block' => 'mask'])->data(['data' => ['replacement' => 'hidden']])->call();
 
     expect($this->field->getContainer()->getState()['transforms'])->toBe([
-        ['key' => 'trim', 'params' => []],
-        ['key' => 'mask', 'params' => ['replacement' => 'hidden']],
+        ['type' => 'trim', 'data' => []],
+        ['type' => 'mask', 'data' => ['replacement' => 'hidden']],
     ]);
 })->with([
     'email' => [['type' => 'string', 'format' => 'email']],
@@ -293,7 +293,7 @@ it('preserves dedicated logical types for their declared formats', function (str
 
     expect(array_keys($this->field->getAvailableTransforms(app(TransformRegistry::class))))
         ->toBe(['cast', 'filter']);
-    $this->field->state([['key' => 'trim', 'params' => []]]);
+    $this->field->state([['type' => 'trim', 'data' => []]]);
     expect($this->field->getContainer()->getState(...))->toThrow(ValidationException::class);
 })->with(['date-time', 'ferry-reference']);
 
@@ -301,7 +301,7 @@ it('offers JSONPath filtering for array and object inputs', function (array $inp
     $this->field->inputSchema($input);
     expect(array_keys($this->field->getAvailableTransforms(app(TransformRegistry::class))))->toBe(['filter']);
     expect(($this->action)([])->toHtml())->toContain('Filter records', 'fi-dropdown');
-    $this->field->state([['key' => 'cast', 'params' => ['type' => 'string']]]);
+    $this->field->state([['type' => 'cast', 'data' => ['type' => 'string']]]);
     expect($this->field->getContainer()->getState(...))->toThrow(ValidationException::class);
 })->with([
     'array' => [['type' => 'array', 'items' => ['type' => 'string']]],
@@ -309,22 +309,22 @@ it('offers JSONPath filtering for array and object inputs', function (array $inp
 ]);
 
 it('accepts nullable string inputs and rejects invalid parameters', function () {
-    $this->field->inputSchema(['type' => ['string', 'null']])->state([['key' => 'trim', 'params' => []]]);
+    $this->field->inputSchema(['type' => ['string', 'null']])->state([['type' => 'trim', 'data' => []]]);
     expect($this->field->getContainer()->getState()['transforms'])->toHaveCount(1);
-    $this->field->state([['key' => 'mask', 'params' => []]]);
+    $this->field->state([['type' => 'mask', 'data' => []]]);
     expect($this->field->getContainer()->getState(...))->toThrow(ValidationException::class);
-    $this->field->state([['key' => 'filter', 'params' => []]]);
+    $this->field->state([['type' => 'filter', 'data' => []]]);
     expect($this->field->getContainer()->getState(...))->toThrow(ValidationException::class);
 });
 
 it('validates stored parameters through the description form without configured handlers', function () {
     app(TransformRegistry::class)->register(Substring::make());
-    $this->field->state([['key' => 'substring', 'params' => ['start' => '5', 'end' => '2']]]);
+    $this->field->state([['type' => 'substring', 'data' => ['start' => '5', 'end' => '2']]]);
     expect($this->field->getContainer()->getState(...))->toThrow(ValidationException::class);
 
-    $this->field->state([['key' => 'substring', 'params' => ['start' => '2', 'end' => '5']]]);
+    $this->field->state([['type' => 'substring', 'data' => ['start' => '2', 'end' => '5']]]);
     expect($this->field->getContainer()->getState()['transforms'])->toBe([
-        ['key' => 'substring', 'params' => ['start' => '2', 'end' => '5']],
+        ['type' => 'substring', 'data' => ['start' => '2', 'end' => '5']],
     ]);
 });
 
@@ -332,9 +332,9 @@ it('casts a union of scalar types without losing nullability', function () {
     $this->field->inputSchema(['type' => ['string', 'number', 'null']]);
     expect(array_keys($this->field->getAvailableTransforms(app(TransformRegistry::class))))->toBe(['cast', 'filter']);
 
-    ($this->action)(['transform' => 'cast'])->data(['params' => ['type' => 'string']])->call();
+    ($this->action)(['block' => 'cast'])->data(['data' => ['type' => 'string']])->call();
     expect($this->field->getContainer()->getState()['transforms'])->toBe([
-        ['key' => 'cast', 'params' => ['type' => 'string']],
+        ['type' => 'cast', 'data' => ['type' => 'string']],
     ]);
 });
 
@@ -348,80 +348,80 @@ it('lets a custom array transform participate in the same schema chain', functio
     $action = $field->getAction('fieldTransforms');
     expect(array_keys($field->getAvailableTransforms($registry)))->toBe(['filter', 'join']);
 
-    $action(['transform' => 'join'])->data([])->call();
+    $action(['block' => 'join'])->data([])->call();
     expect(array_keys($field->getAvailableTransforms($registry)))->toBe(['cast', 'filter', 'trim', 'mask']);
-    $action(['transform' => 'trim'])->data([])->call();
+    $action(['block' => 'trim'])->data([])->call();
     expect($field->getContainer()->getState()['transforms'])->toBe([
-        ['key' => 'join', 'params' => []],
-        ['key' => 'trim', 'params' => []],
+        ['type' => 'join', 'data' => []],
+        ['type' => 'trim', 'data' => []],
     ]);
     expect($registry->resultSchema(JsonSchema::fromArray(['type' => 'array', 'items' => ['type' => 'string']]), [[
-        'key' => 'join',
+        'type' => 'join',
     ]])?->toArray())->toBe(['type' => 'string', 'maxLength' => 20]);
 });
 
 it('preserves JSONPath predicates when a preceding cast changes type', function (string $type) {
     $params = ['mode' => 'exclude', 'condition' => '@ != null', 'missing_or_null_behavior' => 'fail'];
     $this->field->inputSchema(['type' => 'string'])->state([
-        ['key' => 'cast', 'params' => ['type' => 'integer']],
-        ['key' => 'filter', 'params' => $params],
+        ['type' => 'cast', 'data' => ['type' => 'integer']],
+        ['type' => 'filter', 'data' => $params],
     ]);
-    ($this->action)(['transform' => 'cast', 'index' => 0])->data(['params' => ['type' => $type]])->call();
+    ($this->action)(['block' => 'cast', 'index' => 0])->data(['data' => ['type' => $type]])->call();
 
-    expect($this->field->getContainer()->getState()['transforms'][1]['params'])->toBe($params);
+    expect($this->field->getContainer()->getState()['transforms'][1]['data'])->toBe($params);
 })->with(['boolean', 'integer', 'decimal']);
 
 it('uses the preceding cast output for the filter example', function () {
     $this->field->inputSchema(['type' => 'boolean']);
     $condition = fn () => collect(
-        ($this->action)(['transform' => 'filter'])
+        ($this->action)(['block' => 'filter'])
             ->getSchema(Schema::make($this->field->getLivewire()))->getFlatComponents(),
     )
         ->first(fn ($component) => $component instanceof Textarea && $component->getName() === 'condition');
 
     expect($condition()->getPlaceholder())->toBe('@ == true');
-    $this->field->state([['key' => 'cast', 'params' => ['type' => 'decimal']]]);
+    $this->field->state([['type' => 'cast', 'data' => ['type' => 'decimal']]]);
     expect($condition()->getPlaceholder())->toBe('@ >= 100.5');
 });
 
 it('rejects casting to the effective type after each preceding cast', function () {
-    ($this->action)(['transform' => 'cast'])->data(['params' => ['type' => 'integer']])->call();
-    ($this->action)(['transform' => 'cast'])->data(['params' => ['type' => 'integer']])->call();
+    ($this->action)(['block' => 'cast'])->data(['data' => ['type' => 'integer']])->call();
+    ($this->action)(['block' => 'cast'])->data(['data' => ['type' => 'integer']])->call();
     expect($this->field->getContainer()->getState(...))->toThrow(ValidationException::class);
-    ($this->action)(['transform' => 'cast', 'index' => 1, 'remove' => true])->call();
-    ($this->action)(['transform' => 'cast'])->data(['params' => [
+    ($this->action)(['block' => 'cast', 'index' => 1, 'remove' => true])->call();
+    ($this->action)(['block' => 'cast'])->data(['data' => [
         'type' => 'boolean',
         'replace_null_with_default' => 'false',
     ]])->call();
 
     expect($this->field->getContainer()->getState()['transforms'])->toBe([
-        ['key' => 'cast', 'params' => ['type' => 'integer']],
-        ['key' => 'cast', 'params' => ['type' => 'boolean', 'replace_null_with_default' => 'false']],
+        ['type' => 'cast', 'data' => ['type' => 'integer']],
+        ['type' => 'cast', 'data' => ['type' => 'boolean', 'replace_null_with_default' => 'false']],
     ]);
 });
 
 it('calculates allowed moves using the complete type chain and refreshes them after parameters change', function () {
     $registry = app(TransformRegistry::class);
     $this->field->inputSchema(['type' => 'boolean'])->state([
-        ['key' => 'cast', 'params' => ['type' => 'string']],
-        ['key' => 'filter', 'params' => ['condition' => '@ != null']],
-        ['key' => 'trim', 'params' => []],
+        ['type' => 'cast', 'data' => ['type' => 'string']],
+        ['type' => 'filter', 'data' => ['condition' => '@ != null']],
+        ['type' => 'trim', 'data' => []],
     ]);
-    expect($this->field->getAllowedMoves($registry))->toBe([[0, 1], [0, 1, 2], [1, 2]]);
+    expect($this->field->getAllowedMoves())->toBe([[0, 1], [0, 1, 2], [1, 2]]);
     ($this->action)(['order' => [1, 0, 2]])->call();
-    expect(array_column($this->field->getSettings(), 'key'))->toBe(['filter', 'cast', 'trim']);
-    expect($this->field->getAllowedMoves($registry))->toBe([[0, 1, 2], [0, 1], [2]]);
+    expect(array_column($this->field->getSettings(), 'type'))->toBe(['filter', 'cast', 'trim']);
+    expect($this->field->getAllowedMoves())->toBe([[0, 1, 2], [0, 1], [2]]);
 
     $this->field->inputSchema(['type' => 'string'])->state([
-        ['key' => 'cast', 'params' => ['type' => 'integer']],
-        ['key' => 'trim', 'params' => []],
+        ['type' => 'cast', 'data' => ['type' => 'integer']],
+        ['type' => 'trim', 'data' => []],
     ]);
-    expect($this->field->getAllowedMoves($registry))->toBe([[1], [0]]);
+    expect($this->field->getAllowedMoves())->toBe([[1], [0]]);
     $this->field->state([
-        ['key' => 'cast', 'params' => ['type' => 'string']],
-        ['key' => 'trim', 'params' => []],
+        ['type' => 'cast', 'data' => ['type' => 'string']],
+        ['type' => 'trim', 'data' => []],
     ]);
-    expect($this->field->getAllowedMoves($registry))->toBe([[0, 1], [0, 1]]);
+    expect($this->field->getAllowedMoves())->toBe([[0, 1], [0, 1]]);
 });
 
 it('uses transformation schema callbacks when deciding whether a move is allowed', function () {
@@ -435,21 +435,21 @@ it('uses transformation schema callbacks when deciding whether a move is allowed
             ->outputSchema(fn (JsonSchema $schema, array $params) => ['type' => $params['type']]),
     );
     $this->field->state([
-        ['key' => 'make_object', 'params' => []],
-        ['key' => 'read_object', 'params' => ['type' => 'string']],
-        ['key' => 'trim', 'params' => []],
+        ['type' => 'make_object', 'data' => []],
+        ['type' => 'read_object', 'data' => ['type' => 'string']],
+        ['type' => 'trim', 'data' => []],
     ]);
-    expect($this->field->getAllowedMoves($registry))->toBe([[0], [1], [0, 2]]);
+    expect($this->field->getAllowedMoves())->toBe([[0], [1], [0, 2]]);
 });
 
 it('checks the current input type again before applying a reordered chain', function () {
     $registry = app(TransformRegistry::class);
     $settings = [
-        ['key' => 'cast', 'params' => ['type' => 'string']],
-        ['key' => 'trim', 'params' => []],
+        ['type' => 'cast', 'data' => ['type' => 'string']],
+        ['type' => 'trim', 'data' => []],
     ];
     $this->field->state($settings);
-    expect($this->field->getAllowedMoves($registry))->toBe([[0, 1], [0, 1]]);
+    expect($this->field->getAllowedMoves())->toBe([[0, 1], [0, 1]]);
     $this->field->inputSchema(['type' => 'boolean']);
     expect(fn () => ($this->action)(['order' => ['1', '0']])->call())->toThrow(ValidationException::class);
     expect($this->field->getSettings())->toBe($settings);

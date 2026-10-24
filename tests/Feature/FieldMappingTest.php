@@ -648,8 +648,8 @@ it('validates transform settings on unconnected sources', function (
 
     expect($schema->getState(...))->toThrow(ValidationException::class);
 })->with([false, true])->with([
-    'incompatible transform' => ['boolean', [['key' => 'trim', 'params' => []]]],
-    'missing parameters' => ['string', [['key' => 'mask', 'params' => []]]],
+    'incompatible transform' => ['boolean', [['type' => 'trim', 'data' => []]]],
+    'missing parameters' => ['string', [['type' => 'mask', 'data' => []]]],
 ]);
 
 it('shows the property key separately from its title and preserves mapping state', function (bool $binding) {
@@ -771,7 +771,7 @@ it('checks static source compatibility after transforms and validates connected 
     $schema
         ->getComponentByStatePath('mapping.sources.' . $key . '.transforms')
         ->state([
-            ['key' => 'cast', 'params' => ['type' => 'integer']],
+            ['type' => 'cast', 'data' => ['type' => 'integer']],
         ]);
     expect($field->getConnectionModes()['static_2']['count'])->toBe('whole');
     $state = $field->getRawState();
@@ -781,7 +781,7 @@ it('checks static source compatibility after transforms and validates connected 
     $field->getConstantValueSchema('static_2')->getComponent('static')->state('10');
     $row = $schema->getState()['mapping'][0];
     expect($row)->toMatchArray(['kind' => 'static', 'target' => 'count', 'static' => '10']);
-    expect($row['transforms'])->toBe([['key' => 'cast', 'params' => ['type' => 'integer']]]);
+    expect($row['transforms'])->toBe([['type' => 'cast', 'data' => ['type' => 'integer']]]);
 });
 
 it('keeps static source actions disabled when unavailable', function (bool $enabled, bool $disabled) {

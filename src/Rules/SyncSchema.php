@@ -110,8 +110,8 @@ readonly class SyncSchema
             $schema = JsonSchema::fromArray(ColumnType::fromField($field)?->jsonSchema($field) ?? []);
 
             foreach ($settings as $setting) {
-                $transform = $registry->getOrFail($setting->key);
-                $schema = $transform->accepts($schema) ? $transform->getOutputSchema($schema, $setting->params) : null;
+                $transform = $registry->getOrFail($setting->type);
+                $schema = $transform->accepts($schema) ? $transform->getOutputSchema($schema, $setting->data) : null;
 
                 if ($schema === null) {
                     throw ValidationException::withMessages([
@@ -133,7 +133,7 @@ readonly class SyncSchema
             if ($settings !== [] && $column !== null && $mapping->type() === null) {
                 throw ValidationException::withMessages([
                     'data.transforms' => __('phpinnacle-ferry::resources.sync.errors.transform_field_unsupported', [
-                        'transform' => $registry->getOrFail($settings[array_key_last($settings)]->key)->getLabel(),
+                        'transform' => $registry->getOrFail($settings[array_key_last($settings)]->type)->getLabel(),
                         'field' => $source,
                     ]),
                 ]);

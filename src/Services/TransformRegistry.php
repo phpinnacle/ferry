@@ -8,7 +8,7 @@ use PHPinnacle\Ferry\Forms\JsonSchema;
 use PHPinnacle\Ferry\Transformation;
 
 /**
- * @phpstan-type TransformInput array{key: string, params?: array<string, string>}
+ * @phpstan-type TransformInput array{type: string, data?: array<string, string>}
  */
 #[Singleton]
 class TransformRegistry
@@ -42,8 +42,8 @@ class TransformRegistry
     public function resultSchema(JsonSchema $input, array $settings): ?JsonSchema
     {
         foreach ($settings as $row) {
-            $params = $row['params'] ?? [];
-            $transform = $this->getOrFail($row['key']);
+            $params = $row['data'] ?? [];
+            $transform = $this->getOrFail($row['type']);
             if (!$transform->accepts($input)) {
                 return null;
             }

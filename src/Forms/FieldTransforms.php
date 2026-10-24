@@ -3,24 +3,20 @@
 namespace PHPinnacle\Ferry\Forms;
 
 use Closure;
-use Filament\Forms\Components\Field;
-use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Translation\PotentiallyTranslatedString;
-use Illuminate\Validation\Rule;
-use PHPinnacle\Ferry\Forms\Actions\FieldTransformsAction;
+use PHPinnacle\Common\Forms\InlineBuilder;
+use PHPinnacle\Common\Forms\InlineBuilder\Block;
 use PHPinnacle\Ferry\Models\ConnectionMetadata;
 use PHPinnacle\Ferry\Services\TransformRegistry;
 use PHPinnacle\Ferry\Transformation;
 
 /**
- * @phpstan-type Transform array{key: string, params?: array<string, string>}
+ * @phpstan-type Transform array{type: string, data?: array<string, string>}
  * @phpstan-import-type Definition from JsonSchema
  */
-class FieldTransforms extends Field
+class FieldTransforms extends InlineBuilder
 {
-    protected string $view = 'phpinnacle-ferry::forms.field-transforms';
-
     protected ?ConnectionMetadata $object = null;
 
     /** @var Definition|Closure(): Definition */
@@ -89,26 +85,9 @@ class FieldTransforms extends Field
         );
     }
 
-    /** @return list<list<int>> */
-    public function getAllowedMoves(TransformRegistry $transforms): array
+    public function getEditorActionName(): string
     {
-        $settings = $this->getSettings();
-        $allowed = [];
-        foreach ($settings as $from => $setting) {
-            $positions = [];
-            $remaining = $settings;
-            array_splice($remaining, $from, 1);
-            foreach (array_keys($settings) as $to) {
-                $candidate = $remaining;
-                array_splice($candidate, $to, 0, [$setting]);
-                if ($this->hasCompatibleTypes($candidate, $transforms)) {
-                    $positions[] = $to;
-                }
-            }
-            $allowed[] = $positions;
-        }
-
-        return $allowed;
+        return 'fieldTransforms';
     }
 
     protected function setUp(): void
@@ -116,85 +95,60 @@ class FieldTransforms extends Field
         parent::setUp();
 
         $this->hiddenLabel();
-        $this->default([]);
-        $this->partiallyRenderAfterStateUpdated();
-        $this->mutateDehydratedStateUsing(self::dehydrateFieldSettings(...));
-        $this->rules(fn (self $component) => [
-            $component->validateSettings(...),
-        ]);
-        $this->registerActions([
-            FieldTransformsAction::make(...),
-        ]);
+        $this->addActionLabel(__('phpinnacle-ferry::resources.sync.fields.add_transform'));
+        $this->placeholder(__('phpinnacle-ferry::resources.sync.fields.transform'));
+        $this->blocks(function (self $component) {
+            $registry = app(TransformRegistry::class);
+
+            return array_map(function (Transformation $transform) use ($component, $registry) {
+                $block = Block::make($transform->key())
+                    ->label($transform->getLabel())
+                    ->description($transform->getDescription())
+                    ->icon($transform->getIcon())
+                    ->color($transform->getColor())
+                    ->addable(fn () => array_key_exists(
+                        $transform->key(),
+                        $component->getAvailableTransforms($registry),
+                    ));
+
+                if ($transform->hasSchema()) {
+                    $block->schema(fn (?int $index) => $transform->getSchema(
+                        $component->getObject(),
+                        $component->getInputSchema($index),
+                    ));
+                }
+
+                return $block;
+            }, array_values($registry->all()));
+        });
+        $this->reorderableUsing(self::canReorderItems(...));
+        $this->rules(fn (self $component) => [$component->validateSettings(...)]);
     }
 
-    /**
-     * @param list<Transform> $state
-     * @return list<Transform>
-     */
-    private static function dehydrateFieldSettings(self $component, array $state): array
+    /** @param list<Transform> $items */
+    private static function canReorderItems(self $component, array $items): bool
     {
-        return $component->dehydrateSettings($state);
-    }
-
-    /**
-     * @param list<Transform> $state
-     * @return list<Transform>
-     */
-    private function dehydrateSettings(array $state): array
-    {
-        $settings = $state;
-        $registry = app(TransformRegistry::class);
-        foreach ($settings as $index => $setting) {
-            $transform = $registry->getOrFail($setting['key']);
-            $parameters = $this
-                ->makeChildSchema((string) $index)
-                ->statePath($index . '.params')
-                ->components($transform->getSchema($this->object, $this->getInputSchema($index)));
-            $parametersState = [];
-            Arr::set($parametersState, $parameters->getStatePath(), $setting['params'] ?? []);
-            /** @var array<string, mixed> $parametersState */
-            $parameters->dehydrateState($parametersState);
-            $parameters->mutateDehydratedState($parametersState);
-            /** @var array<string, string> $params */
-            $params = Arr::get($parametersState, $parameters->getStatePath(), []);
-            $settings[$index] = ['key' => $setting['key'], 'params' => $params];
-        }
-
-        return $settings;
+        return $component->hasCompatibleTypes($items, app(TransformRegistry::class));
     }
 
     /** @param Closure(string): PotentiallyTranslatedString $fail */
     private function validateSettings(string $attribute, mixed $value, Closure $fail): void
     {
-        $transforms = app(TransformRegistry::class);
-        $validator = Validator::make(['transforms' => $value], [
-            'transforms' => ['array', 'list'],
-            'transforms.*' => ['array:key,params'],
-            'transforms.*.key' => [
-                'required',
-                'string',
-                Rule::in(array_keys($transforms->all())),
-            ],
-            'transforms.*.params' => ['sometimes', 'array'],
-            'transforms.*.params.*' => ['string'],
-        ]);
+        $validator = Validator::make(['transforms' => $value], ['transforms.*.data.*' => ['string']]);
         if ($validator->fails()) {
             $fail($validator->errors()->first())->translate();
 
             return;
         }
         /** @var list<Transform> $settings */
-        $settings = $validator->validated()['transforms'];
+        $settings = $value;
+        $transforms = app(TransformRegistry::class);
         $schema = JsonSchema::fromArray($this->evaluate($this->inputSchema));
-        foreach ($settings as $index => $setting) {
-            $transform = $transforms->getOrFail($setting['key']);
-            $params = $setting['params'] ?? [];
-            $this
-                ->makeChildSchema((string) $index)
-                ->statePath($index . '.params')
-                ->components($transform->getSchema($this->object, $schema))
-                ->validate();
-            $schema = $transform->accepts($schema) ? $transform->getOutputSchema($schema, $params) : null;
+        foreach ($settings as $setting) {
+            $transform = $transforms->getOrFail($setting['type']);
+            $schema = $transform->accepts($schema)
+                ? $transform->getOutputSchema($schema, $setting['data'] ?? [])
+                : null;
             if ($schema === null) {
                 $fail('phpinnacle-ferry::validation.transform_input_type')->translate([
                     'transform' => $transform->getLabel(),

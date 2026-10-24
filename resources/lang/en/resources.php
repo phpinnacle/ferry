@@ -101,8 +101,6 @@ return [
             'target_column' => 'Target Field',
             'constant_type' => 'Type',
             'constant_value' => 'Value',
-            'field_transform_heading' => ':transform — :field',
-            'remove_transform' => 'Remove :transform',
             'transform' => 'Transform',
             'add_transform' => 'Add transform',
             'sink_connector_status' => 'Sink Connector Status',

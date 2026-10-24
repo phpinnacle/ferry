@@ -18,6 +18,47 @@ require_once __DIR__ . '/../Fixtures/SchemaHost.php';
 
 uses(TestCase::class);
 
+it('migrates persisted source, static and record transform settings and restores them on rollback', function () {
+    Queue::fake();
+    $sync = TestCase::makeSync();
+    $schema = array_map(fn ($mapping) => $mapping->jsonSerialize(), $sync->schema);
+    $schema[0]['transforms'] = [
+        ['key' => 'trim', 'params' => []],
+        ['key' => 'mask', 'params' => ['replacement' => 'first']],
+        ['key' => 'mask', 'params' => ['replacement' => 'second']],
+    ];
+    $schema[] = [
+        'kind' => 'static',
+        'target' => 'constant',
+        'static' => '10',
+        'result' => ['type' => 'integer'],
+        'transforms' => [['key' => 'cast', 'params' => ['type' => 'integer']]],
+    ];
+    $transforms = [['key' => 'filter', 'params' => ['condition' => '@ != null']]];
+    $query = $sync->getConnection()->table('syncs')->where('id', $sync->id);
+    $query->update([
+        'schema' => json_encode($schema, JSON_THROW_ON_ERROR),
+        'transforms' => json_encode($transforms, JSON_THROW_ON_ERROR),
+    ]);
+    $migration = require __DIR__ . '/../../database/migrations/update_ferry_transform_settings.php';
+    $migration->up();
+
+    $saved = $sync->fresh();
+    expect(array_map(fn ($setting) => $setting->jsonSerialize(), $saved->schema[0]->transforms))->toBe([
+        ['type' => 'trim', 'data' => []],
+        ['type' => 'mask', 'data' => ['replacement' => 'first']],
+        ['type' => 'mask', 'data' => ['replacement' => 'second']],
+    ]);
+    expect($saved->schema[1]->transforms[0]->jsonSerialize())->toBe([
+        'type' => 'cast',
+        'data' => ['type' => 'integer'],
+    ]);
+    expect($saved->transforms[0]->jsonSerialize())->toBe(['type' => 'filter', 'data' => ['condition' => '@ != null']]);
+    $migration->down();
+    expect(json_decode($query->value('schema'), true, flags: JSON_THROW_ON_ERROR))->toBe($schema);
+    expect(json_decode($query->value('transforms'), true, flags: JSON_THROW_ON_ERROR))->toBe($transforms);
+});
+
 it('stores and restores the exact native schema emitted by the form', function (
     string|int|float|bool $value,
     string $type,
@@ -46,8 +87,8 @@ it('stores and restores the exact native schema emitted by the form', function (
                 'target' => null,
                 'transforms' => [
                     [
-                        'key' => 'filter',
-                        'params' => [
+                        'type' => 'filter',
+                        'data' => [
                             'mode' => 'exclude',
                             'condition' => '@ == true',
                             'missing_or_null_behavior' => 'include',
@@ -88,5 +129,5 @@ it('stores and restores the exact native schema emitted by the form', function (
     'zero' => [0, 'integer'],
     'whole decimal' => [1.0, 'decimal'],
     'string true' => ['true', 'string'],
-    'transformed string' => ['10', 'integer', [['key' => 'cast', 'params' => ['type' => 'integer']]]],
+    'transformed string' => ['10', 'integer', [['type' => 'cast', 'data' => ['type' => 'integer']]]],
 ]);

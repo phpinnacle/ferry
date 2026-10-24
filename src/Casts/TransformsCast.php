@@ -16,7 +16,7 @@ class TransformsCast implements CastsAttributes, SerializesCastableAttributes
     public function get(Model $model, string $key, mixed $value, array $attributes): array
     {
         /** @var string $value */
-        /** @var list<array{key: string, params: array<string, string>}> $settings */
+        /** @var list<array{type: string, data: array<string, string>}> $settings */
         $settings = json_decode($value, true, flags: JSON_THROW_ON_ERROR);
 
         return array_map(TransformSetting::fromArray(...), $settings);
