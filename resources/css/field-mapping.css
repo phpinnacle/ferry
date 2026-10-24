@@ -222,11 +222,17 @@
 }
 
 .ferry-transforms-empty .ferry-transforms-input {
+    gap: 0;
     padding-inline: 0;
 }
 
 .ferry-transforms-empty .ferry-transforms-add-button {
     margin-inline-start: -0.25rem;
+}
+
+.ferry-transforms-empty .ferry-transforms-add-button .fi-icon {
+    width: 1rem;
+    height: 1rem;
 }
 
 .ferry-transforms-placeholder {

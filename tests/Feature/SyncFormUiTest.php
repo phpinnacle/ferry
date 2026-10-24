@@ -22,6 +22,7 @@ use PHPinnacle\Rosetta\Data\MetadataProperty;
 use PHPinnacle\Rosetta\Enums\FieldType;
 use PHPinnacle\Rosetta\Enums\MetadataKind;
 use PHPinnacle\Rosetta\Enums\PropertyKind;
+use PHPinnacle\Rosetta\Fields\NumberField;
 use PHPinnacle\Rosetta\Fields\ScalarField;
 use PHPinnacle\Rosetta\Fields\StringField;
 
@@ -38,6 +39,52 @@ uses(TestCase::class);
 beforeEach(function () {
     Queue::fake();
 });
+
+it('shows Rosetta string bounds and exact numeric metadata in both mapping modes', function (string $destination) {
+    app(DestinationFactory::class)->register(customers_destination());
+    $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
+    TestCase::makeMetadata($connection, [
+        'system' => [
+            '_idrref' => new ScalarField(FieldType::Id),
+            '_code' => new StringField(8, true),
+            '_description' => new StringField(100, false),
+        ],
+        'properties' => [new MetadataProperty(
+            id: 'price-id',
+            name: '_fld17',
+            code: 17,
+            kind: PropertyKind::Field,
+            label: 'Price',
+            title: 'Price',
+            field: new NumberField(20, 2, true),
+        )],
+    ]);
+    $form = SyncForm::configure(FilamentSchema::make(SchemaHost::make())->statePath('data')->operation('create'));
+    $form->fill([
+        'connection_id' => $connection->id,
+        'source' => 'object-0',
+        'destination' => $destination,
+        'schema' => [],
+    ]);
+    $mapping = $form->getComponentByStatePath('schema');
+    $sources = array_column($mapping->getSources(), null, 'id');
+    expect($sources['_code']['presentation']['constraints'])
+        ->toBe([['kind' => 'length', 'value' => '8', 'scope' => []]])
+        ->and($sources['_description']['presentation']['constraints'])
+        ->toBe([['kind' => 'length', 'value' => '≤ 100', 'scope' => []]])
+        ->and($sources['_fld17']['description'])
+        ->toBe('Digits: 20; Decimal places: 2; Value: 0 … 999999999999999999.99')
+        ->and($sources['_fld17']['presentation']['constraints'])
+        ->toBe([['kind' => 'range', 'value' => '≥ 0', 'scope' => []]]);
+    $key = $mapping->getSourceStateKeys()['_code'];
+    expect(
+        $form
+            ->getComponentByStatePath('schema.sources.' . $key . '.transforms')
+            ->getInputSchema()
+            ->toArray(),
+    )
+        ->toMatchArray(['type' => 'string', 'minLength' => 8, 'maxLength' => 8]);
+})->with([DestinationType::Dynamic->value, 'static:customers']);
 
 /** @return Collection<string, Select> */
 $selects = function (array $state) {

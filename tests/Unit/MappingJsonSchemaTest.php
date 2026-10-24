@@ -94,7 +94,7 @@ it('keeps each internal array level and its restrictions separate from the outer
         ->and($presentation['items'][0]['scope'])
         ->toBe(['items'])
         ->and($presentation['items'][0]['constraints'])
-        ->toBe([['kind' => 'items', 'value' => '3–3', 'scope' => []]])
+        ->toBe([['kind' => 'items', 'value' => '3', 'scope' => []]])
         ->and($presentation['items'][1]['scope'])
         ->toBe(['items', 'items'])
         ->and($presentation['items'][1]['constraints'])

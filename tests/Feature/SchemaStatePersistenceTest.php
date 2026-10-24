@@ -64,20 +64,22 @@ it('stores and restores the exact native schema emitted by the form', function (
     expect($attributes['schema'])->toBe($state['schema']);
 
     $sync = Sync::create($attributes);
+    $saved = $sync->fresh();
+    $constant = collect($saved->schema)->sole(fn ($mapping) => $mapping->target === 'constant');
     $raw = $sync->getConnection()->table('syncs')->where('id', $sync->id)->value('schema');
     expect(json_decode($raw, true, flags: JSON_THROW_ON_ERROR))
         ->toBe($state['schema'])
-        ->and($sync->fresh()->toArray()['schema'])
+        ->and($saved->toArray()['schema'])
         ->toEqual($state['schema'])
-        ->and($sync->fresh()->schema[3]->static)
+        ->and($constant->static)
         ->toBe($value)
-        ->and($sync->fresh()->schema[3]->type())
+        ->and($constant->type())
         ->toBe(ColumnType::from($type))
         ->and($sync->getConnection()->getSchemaBuilder()->getColumnListing($sync->destination))
         ->toBe(['idrref', 'name', 'constant']);
 
     $edit = SyncForm::configure(Schema::make($livewire)->statePath('data')->record($sync)->operation('edit'));
-    $edit->fill(SyncForm::fill($sync->fresh()->toArray()));
+    $edit->fill(SyncForm::fill($saved->toArray()));
     expect($edit->getState()['schema'])->toEqual($state['schema']);
 })->with([
     'false' => [false, 'boolean'],

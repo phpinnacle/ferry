@@ -198,6 +198,8 @@ return [
             'length' => 'Length',
             'items' => 'Items',
             'range' => 'Value',
+            'precision' => 'Digits',
+            'scale' => 'Decimal places',
             'multiple' => 'Multiple of',
             'pattern' => 'Pattern',
             'unique' => 'unique',

@@ -27,8 +27,11 @@ use PHPinnacle\Ferry\Transforms\CastTransform;
 use PHPinnacle\Ferry\Transforms\FilterTransform;
 use PHPinnacle\Ferry\Transforms\MaskFieldTransform;
 use PHPinnacle\Ferry\Transforms\SubstringTransform;
+use PHPinnacle\Rosetta\Contracts\Field;
 use PHPinnacle\Rosetta\Enums\FieldType;
+use PHPinnacle\Rosetta\Fields\NumberField;
 use PHPinnacle\Rosetta\Fields\ScalarField;
+use PHPinnacle\Rosetta\Fields\StringField;
 use Tests\TestCase;
 
 require_once __DIR__ . '/../Fixtures/SchemaHost.php';
@@ -38,6 +41,61 @@ uses(TestCase::class);
 beforeEach(function () {
     FerryPlugin::make();
 });
+
+it('projects available Rosetta constraints without rounding numeric metadata', function (
+    Field $field,
+    array $expected,
+) {
+    expect(ColumnType::fromField($field)->jsonSchema($field))->toBe($expected);
+})->with([
+    'variable string' => [new StringField(64, false), ['type' => 'string', 'maxLength' => 64]],
+    'fixed string' => [new StringField(8, true), ['type' => 'string', 'maxLength' => 8, 'minLength' => 8]],
+    'unlimited string' => [new StringField(0, false), ['type' => 'string']],
+    'unknown string length' => [new StringField(null, false), ['type' => 'string']],
+    'signed decimal' => [
+        new NumberField(5, 2, false),
+        [
+            'type' => 'number',
+            'description' => 'Digits: 5; Decimal places: 2; Value: -999.99 … 999.99',
+        ],
+    ],
+    'unsigned decimal' => [
+        new NumberField(5, 2, true),
+        [
+            'type' => 'number',
+            'minimum' => 0,
+            'description' => 'Digits: 5; Decimal places: 2; Value: 0 … 999.99',
+        ],
+    ],
+    'fractional digits only' => [
+        new NumberField(3, 3, false),
+        [
+            'type' => 'number',
+            'description' => 'Digits: 3; Decimal places: 3; Value: -0.999 … 0.999',
+        ],
+    ],
+    'large decimal' => [
+        new NumberField(20, 2, false),
+        [
+            'type' => 'number',
+            'description' => 'Digits: 20; Decimal places: 2; Value: -999999999999999999.99 … 999999999999999999.99',
+        ],
+    ],
+    'integer' => [
+        new NumberField(4, 0, true),
+        [
+            'type' => 'integer',
+            'minimum' => 0,
+            'description' => 'Digits: 4; Decimal places: 0; Value: 0 … 9999',
+        ],
+    ],
+    'unknown dimensions' => [new NumberField(null, null, true), ['type' => 'integer', 'minimum' => 0]],
+    'unknown scale' => [new NumberField(10, null, false), ['type' => 'integer', 'description' => 'Digits: 10']],
+    'unknown precision' => [
+        new NumberField(null, 2, false),
+        ['type' => 'number', 'description' => 'Decimal places: 2'],
+    ],
+]);
 
 it('registers the built-in transforms through the UI registry independently of their handlers', function () {
     $registry = $this->app->make(TransformRegistry::class);

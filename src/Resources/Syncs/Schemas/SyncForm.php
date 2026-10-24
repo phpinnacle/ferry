@@ -457,14 +457,14 @@ class SyncForm
         $container->getComponentByStatePath('schema')?->hydrateState($defaultState);
     }
 
-    /** @return array{type: 'object', properties: array<string, array{title: string, type: string, format?: string}>} */
+    /** @return array{type: 'object', properties: array<string, array{title: string, type: string, format?: string, minLength?: int, maxLength?: int, minimum?: int, description?: string}>} */
     private static function sourceSchema(?ConnectionMetadata $object, bool $withKey = true): array
     {
         $properties = [];
         foreach ($object?->mappableFields(withKey: $withKey) ?? [] as $field) {
             $properties[$field['physical']] = [
                 'title' => $field['title'],
-                ...$field['type']->jsonSchema(),
+                ...$field['type']->jsonSchema($object?->field($field['source'])),
             ];
         }
 

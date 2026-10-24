@@ -264,6 +264,7 @@ final readonly class JsonSchema
                 $constraints[] = [
                     'kind' => $kind,
                     'value' => match (true) {
+                        $min === $max => (string) $min,
                         $min !== null && $max !== null => "{$min}–{$max}",
                         $min !== null => "≥ {$min}",
                         default => "≤ {$max}",
