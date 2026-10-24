@@ -7,8 +7,10 @@ use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use PHPinnacle\Ferry\Casts\SchemaCast;
+use PHPinnacle\Ferry\Casts\TransformsCast;
 use PHPinnacle\Ferry\Data\DestinationField;
 use PHPinnacle\Ferry\Data\FieldMapping;
+use PHPinnacle\Ferry\Data\TransformSetting;
 use PHPinnacle\Ferry\Enums\ColumnType;
 use PHPinnacle\Ferry\Enums\DestinationType;
 use PHPinnacle\Ferry\Enums\SyncStatus;
@@ -27,6 +29,7 @@ use PHPinnacle\Ferry\Observers\SyncObserver;
  * @property string $source
  * @property string $destination
  * @property list<FieldMapping> $schema
+ * @property list<TransformSetting> $transforms
  * @property CarbonImmutable $created_at
  * @property CarbonImmutable $updated_at
  * @property-read Connection $connection
@@ -47,6 +50,7 @@ class Sync extends Model
     protected $attributes = [
         'status' => SyncStatus::Pending->value,
         'type' => DestinationType::Dynamic->value,
+        'transforms' => '[]',
     ];
 
     protected $casts = [
@@ -54,6 +58,7 @@ class Sync extends Model
         'type' => DestinationType::class,
         'is_paused' => 'bool',
         'schema' => SchemaCast::class,
+        'transforms' => TransformsCast::class,
     ];
 
     protected $fillable = [
@@ -64,6 +69,7 @@ class Sync extends Model
         'destination',
         'source',
         'schema',
+        'transforms',
     ];
 
     /** @param array{touch?: bool|null} $options */
@@ -166,10 +172,10 @@ class Sync extends Model
         return $this->schemaChanges()['drop'];
     }
 
-    /** @return array{drop: list<string>, columns: list<array{mapping: FieldMapping, from: string|null}>} */
+    /** @return array{drop: list<string>, columns: list<array{mapping: FieldMapping, from: string|null}>, alter: list<FieldMapping>} */
     public function schemaChanges(): array
     {
-        $changes = ['drop' => [], 'columns' => []];
+        $changes = ['drop' => [], 'columns' => [], 'alter' => []];
 
         if ($this->type === DestinationType::Static) {
             return $changes;
@@ -211,6 +217,15 @@ class Sync extends Model
                 $changes['columns'][] = ['mapping' => $mapping, 'from' => null];
             } elseif ($existing->target !== $mapping->target) {
                 $changes['columns'][] = ['mapping' => $mapping, 'from' => $existing->target];
+            }
+
+            if (
+                $existing !== null
+                && $existing->type() === ColumnType::String
+                && $mapping->type() === ColumnType::String
+                && $existing->stringLength() !== $mapping->stringLength()
+            ) {
+                $changes['alter'][] = $mapping;
             }
         }
 

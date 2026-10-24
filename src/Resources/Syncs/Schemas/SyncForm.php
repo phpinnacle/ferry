@@ -17,7 +17,6 @@ use PHPinnacle\Common\Concerns\FormSlug;
 use PHPinnacle\Ferry\Data\DestinationField;
 use PHPinnacle\Ferry\Data\FieldMapping as SchemaMapping;
 use PHPinnacle\Ferry\Destinations\StaticDestination;
-use PHPinnacle\Ferry\Enums\ColumnType;
 use PHPinnacle\Ferry\Enums\DestinationType;
 use PHPinnacle\Ferry\Enums\StructureStatus;
 use PHPinnacle\Ferry\Forms\FieldBinding;
@@ -311,7 +310,7 @@ class SyncForm
                                     $settings = $get('transforms');
                                     $schema = $registry->resultSchema($inputSchema(), $settings);
 
-                                    return $schema !== null ? ColumnType::fromJsonSchema($schema)?->value : null;
+                                    return $schema?->toArray();
                                 }),
                             FieldTransforms::make('transforms')
                                 ->label(

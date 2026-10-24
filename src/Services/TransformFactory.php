@@ -36,11 +36,22 @@ class TransformFactory
     }
 
     /**
-     * @return array{before: array<string, array<string, string>>, after: array<string, array<string, string>>}
+     * @param array<string, string> $fixedValues
+     * @return array<string, string>
      */
-    public function pipeline(Sync $sync, ConnectionMetadata $object): array
-    {
-        $before = [];
+    public function pipeline(
+        Sync $sync,
+        ConnectionMetadata $object,
+        string $keyColumn = Sync::ID_COLUMN,
+        bool $deletes = false,
+        array $fixedValues = [],
+    ): array {
+        $pipeline = [
+            'unwrap' => [
+                'type' => 'io.debezium.transforms.ExtractNewRecordState',
+                'delete.tombstone.handling.mode' => $deletes ? 'tombstone' : 'drop',
+            ],
+        ];
         $after = [];
 
         foreach ($sync->schema as $index => $mapping) {
@@ -64,11 +75,60 @@ class TransformFactory
             foreach ($mapping->transforms as $position => $setting) {
                 $name = sprintf('field_%d_%d', $index, $position);
 
-                $before += $this->handlerOrFail($setting->key)->connector($name, $source, $setting->params);
+                $pipeline += $this->handlerOrFail($setting->key)->connector($name, $source, $setting->params);
             }
         }
 
-        return ['before' => $before, 'after' => $after];
+        $pipeline['rename_keys'] = [
+            'type' => 'org.apache.kafka.connect.transforms.ReplaceField$Key',
+            'renames' => self::renames([ConnectionMetadata::KEY_COLUMN => $keyColumn]),
+        ];
+        $pipeline['rename_values'] = [
+            'type' => 'org.apache.kafka.connect.transforms.ReplaceField$Value',
+            'renames' => self::renames($sync->columnMap($object, $keyColumn)),
+        ];
+        $pipeline += $after;
+
+        foreach ($fixedValues as $field => $value) {
+            $pipeline['insert_' . $field] = [
+                'type' => 'org.apache.kafka.connect.transforms.InsertField$Value',
+                'static.field' => $field,
+                'static.value' => $value,
+            ];
+        }
+
+        return self::configuration($pipeline);
+    }
+
+    /** @param array<string, string> $columns */
+    private static function renames(array $columns): string
+    {
+        $renames = [];
+        foreach ($columns as $source => $destination) {
+            $renames[] = sprintf('%s:%s', $source, $destination);
+        }
+
+        return implode(',', $renames);
+    }
+
+    /**
+     * @param array<string, array<string, string>> $pipeline
+     * @return array<string, string>
+     */
+    private static function configuration(array $pipeline): array
+    {
+        $config = ['transforms' => implode(',', array_keys($pipeline))];
+        foreach ($pipeline as $name => $properties) {
+            foreach ($properties as $property => $value) {
+                $config[sprintf('transforms.%s.%s', $name, $property)] = $value;
+            }
+            if (($properties['predicate'] ?? null) === 'tombstone') {
+                $config['predicates'] = 'tombstone';
+                $config['predicates.tombstone.type'] = 'org.apache.kafka.connect.transforms.predicates.RecordIsTombstone';
+            }
+        }
+
+        return $config;
     }
 
     /** @return array<string, array<string, string>> */

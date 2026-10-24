@@ -9,7 +9,6 @@ use PHPinnacle\Ferry\Data\FieldMapping;
 use PHPinnacle\Ferry\Enums\ColumnType;
 use PHPinnacle\Ferry\Models\Sync;
 use PHPinnacle\Rosetta\Fields\NumberField;
-use PHPinnacle\Rosetta\Fields\StringField;
 
 class SyncTableManager
 {
@@ -55,6 +54,10 @@ class SyncTableManager
                         $table->renameColumn($change['from'], $target);
                     }
                 }
+
+                foreach ($changes['alter'] as $mapping) {
+                    $this->column($table, $mapping)->nullable()->change();
+                }
             });
     }
 
@@ -81,9 +84,7 @@ class SyncTableManager
                 $field instanceof NumberField ? $field->precision ?? 15 : 15,
                 $field instanceof NumberField ? $field->scale ?? 2 : 2,
             ),
-            ColumnType::String => $field instanceof StringField && $field->length !== null
-                ? $table->string($target, $field->length)
-                : $table->text($target),
+            ColumnType::String => $table->addColumn('string', $target, ['length' => $mapping->stringLength()]),
             ColumnType::Reference => $table->text($target),
         };
     }

@@ -4,6 +4,7 @@ use Illuminate\Support\Facades\Queue;
 use PHPinnacle\Ferry\Enums\DestinationType;
 use PHPinnacle\Ferry\Enums\StructureStatus;
 use PHPinnacle\Ferry\Rules\SyncSchema;
+use PHPinnacle\Ferry\Services\Connectors\JdbcConnectorConfig;
 use PHPinnacle\Ferry\Services\DestinationFactory;
 use PHPinnacle\Ferry\Services\SourceFactory;
 use PHPinnacle\Ferry\Services\TransformFactory;
@@ -45,6 +46,29 @@ $makeProperty = fn (string $id, string $name, object $field) => new MetadataProp
     title: ucfirst($id),
     field: $field,
 );
+
+it('passes ready transform configuration through without adding synchronization transforms', function () {
+    $transforms = [
+        'transforms' => 'custom',
+        'transforms.custom.type' => 'example.CustomTransform',
+        'transforms.custom.predicate' => 'custom_predicate',
+        'predicates' => 'custom_predicate',
+        'predicates.custom_predicate.type' => 'example.CustomPredicate',
+    ];
+    $config = new JdbcConnectorConfig(
+        table: 'customers',
+        topic: 'customers',
+        columns: ['id', 'name'],
+        transforms: $transforms,
+    )->toArray();
+
+    expect(array_intersect_key($config, $transforms))
+        ->toBe($transforms)
+        ->and($config['fields.whitelist'])
+        ->toBe('id,name')
+        ->and($config)
+        ->not->toHaveKeys(['transforms.unwrap.type', 'transforms.rename_keys.type', 'transforms.rename_values.type']);
+});
 
 it('builds a confluent jdbc sink connector config with field renames', function () use ($makeProperty) {
     $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);

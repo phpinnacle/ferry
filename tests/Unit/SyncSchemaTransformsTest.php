@@ -36,7 +36,7 @@ beforeEach(function () {
     ]);
 });
 
-it('converts only the final schema to a persisted column type', function () {
+it('persists the final output schema and derives its supported column type', function () {
     $registry = app(TransformRegistry::class);
     $registry->register(
         Transformation::make('pack')
@@ -52,7 +52,14 @@ it('converts only the final schema to a persisted column type', function () {
         '_code' => $settings,
     ]]);
 
-    expect($mappings[0]->result)->toBe(ColumnType::String)->and($mappings[0]->transforms)->toEqual($settings);
+    expect($mappings[0]->result?->toArray())
+        ->toBe(['type' => ['string', 'null'], 'maxLength' => 100])
+        ->and($mappings[0]->type())
+        ->toBe(ColumnType::String)
+        ->and($mappings[0]->transforms)
+        ->toEqual($settings)
+        ->and(FieldMapping::fromArray($mappings[0]->jsonSerialize()))
+        ->toEqual($mappings[0]);
     expect(fn () => SyncSchema::fromBindings($this->object, ['_code' => 'title'], $registry, transforms: [
         'fields' => ['_code' => [new TransformSetting('pack')]],
     ]))
@@ -66,7 +73,7 @@ it('converts only the final schema to a persisted column type', function () {
             'fields' => ['_code' => $transforms],
         ])[0];
 
-        expect($unbound->target)->toBeNull()->and($unbound->result)->toBe($result);
+        expect($unbound->target)->toBeNull()->and($unbound->type())->toBe($result);
     }
 });
 
@@ -83,7 +90,7 @@ it('validates settings without configured or resolvable handlers', function () {
         app(TransformRegistry::class),
         transforms: ['fields' => ['_code' => [new TransformSetting('cast', ['type' => 'boolean'])]]],
     );
-    expect($mappings[0]->result)
+    expect($mappings[0]->type())
         ->toBe(ColumnType::Boolean);
 });
 
@@ -98,7 +105,7 @@ it('lets a field transform change the type that is checked against the destinati
         ['fields' => ['_code' => [$cast]], 'constants' => ['tax_number' => 'none']],
     );
 
-    expect($mappings[1]->result)
+    expect($mappings[1]->type())
         ->toBe(ColumnType::Boolean)
         ->and($mappings[1]->sourceType())
         ->toBe(ColumnType::String)
@@ -119,13 +126,13 @@ it('validates the final cast type and preserves every step in the connector pipe
         ['fields' => ['_code' => $settings], 'constants' => ['tax_number' => 'none']],
     );
     $sync = new Sync(['schema' => $mappings]);
-    $pipeline = app(TransformFactory::class)->pipeline($sync, $this->object)['before'];
+    $pipeline = app(TransformFactory::class)->pipeline($sync, $this->object);
 
-    expect($mappings[1]->result)
+    expect($mappings[1]->type())
         ->toBe(ColumnType::Boolean)
         ->and($mappings[1]->transforms)
         ->toEqual($settings)
-        ->and(array_column($pipeline, 'spec'))
+        ->and([$pipeline['transforms.field_1_0.spec'], $pipeline['transforms.field_1_1.spec']])
         ->toBe(['_code:int64', '_code:boolean']);
 });
 
@@ -215,7 +222,7 @@ it('casts a numeric source to the selected supported type', function (int $scale
         transforms: ['fields' => ['_qty' => [new TransformSetting('cast', ['type' => $type->value])]]],
     );
 
-    expect($mappings[0]->result)->toBe($type);
+    expect($mappings[0]->type())->toBe($type);
 })->with([0, 2])->with(ColumnType::castable());
 
 it('refuses transforms that are not registered', function () {

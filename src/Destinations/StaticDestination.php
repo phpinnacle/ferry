@@ -38,17 +38,21 @@ final readonly class StaticDestination implements Destination, HasLabel
         string $topic,
         TransformFactory $transforms,
     ): array {
-        ['before' => $before, 'after' => $after] = $transforms->pipeline($sync, $object);
-
         return new JdbcConnectorConfig(
             table: $this->table,
             topic: $topic,
-            columns: $sync->columnMap($object, $this->primaryKey),
+            columns: [
+                ...array_values($sync->columnMap($object, $this->primaryKey)),
+                ...$sync->constantColumns(),
+                ...array_keys($this->fixedValues),
+            ],
+            transforms: $transforms->pipeline(
+                $sync,
+                $object,
+                keyColumn: $this->primaryKey,
+                fixedValues: $this->fixedValues,
+            ),
             connection: $this->connection,
-            fixedValues: $this->fixedValues,
-            before: $before,
-            after: $after,
-            constants: $sync->constantColumns(),
         )->toArray();
     }
 }

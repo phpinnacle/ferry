@@ -505,6 +505,28 @@ final readonly class JsonSchema
         );
     }
 
+    public function maxLength(): ?int
+    {
+        $alternatives = $this->alternatives();
+        if ($alternatives === []) {
+            return $this->lengthBound('maxLength');
+        }
+
+        $bounds = [];
+        foreach ($alternatives as $branch) {
+            if ($branch->types() !== [] && !in_array('string', $branch->types(), true)) {
+                continue;
+            }
+            $bound = $branch->maxLength();
+            if ($bound === null) {
+                return null;
+            }
+            $bounds[] = $bound;
+        }
+
+        return $bounds === [] ? null : max($bounds);
+    }
+
     /** @param 'minLength'|'maxLength' $keyword */
     private function lengthBound(string $keyword): ?int
     {

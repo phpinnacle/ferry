@@ -26,16 +26,12 @@ final readonly class DynamicDestination implements Destination
         string $topic,
         TransformFactory $transforms,
     ): array {
-        ['before' => $before, 'after' => $after] = $transforms->pipeline($sync, $object);
-
         return new JdbcConnectorConfig(
             table: $this->table,
             topic: $topic,
-            columns: $sync->columnMap($object),
+            columns: [...array_values($sync->columnMap($object)), ...$sync->constantColumns()],
+            transforms: $transforms->pipeline($sync, $object, deletes: true),
             deletes: true,
-            before: $before,
-            after: $after,
-            constants: $sync->constantColumns(),
         )->toArray();
     }
 }

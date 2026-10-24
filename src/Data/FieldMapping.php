@@ -6,11 +6,14 @@ use JsonSerializable;
 use PHPinnacle\Ferry\Casts\FieldDecoder;
 use PHPinnacle\Ferry\Enums\ColumnType;
 use PHPinnacle\Ferry\Enums\FieldKind;
+use PHPinnacle\Ferry\Forms\JsonSchema;
 use PHPinnacle\Rosetta\Contracts\Field;
+use PHPinnacle\Rosetta\Fields\StringField;
 
 /**
  * @phpstan-import-type FieldData from FieldDecoder
- * @phpstan-type MappingData array{kind: 'source', source: string, target: string|null, field: FieldData, result?: value-of<ColumnType>|null, transforms?: list<array{key: string, params: array<string, string>}>}|array{kind: 'static', target: string, static: string|int|float|bool, result?: value-of<ColumnType>|null, transforms?: list<array{key: string, params: array<string, string>}>}
+ * @phpstan-import-type Definition from JsonSchema
+ * @phpstan-type MappingData array{kind: 'source', source: string, target: string|null, field: FieldData, result?: Definition|null, transforms?: list<array{key: string, params: array<string, string>}>}|array{kind: 'static', target: string, static: string|int|float|bool, result?: Definition|null, transforms?: list<array{key: string, params: array<string, string>}>}
  */
 final readonly class FieldMapping implements JsonSerializable
 {
@@ -19,7 +22,7 @@ final readonly class FieldMapping implements JsonSerializable
         public ?string $source,
         public ?string $target,
         public ?Field $field,
-        public ?ColumnType $result = null,
+        public ?JsonSchema $result = null,
         public array $transforms = [],
         public string|int|float|bool|null $static = null,
         public FieldKind $kind = FieldKind::Source,
@@ -33,14 +36,14 @@ final readonly class FieldMapping implements JsonSerializable
                 source: $data['source'],
                 target: $data['target'],
                 field: FieldDecoder::decode($data['field']),
-                result: ($data['result'] ?? null) !== null ? ColumnType::from($data['result']) : null,
+                result: ($data['result'] ?? null) !== null ? JsonSchema::fromArray($data['result']) : null,
                 transforms: array_map(TransformSetting::fromArray(...), $data['transforms'] ?? []),
             ),
             'static' => new self(
                 null,
                 $data['target'],
                 null,
-                result: ($data['result'] ?? null) !== null ? ColumnType::from($data['result']) : null,
+                result: ($data['result'] ?? null) !== null ? JsonSchema::fromArray($data['result']) : null,
                 transforms: array_map(TransformSetting::fromArray(...), $data['transforms'] ?? []),
                 static: $data['static'],
                 kind: FieldKind::Static,
@@ -59,7 +62,7 @@ final readonly class FieldMapping implements JsonSerializable
 
             $row = ['kind' => 'static', 'target' => $target, 'static' => $value];
             if ($this->transforms !== []) {
-                $row['result'] = $this->result?->value;
+                $row['result'] = $this->result?->toArray();
                 $row['transforms'] = array_map(
                     static fn (TransformSetting $setting) => $setting->jsonSerialize(),
                     $this->transforms,
@@ -82,7 +85,7 @@ final readonly class FieldMapping implements JsonSerializable
             'source' => $source,
             'target' => $this->target,
             'field' => $data,
-            'result' => $this->result?->value,
+            'result' => $this->result?->toArray(),
             'transforms' => array_map(
                 static fn (TransformSetting $setting) => $setting->jsonSerialize(),
                 $this->transforms,
@@ -114,6 +117,21 @@ final readonly class FieldMapping implements JsonSerializable
 
     public function type(): ?ColumnType
     {
-        return $this->result ?? ($this->transforms === [] ? $this->sourceType() : null);
+        if ($this->result !== null) {
+            return ColumnType::fromJsonSchema($this->result);
+        }
+
+        return $this->transforms === [] ? $this->sourceType() : null;
+    }
+
+    public function stringLength(): ?int
+    {
+        $length = match (true) {
+            $this->result !== null => $this->result->maxLength(),
+            $this->transforms === [] && $this->field instanceof StringField => $this->field->length,
+            default => null,
+        };
+
+        return $length > 0 ? $length : null;
     }
 }

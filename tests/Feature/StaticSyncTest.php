@@ -246,7 +246,7 @@ it('keeps transforms through creating, filling and updating a synchronization', 
     );
     $sync = Sync::create($attributes);
 
-    expect($sync->schema[1]->result)
+    expect($sync->schema[1]->type())
         ->toBe(ColumnType::Boolean)
         ->and($sync->schema[1]->sourceType())
         ->toBe(ColumnType::String)
@@ -484,7 +484,7 @@ it('rejects unsupported static values before persistence', function () {
             ], [
                 '_description' => [
                     'field' => new StringField(length: 100, fixed: false)->jsonSerialize(),
-                    'result' => 'string',
+                    'result' => ['type' => 'string', 'maxLength' => 100],
                     'transforms' => [],
                 ],
             ]),
@@ -689,7 +689,7 @@ it('creates a static source and persists its cast through the synchronization fo
         'kind' => 'static',
         'target' => 'is_active',
         'static' => 'false',
-        'result' => 'boolean',
+        'result' => ['type' => 'boolean'],
         'transforms' => [['key' => 'cast', 'params' => ['type' => 'boolean']]],
     ]);
     $sync = Sync::create(SyncForm::forCreate($state, app(DestinationFactory::class)));

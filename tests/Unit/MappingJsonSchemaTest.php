@@ -3,6 +3,20 @@
 use PHPinnacle\Ferry\Forms\JsonSchema;
 use PHPinnacle\Ferry\Forms\SchemaCompatibility;
 
+it('resolves maximum string lengths across composed output schemas', function (array $definition, ?int $maximum) {
+    expect(JsonSchema::fromArray($definition)->maxLength())->toBe($maximum);
+})->with([
+    'unbounded' => [['type' => 'string'], null],
+    'bounded' => [['type' => 'string', 'maxLength' => 10], 10],
+    'intersection' => [['allOf' => [['type' => 'string', 'maxLength' => 20], ['maxLength' => 10]]], 10],
+    'nullable alternatives' => [['anyOf' => [['type' => 'string', 'maxLength' => 10], ['type' => 'null']]], 10],
+    'bounded alternatives' => [
+        ['oneOf' => [['type' => 'string', 'maxLength' => 10], ['type' => 'string', 'maxLength' => 20]]],
+        20,
+    ],
+    'unbounded alternative' => [['anyOf' => [['type' => 'string', 'maxLength' => 10], ['type' => 'string']]], null],
+]);
+
 it('presents formats, enums, nullable values and nested arrays without changing logical types', function (
     array $definition,
     string $type,

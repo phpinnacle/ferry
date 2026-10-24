@@ -226,13 +226,11 @@ it('inserts a string constant without registering a transform', function () {
     ]);
     $pipeline = new TransformFactory()->pipeline($sync, new ConnectionMetadata);
 
-    expect($pipeline)->toBe([
-        'before' => [],
-        'after' => ['field_0_0' => [
-            'type' => 'org.apache.kafka.connect.transforms.InsertField$Value',
-            'static.field' => 'type',
-            'static.value' => 'Customer',
-        ]],
+    expect($pipeline)->toMatchArray([
+        'transforms' => 'unwrap,rename_keys,rename_values,field_0_0',
+        'transforms.field_0_0.type' => 'org.apache.kafka.connect.transforms.InsertField$Value',
+        'transforms.field_0_0.static.field' => 'type',
+        'transforms.field_0_0.static.value' => 'Customer',
     ]);
 });
 
@@ -240,15 +238,15 @@ it('casts a typed constant after inserting it', function () {
     $constant = true;
     $mapping = new FieldMapping(null, 'is_active', null, static: $constant, kind: FieldKind::Static);
     $sync = new Sync(['schema' => [$mapping]]);
-    $transforms = app(TransformFactory::class)->pipeline($sync, new ConnectionMetadata)['after'];
+    $transforms = app(TransformFactory::class)->pipeline($sync, new ConnectionMetadata);
 
     expect($mapping->type())
         ->toBe(ColumnType::Boolean)
         ->and($mapping->transforms)
         ->toBe([])
-        ->and(array_keys($transforms))
-        ->toBe(['field_0_0', 'field_0_0_cast'])
-        ->and($transforms['field_0_0_cast']['spec'])
+        ->and($transforms['transforms'])
+        ->toBe('unwrap,rename_keys,rename_values,field_0_0,field_0_0_cast')
+        ->and($transforms['transforms.field_0_0_cast.spec'])
         ->toBe('is_active:boolean');
 });
 
@@ -504,7 +502,7 @@ it('builds a configured pipeline without registering editor descriptions', funct
             $factory->pipeline($sync, new ConnectionMetadata([
                 'system' => ['_marked' => new ScalarField(FieldType::Boolean)],
                 'properties' => [],
-            ]))['before']['field_0_0']['filter.condition'],
+            ]))['transforms.field_0_0.filter.condition'],
         )
         ->toBe("$[?(@['_marked'] == true)]");
 });
@@ -514,7 +512,7 @@ it('persists and executes static chains on their destination without renaming', 
         'kind' => 'static',
         'target' => 'discount',
         'static' => '10',
-        'result' => 'integer',
+        'result' => ['type' => 'integer'],
         'transforms' => [['key' => 'cast', 'params' => ['type' => 'integer']]],
     ];
     $mapping = FieldMapping::fromArray($row);
@@ -526,14 +524,12 @@ it('persists and executes static chains on their destination without renaming', 
         ->toBe(ColumnType::Integer);
     app()->forgetInstance(TransformRegistry::class);
     $pipeline = app(TransformFactory::class)->pipeline(new Sync(['schema' => [$mapping]]), new ConnectionMetadata);
-    expect($pipeline['before'])
-        ->toBe([])
-        ->and(array_keys($pipeline['after']))
-        ->toBe(['field_0_0', 'field_0_1'])
-        ->and($pipeline['after']['field_0_0']['static.field'])
+    expect($pipeline['transforms'])
+        ->toBe('unwrap,rename_keys,rename_values,field_0_0,field_0_1')
+        ->and($pipeline['transforms.field_0_0.static.field'])
         ->toBe('discount')
-        ->and($pipeline['after']['field_0_0']['static.value'])
+        ->and($pipeline['transforms.field_0_0.static.value'])
         ->toBe('10')
-        ->and($pipeline['after']['field_0_1']['spec'])
+        ->and($pipeline['transforms.field_0_1.spec'])
         ->toBe('discount:int64');
 });

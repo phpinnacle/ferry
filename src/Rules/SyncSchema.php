@@ -107,8 +107,7 @@ readonly class SyncSchema
             }
 
             $settings = $transforms['fields'][$source] ?? [];
-            $type = ColumnType::fromField($field);
-            $schema = JsonSchema::fromArray($type?->jsonSchema() ?? []);
+            $schema = JsonSchema::fromArray(ColumnType::fromField($field)?->jsonSchema($field) ?? []);
 
             foreach ($settings as $setting) {
                 $transform = $registry->getOrFail($setting->key);
@@ -124,8 +123,14 @@ readonly class SyncSchema
                 }
             }
 
-            $result = $settings === [] ? null : ColumnType::fromJsonSchema($schema);
-            if ($settings !== [] && $column !== null && $result === null) {
+            $mapping = new FieldMapping(
+                $source,
+                $column,
+                $field,
+                $settings === [] ? null : $schema,
+                $settings,
+            );
+            if ($settings !== [] && $column !== null && $mapping->type() === null) {
                 throw ValidationException::withMessages([
                     'data.transforms' => __('phpinnacle-ferry::resources.sync.errors.transform_field_unsupported', [
                         'transform' => $registry->getOrFail($settings[array_key_last($settings)]->key)->getLabel(),
@@ -136,16 +141,10 @@ readonly class SyncSchema
 
             if ($destination !== null && $column !== null) {
                 self::assertNotKeyField($object, $source);
-                self::assertCompatibleWithDestination($fields, $column, $result ?? $type);
+                self::assertCompatibleWithDestination($fields, $column, $mapping->type());
             }
 
-            $mappings[] = new FieldMapping(
-                $source,
-                $column,
-                $field,
-                $result,
-                $settings,
-            );
+            $mappings[] = $mapping;
         }
 
         foreach ($transforms['constants'] ?? [] as $column => $value) {

@@ -71,6 +71,8 @@ it('stores and restores the exact native schema emitted by the form', function (
         ->toBe($state['schema'])
         ->and($saved->toArray()['schema'])
         ->toEqual($state['schema'])
+        ->and(collect($saved->schema)->firstWhere('source', '_description')->result?->toArray())
+        ->toMatchArray(['type' => 'string', 'maxLength' => 100])
         ->and($constant->static)
         ->toBe($value)
         ->and($constant->type())
