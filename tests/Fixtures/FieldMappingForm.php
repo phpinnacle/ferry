@@ -3,7 +3,6 @@
 namespace PHPinnacle\Ferry\Tests\Fixtures;
 
 use Filament\Forms\Components\Select;
-use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Concerns\InteractsWithSchemas;
 use Filament\Schemas\Contracts\HasSchemas;
 use Filament\Schemas\Schema;
@@ -28,9 +27,9 @@ class FieldMappingForm extends Component implements HasSchemas
     public function form(Schema $schema): Schema
     {
         $target = $this->dynamicTarget
-            ? fn (Get $get) => [
+            ? fn (FieldMapping $component) => [
                 'properties' => ['destination' => [
-                    'type' => $get('mapping.sources.source_6669727374.type') ?? 'string',
+                    'type' => $component->getSourceSettings()['first']['type'] ?? 'string',
                 ]],
             ] : ['properties' => ['destination' => ['type' => 'boolean']]];
 

@@ -125,7 +125,7 @@ it('refreshes mapping compatibility when transform actions change the source typ
         ->toHaveKeys(['name', 'tax_number'])
         ->not->toHaveKey('is_active');
     $path = 'schema.sources.' . $field->getSourceStateKeys()['_description'] . '.transforms';
-    $targets = ['target_6e616d65' => MappingState::source('_description')];
+    $targets = [$field->getStateKeys()['name'] => MappingState::source('_description')];
     $page->set('data.schema.targets', $targets);
     $action = TestAction::make('fieldTransforms')->schemaComponent($path, 'form');
     $page->callAction($action->arguments(['transform' => 'cast']), ['params' => ['type' => 'boolean']]);
@@ -156,7 +156,8 @@ it('refreshes mapping compatibility when transform actions change the source typ
     expect($page->effects['partials']['schema-component::form.schema.staticSources'])
         ->toContain('data-mapping-static-source="static_1"')
         ->not->toContain('data-mapping-source-settings="_description"', 'data-mapping-source-settings="_code"');
-    $staticPath = 'schema.sources.source_7374617469635f31.transforms';
+    $field = $page->instance()->form->getComponentByStatePath('schema');
+    $staticPath = 'schema.sources.' . $field->getSourceStateKeys()['static_1'] . '.transforms';
     $page->update(calls: [[
         'method' => 'mountAction',
         'params' => ['fieldTransforms', ['transform' => 'trim'], ['schemaComponent' => 'form.' . $staticPath]],

@@ -224,7 +224,7 @@ The built-in `CastTransform` casts a field to a `ColumnType`. `ColumnType::castT
 
 **Replace null with default** controls Kafka's `replace.null.with.default`: it defaults to Yes and uses the default declared in the field schema, preserving null when no default exists. Choosing No stores `replace_null_with_default: "false"`; the default Yes remains implicit. The output schema remains nullable when the input is nullable, because a Kafka field default is not guaranteed.
 
-Static values use rows with `kind: static`, a required `target`, and a native string, boolean, integer or float in `static`. Their type comes from the native value; `1.0` stays a float through JSON serialization. They compile to `InsertField` plus a cast when the native value requires it. Optional `transforms` run next on `target`; their resulting logical type is stored in `result`, like source chains. No separate source name or rename is needed.
+Static values use rows with `kind: static`, a required `target`, and a native string, boolean, integer or float in `static`. Their type comes from the native value; `1.0` stays a float through JSON serialization. They compile to `InsertField` plus a cast when the native value requires it. Optional `transforms` run next on `target`; their complete output JSON Schema is stored in `result`, like source chains. No separate source name or rename is needed.
 
 Register the optional Trim, Substring, and Mask editor descriptions as shown above. The mapping supplies the selected source field; administrators do not enter a second field name.
 

@@ -35,14 +35,15 @@ it('partially updates every changed presentation and fully renders structural sc
     $page = Livewire::test(\PHPinnacle\Ferry\Tests\Fixtures\FieldMappingForm::class, [
         'dynamicTarget' => $dynamicTarget,
     ]);
-    $page->set('data.mapping.sources.source_6669727374.type', 'boolean');
+    $keys = $page->instance()->form->getComponent('mapping')->getSourceStateKeys();
+    $page->set('data.mapping.sources.' . $keys['first'] . '.type', 'boolean');
     expect($page->effects)->not->toHaveKey('html');
     if ($dynamicTarget) {
         expect($page->effects['partials'])->toHaveKey('schema-component::form.mapping');
     } else {
         expect($page->effects['partials'])->not->toHaveKey('schema-component::form.mapping');
-        foreach (['6669727374', '7365636f6e64'] as $source) {
-            expect($page->effects['partials']['schema-component::form.mapping.heading_source_' . $source])
+        foreach ($keys as $key) {
+            expect($page->effects['partials']['schema-component::form.mapping.heading_' . $key])
                 ->toContain('>boolean</span>');
         }
     }
