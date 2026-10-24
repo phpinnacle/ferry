@@ -2,8 +2,8 @@
 
 @foreach ($constraints as $constraint)
     @php
-        $scope = implode(' → ', array_map(fn (string $part) => $part === 'items' ? __('phpinnacle-ferry::resources.mapping.constraints.items') : $part, [...$parentScope, ...$constraint['scope']]));
-        $constraintLabel = __('phpinnacle-ferry::resources.mapping.constraints.'.$constraint['kind']);
+        $scope = implode(' → ', array_map(fn (string $part) => $part === 'items' ? __('phpinnacle-ferry::schema-forms.mapping.constraints.items') : $part, [...$parentScope, ...$constraint['scope']]));
+        $constraintLabel = __('phpinnacle-ferry::schema-forms.mapping.constraints.'.$constraint['kind']);
         $tooltip = ($scope === '' ? '' : $scope.': ').$constraintLabel.($constraint['value'] === '' ? '' : ': '.$constraint['value']);
     @endphp
     <span

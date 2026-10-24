@@ -13,7 +13,6 @@ use Filament\Support\Facades\FilamentAsset;
 use Illuminate\Support\ViewErrorBag;
 use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
-use PHPinnacle\Ferry\FerryServiceProvider;
 use PHPinnacle\Ferry\Forms\FieldBinding;
 use PHPinnacle\Ferry\Forms\FieldMapping;
 use PHPinnacle\Ferry\Forms\FieldTransforms;
@@ -30,6 +29,47 @@ require_once __DIR__ . '/../Fixtures/SchemaHost.php';
 require_once __DIR__ . '/../Fixtures/FieldMappingForm.php';
 
 uses(TestCase::class);
+
+it('keeps schema form translations independent of synchronization labels', function (
+    bool $binding,
+    string $locale,
+    string $valueLabel,
+    string $addLabel,
+) {
+    app()->setLocale($locale);
+    // Synchronization label overrides must not change reusable form fields.
+    __('phpinnacle-ferry::resources.sync.fields.constant_value');
+    app('translator')->addLines(
+        [
+            'resources.sync.fields.constant_value' => 'Synchronization-only value',
+        ],
+        $locale,
+        'phpinnacle-ferry',
+    );
+    $source = ['properties' => ['name' => ['type' => 'string']]];
+    $field = $binding
+        ? FieldBinding::make('mapping')->jsonSchema($source)->simple(TextInput::make('destination'))
+        : FieldMapping::make('mapping')->jsonSchema(source: $source, dest: [
+            'properties' => ['name' => ['type' => 'string'], 'constant' => ['type' => 'string']],
+        ]);
+    $field->staticValues();
+    $schema = Schema::make(SchemaHost::make())->statePath('data')->components([$field]);
+    $schema->fill([
+        'mapping' => [
+            ['kind' => 'source', 'source' => 'name', 'target' => 'name'],
+            ['kind' => 'static', 'target' => 'constant', 'static' => 'draft'],
+        ],
+    ]);
+    view()->share('errors', new ViewErrorBag);
+
+    $html = $schema->toHtml();
+    expect($html)
+        ->toContain('placeholder="' . $valueLabel . '"', $addLabel)
+        ->not->toContain('Synchronization-only value', 'phpinnacle-ferry::schema-forms.');
+})->with([true, false])->with([
+    'English' => ['en', 'Value', 'Add static value'],
+    'Russian' => ['ru', 'Значение', 'Добавить статическое значение'],
+]);
 
 it('partially updates every changed presentation and fully renders structural schema changes', function (bool $dynamicTarget) {
     $page = Livewire::test(\PHPinnacle\Ferry\Tests\Fixtures\FieldMappingForm::class, [
@@ -313,7 +353,7 @@ it('preserves standalone mapping content and values across presentation options'
         expect($text)->toContain('All', 'Mapped', 'Unmapped');
     }
     expect($html)->toContain('aria-live="polite"');
-    expect($html)->toContain(FilamentAsset::getAlpineComponentSrc('field-mapping', FerryServiceProvider::PACKAGE));
+    expect($html)->toContain(FilamentAsset::getAlpineComponentSrc('field-mapping', 'phpinnacle/ferry'));
     expect($schema->getState()['mapping'])
         ->toBe(MappingState::mapping(
             ['name' => MappingState::source('title')],

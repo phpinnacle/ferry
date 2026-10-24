@@ -48,7 +48,7 @@ final class BuiltinStaticForms
         }
 
         return $field
-            ->label($property->annotation('title') ?? __('phpinnacle-ferry::resources.sync.fields.constant_value'))
+            ->label($property->annotation('title') ?? __('phpinnacle-ferry::schema-forms.value'))
             ->hiddenLabel()
             ->required($required && !in_array('null', $property->types(), true) && !$field instanceof Repeater);
     }

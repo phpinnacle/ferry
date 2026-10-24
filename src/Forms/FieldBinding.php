@@ -322,10 +322,10 @@ class FieldBinding extends Field
         return $this->makeChildSchema('constants')->components([
             Group::make([
                 TextInput::make('static')
-                    ->label(__('phpinnacle-ferry::resources.sync.fields.constant_value'))
+                    ->label(__('phpinnacle-ferry::schema-forms.value'))
                     ->hiddenLabel()
                     ->inlineLabel(false)
-                    ->placeholder(__('phpinnacle-ferry::resources.sync.fields.constant_value'))
+                    ->placeholder(__('phpinnacle-ferry::schema-forms.value'))
                     ->default('')
                     ->required()
                     ->rule(fn () => $this->validateStaticValue(...)),
@@ -363,11 +363,11 @@ class FieldBinding extends Field
     public function getBindAction(): Action
     {
         return Action::make('bind')
-            ->label(__('phpinnacle-ferry::resources.binding.bind'))
+            ->label(__('phpinnacle-ferry::schema-forms.binding.bind'))
             ->icon('heroicon-m-link')
             ->iconButton()
             ->size('lg')
-            ->tooltip(__('phpinnacle-ferry::resources.binding.bind'))
+            ->tooltip(__('phpinnacle-ferry::schema-forms.binding.bind'))
             ->alpineClickHandler($this->bindClickHandler(...))
             ->disabled(fn (self $component) => $component->isDisabled())
             ->action(fn (array $arguments, self $component) => $component->bindSource($arguments));
@@ -376,7 +376,7 @@ class FieldBinding extends Field
     public function getUnbindAction(): Action
     {
         return Action::make('unbind')
-            ->label(__('phpinnacle-ferry::resources.binding.unbind'))
+            ->label(__('phpinnacle-ferry::schema-forms.binding.unbind'))
             ->alpineClickHandler($this->unbindClickHandler(...))
             ->disabled(fn (self $component) => $component->isDisabled())
             ->action(fn (array $arguments, self $component) => $component->unbindSource($arguments));
@@ -397,7 +397,7 @@ class FieldBinding extends Field
     public function getAddConstantAction(): Action
     {
         return Action::make('addConstant')
-            ->label(__('phpinnacle-ferry::resources.binding.add_constant'))
+            ->label(__('phpinnacle-ferry::schema-forms.binding.add_constant'))
             ->icon('heroicon-m-plus')
             ->color('gray')
             ->button()
@@ -409,7 +409,7 @@ class FieldBinding extends Field
     public function getRemoveConstantAction(): Action
     {
         return Action::make('removeConstant')
-            ->label(__('phpinnacle-ferry::resources.binding.remove_constant'))
+            ->label(__('phpinnacle-ferry::schema-forms.binding.remove_constant'))
             ->icon('heroicon-m-trash')
             ->color('danger')
             ->iconButton()

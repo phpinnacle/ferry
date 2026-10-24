@@ -134,14 +134,14 @@ enum ColumnType: string implements HasLabel
         $parts = [];
         foreach (['precision' => $field->precision, 'scale' => $field->scale] as $kind => $value) {
             if ($value !== null) {
-                $parts[] = __('phpinnacle-ferry::resources.mapping.constraints.' . $kind) . ': ' . $value;
+                $parts[] = __('phpinnacle-ferry::resources.sync.constraints.' . $kind) . ': ' . $value;
             }
         }
         if ($field->precision !== null && $field->precision > 0 && $field->scale !== null) {
             $whole = str_repeat('9', $field->precision - $field->scale);
             $maximum = ($whole === '' ? '0' : $whole) . ($field->scale > 0 ? '.' . str_repeat('9', $field->scale) : '');
             $minimum = $field->unsigned ? '0' : '-' . $maximum;
-            $parts[] = __('phpinnacle-ferry::resources.mapping.constraints.range') . ': ' . $minimum . ' … ' . $maximum;
+            $parts[] = __('phpinnacle-ferry::resources.sync.constraints.range') . ': ' . $minimum . ' … ' . $maximum;
         }
 
         return implode('; ', $parts);

@@ -504,6 +504,8 @@ Labels accept strings or closures; the switches accept booleans or closures. Col
 
 Use `warnings(source: [...], dest: [...])` on `FieldMapping` or `warnings([...])` on `FieldBinding` to highlight fields. Both accept closures and retain warnings for unavailable identifiers. Escape cancels mapping selection; keyboard controls and dark mode are supported.
 
+Both fields keep their UI translations in `resources/lang/{locale}/schema-forms.php`, under `phpinnacle-ferry::schema-forms.*`. For published translation overrides, move the `mapping` and `binding` entries from `resources.php` into `schema-forms.php`. The shared static-value caption is `schema-forms.value`. Numeric source descriptions now use `resources.sync.constraints.{precision,scale,range}`; synchronization field captions remain under `resources.sync.fields.*`.
+
 The fields use package views without registering `FerryPlugin`. Filament includes the shared mapping/binding stylesheet and Common’s `InlineBuilder` stylesheet used by `FieldTransforms` in the page head so both render styled from the start; JavaScript loads on demand. The mapping/binding stylesheet contains no transformation editor styles. Publish assets after changes with `php artisan filament:assets`. JavaScript and CSS are distributed as source files and need no package build. Add the views to your application's Filament theme and rebuild it:
 
 ```css

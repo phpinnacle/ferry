@@ -54,12 +54,12 @@
                 <x-phpinnacle-ferry::mapping-item :compact="$compact" class="relative" :item="$item" :presentation="$presentation" :multiple="$isMultiple" :warning="$warning">
                     @if ($isMultiple)
                         <span class="mt-1 block text-xs text-gray-500 dark:text-gray-400" x-show="isMapped('target', @js($item['id'])) && !isConstant(@js($item['id']))" x-cloak>
-                            <span x-show="targetMode(@js($item['id'])) === 'whole'">{{ __('phpinnacle-ferry::resources.mapping.whole_array') }}</span>
-                            <span x-show="targetMode(@js($item['id'])) === 'item'">{{ __('phpinnacle-ferry::resources.mapping.array_items') }}</span>
+                            <span x-show="targetMode(@js($item['id'])) === 'whole'">{{ __('phpinnacle-ferry::schema-forms.mapping.whole_array') }}</span>
+                            <span x-show="targetMode(@js($item['id'])) === 'item'">{{ __('phpinnacle-ferry::schema-forms.mapping.array_items') }}</span>
                         </span>
                     @endif
                     @if ($side === 'target')
-                        <span class="mt-1 block text-xs text-danger-600 dark:text-danger-400" x-show="hasTypeConflict(@js($item['id']))" x-cloak>{{ __('phpinnacle-ferry::resources.mapping.incompatible') }}</span>
+                        <span class="mt-1 block text-xs text-danger-600 dark:text-danger-400" x-show="hasTypeConflict(@js($item['id']))" x-cloak>{{ __('phpinnacle-ferry::schema-forms.mapping.incompatible') }}</span>
                     @endif
                 </x-phpinnacle-ferry::mapping-item>
             @endif
@@ -93,7 +93,7 @@
             </div>
             @if (isset($constants[$item['id']]))
                 <div class="field-mapping-static-remove shrink-0 p-2" :class="{ 'invisible': isMapped('source', @js($item['id'])) }">
-                    {{ ($field->getAction('removeConstant'))(['constant' => $item['id']])->label(__('phpinnacle-ferry::resources.binding.remove_constant').' '.$item['id']) }}
+                    {{ ($field->getAction('removeConstant'))(['constant' => $item['id']])->label(__('phpinnacle-ferry::schema-forms.binding.remove_constant').' '.$item['id']) }}
                 </div>
             @endif
         </div>

@@ -1,6 +1,5 @@
 @php
     use Filament\Support\Facades\FilamentAsset;
-    use PHPinnacle\Ferry\FerryServiceProvider;
 
     $sources = $getSources();
     $constants = $getConstants();
@@ -51,7 +50,7 @@
             wire:ignore
         @endif
         x-load
-        x-load-src="{{ FilamentAsset::getAlpineComponentSrc('field-mapping', FerryServiceProvider::PACKAGE) }}"
+        x-load-src="{{ FilamentAsset::getAlpineComponentSrc('field-mapping', 'phpinnacle/ferry') }}"
         x-data="fieldMapping({
             element: $el,
             state: $wire.{{ $applyStateBindingModifiers("\$entangle('{$statePath}')") }},
@@ -70,7 +69,7 @@
         @if ($contained)
             <div @class(['flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 dark:border-white/10', 'px-3 py-2' => $dense, 'px-5 py-4' => ! $dense])>
                 <fieldset class="ferry-mapping-filter">
-                    <legend class="sr-only">{{ __('phpinnacle-ferry::resources.mapping.filter.label') }}</legend>
+                    <legend class="sr-only">{{ __('phpinnacle-ferry::schema-forms.mapping.filter.label') }}</legend>
                     @foreach (['all', 'mapped', 'unmapped'] as $filter)
                         <label>
                             <input
@@ -81,15 +80,15 @@
                                 class="sr-only"
                                 @checked($filter === 'all')
                             />
-                            <span>{{ __('phpinnacle-ferry::resources.mapping.filter.'.$filter) }}</span>
+                            <span>{{ __('phpinnacle-ferry::schema-forms.mapping.filter.'.$filter) }}</span>
                         </label>
                     @endforeach
                 </fieldset>
                 <span class="text-sm text-gray-500 dark:text-gray-400">
-                    {!! __('phpinnacle-ferry::resources.mapping.mapped_count', ['mapped' => '<span x-text="mappedTargetCount()"></span>', 'total' => count($targets)]) !!}
+                    {!! __('phpinnacle-ferry::schema-forms.mapping.mapped_count', ['mapped' => '<span x-text="mappedTargetCount()"></span>', 'total' => count($targets)]) !!}
                     @if ($requiredTargets !== [])
                         <span class="ml-3 text-warning-600 dark:text-warning-400" x-show="missingRequired().length" x-cloak>
-                            {!! __('phpinnacle-ferry::resources.mapping.required_remaining', ['count' => '<span x-text="missingRequired().length"></span>']) !!}
+                            {!! __('phpinnacle-ferry::schema-forms.mapping.required_remaining', ['count' => '<span x-text="missingRequired().length"></span>']) !!}
                         </span>
                     @endif
                 </span>
@@ -111,7 +110,7 @@
                     <x-filament::empty-state
                         class="col-span-full"
                         icon="heroicon-o-rectangle-stack"
-                        :heading="__('phpinnacle-ferry::resources.mapping.empty')"
+                        :heading="__('phpinnacle-ferry::schema-forms.mapping.empty')"
                         :contained="false"
                     />
                 @else
@@ -126,7 +125,7 @@
                                     <x-filament::input
                                         type="search"
                                         x-model="{{ $side }}Search"
-                                        placeholder="{{ __('phpinnacle-ferry::resources.mapping.search_placeholder') }}"
+                                        placeholder="{{ __('phpinnacle-ferry::schema-forms.mapping.search_placeholder') }}"
                                         aria-label="{{ 'Search '.$panel['label'] }}"
                                     />
                                 </x-filament::input.wrapper>

@@ -35,6 +35,21 @@ function builtin_static_schema(array $property, mixed $value = null): Schema
     return $schema;
 }
 
+it('uses a generic value label independently of synchronization labels', function () {
+    __('phpinnacle-ferry::resources.sync.fields.constant_value');
+    app('translator')->addLines(
+        [
+            'resources.sync.fields.constant_value' => 'Synchronization-only value',
+        ],
+        'en',
+        'phpinnacle-ferry',
+    );
+    $schema = builtin_static_schema(['type' => 'string']);
+    $field = $schema->getComponent('mapping')->getStaticFormSchema('target')->getComponent('value');
+
+    expect($field->getLabel())->toBe('Value');
+});
+
 it('registers native editors for basic types and string formats', function (array $property, string $class) {
     $schema = builtin_static_schema($property);
     $field = $schema->getComponent('mapping')->getStaticFormSchema('target')->getComponent('value');

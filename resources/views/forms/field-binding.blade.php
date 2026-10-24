@@ -1,6 +1,5 @@
 @php
     use Filament\Support\Facades\FilamentAsset;
-    use PHPinnacle\Ferry\FerryServiceProvider;
 
     $sources = $getSources();
     $bindings = $getBindings();
@@ -36,13 +35,13 @@
         ]) }}
         wire:key="{{ $getId() }}-{{ $configurationKey }}"
         x-load
-        x-load-src="{{ FilamentAsset::getAlpineComponentSrc('field-binding', FerryServiceProvider::PACKAGE) }}"
+        x-load-src="{{ FilamentAsset::getAlpineComponentSrc('field-binding', 'phpinnacle/ferry') }}"
         x-data="fieldBinding({ state: $wire.$entangle('{{ $statePath }}'), disabled: @js($disabled), sourceKeys: @js(array_values($sourceStateKeys)) })"
     >
         @if ($contained)
             <div @class(['flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 dark:border-white/10', 'px-3 py-2' => $dense, 'px-5 py-4' => ! $dense])>
                 <fieldset class="ferry-mapping-filter">
-                    <legend class="sr-only">{{ __('phpinnacle-ferry::resources.binding.filter.label') }}</legend>
+                    <legend class="sr-only">{{ __('phpinnacle-ferry::schema-forms.binding.filter.label') }}</legend>
                     @foreach (['all', 'bound', 'unbound'] as $filter)
                         <label>
                             <input
@@ -53,11 +52,11 @@
                                 class="sr-only"
                                 @checked($filter === 'all')
                             />
-                            <span>{{ __('phpinnacle-ferry::resources.binding.filter.'.$filter) }}</span>
+                            <span>{{ __('phpinnacle-ferry::schema-forms.binding.filter.'.$filter) }}</span>
                         </label>
                     @endforeach
                 </fieldset>
-                <span class="text-sm text-gray-500 dark:text-gray-400" x-text="@js(__('phpinnacle-ferry::resources.binding.bound_count', ['bound' => '__bound__', 'total' => count($sources)])).replace('__bound__', boundCount())">{{ __('phpinnacle-ferry::resources.binding.bound_count', ['bound' => count($bindings) - count($constants), 'total' => count($sources)]) }}</span>
+                <span class="text-sm text-gray-500 dark:text-gray-400" x-text="@js(__('phpinnacle-ferry::schema-forms.binding.bound_count', ['bound' => '__bound__', 'total' => count($sources)])).replace('__bound__', boundCount())">{{ __('phpinnacle-ferry::schema-forms.binding.bound_count', ['bound' => count($bindings) - count($constants), 'total' => count($sources)]) }}</span>
             </div>
         @endif
 
@@ -72,7 +71,7 @@
             @if (! $hasFields)
                 <x-filament::empty-state
                     icon="heroicon-o-rectangle-stack"
-                    :heading="__('phpinnacle-ferry::resources.binding.empty')"
+                    :heading="__('phpinnacle-ferry::schema-forms.binding.empty')"
                     :contained="false"
                 />
             @else
@@ -81,7 +80,7 @@
                         <h3 @class(['text-sm font-semibold text-gray-950 dark:text-white', 'mb-2' => $searchable && $dense, 'mb-3' => $searchable && ! $dense])>{{ $sourceLabel }}</h3>
                         @if ($searchable)
                             <x-filament::input.wrapper prefix-icon="heroicon-m-magnifying-glass">
-                                <x-filament::input type="search" x-model="search" placeholder="{{ __('phpinnacle-ferry::resources.binding.search_placeholder') }}" aria-label="{{ __('phpinnacle-ferry::resources.binding.search_label', ['label' => $sourceLabel]) }}" />
+                                <x-filament::input type="search" x-model="search" placeholder="{{ __('phpinnacle-ferry::schema-forms.binding.search_placeholder') }}" aria-label="{{ __('phpinnacle-ferry::schema-forms.binding.search_label', ['label' => $sourceLabel]) }}" />
                             </x-filament::input.wrapper>
                         @endif
                     </div>

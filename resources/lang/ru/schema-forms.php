@@ -1,0 +1,49 @@
+<?php
+
+return [
+    'value' => 'Значение',
+    'binding' => [
+        'bind' => 'Привязать',
+        'unbind' => 'Отвязать',
+        'filter' => [
+            'label' => 'Отображение полей',
+            'all' => 'Все',
+            'bound' => 'Привязанные',
+            'unbound' => 'Непривязанные',
+        ],
+        'bound_count' => 'Привязано полей: :bound из :total',
+        'search_placeholder' => 'Поиск полей…',
+        'search_label' => 'Поиск: :label',
+        'empty' => 'Нет доступных полей.',
+        'add_constant' => 'Добавить статическое значение',
+        'remove_constant' => 'Удалить',
+    ],
+    'mapping' => [
+        'filter' => [
+            'label' => 'Отображение полей',
+            'all' => 'Все',
+            'mapped' => 'Сопоставленные',
+            'unmapped' => 'Несопоставленные',
+        ],
+        'mapped_count' => 'Сопоставлено назначений: :mapped из :total',
+        'required_remaining' => 'Осталось обязательных: :count',
+        'search_placeholder' => 'Поиск полей…',
+        'required' => 'Обязательное',
+        'allowed_values' => 'Допустимые значения',
+        'show_item_types' => 'Показать тип элементов: :field',
+        'hide_item_types' => 'Скрыть тип элементов: :field',
+        'constraints' => [
+            'length' => 'Длина',
+            'items' => 'Элементы',
+            'range' => 'Значение',
+            'multiple' => 'Кратно',
+            'pattern' => 'Шаблон',
+            'unique' => 'уникальные',
+        ],
+        'whole_array' => 'Массив целиком',
+        'array_items' => 'Отдельные элементы',
+        'multiple' => 'Множественное',
+        'incompatible' => 'Несовместимые типы',
+        'empty' => 'Нет доступных полей.',
+    ],
+];

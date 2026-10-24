@@ -195,10 +195,10 @@ class FieldMapping extends Field
             ->statePath('constants.' . $source)
             ->components([
                 TextInput::make('static')
-                    ->label(__('phpinnacle-ferry::resources.sync.fields.constant_value'))
+                    ->label(__('phpinnacle-ferry::schema-forms.value'))
                     ->hiddenLabel()
                     ->inlineLabel(false)
-                    ->placeholder(__('phpinnacle-ferry::resources.sync.fields.constant_value'))
+                    ->placeholder(__('phpinnacle-ferry::schema-forms.value'))
                     ->default('')
                     ->required(fn () => $this->isSourceUsed($source))
                     ->rule(fn () => $this->validateStaticValue(...)),
@@ -613,7 +613,7 @@ class FieldMapping extends Field
     public function getAddConstantAction(): Action
     {
         return Action::make('addConstant')
-            ->label(__('phpinnacle-ferry::resources.binding.add_constant'))
+            ->label(__('phpinnacle-ferry::schema-forms.binding.add_constant'))
             ->icon('heroicon-m-plus')
             ->color('gray')
             ->button()
@@ -639,7 +639,7 @@ class FieldMapping extends Field
     public function getRemoveConstantAction(): Action
     {
         return Action::make('removeConstant')
-            ->label(__('phpinnacle-ferry::resources.binding.remove_constant'))
+            ->label(__('phpinnacle-ferry::schema-forms.binding.remove_constant'))
             ->icon('heroicon-m-trash')
             ->color('gray')
             ->iconButton()
