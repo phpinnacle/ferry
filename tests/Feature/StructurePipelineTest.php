@@ -13,7 +13,10 @@ use PHPinnacle\Ferry\Services\StructureImporter;
 use PHPinnacle\Ferry\Support\ConnectionErrorFormatter;
 use PHPinnacle\Ferry\Tests\TestCase;
 use PHPinnacle\Rosetta\Data\MetadataDefinition;
+use PHPinnacle\Rosetta\Data\MetadataProperty;
 use PHPinnacle\Rosetta\Enums\MetadataKind;
+use PHPinnacle\Rosetta\Enums\PropertyKind;
+use PHPinnacle\Rosetta\Fields\StringField;
 use PHPinnacle\Rosetta\MetadataLoader;
 use PHPinnacle\Rosetta\StorageMap;
 use PHPinnacle\Rosetta\TypeMap;
@@ -153,6 +156,29 @@ it('restores the stored maps as typed Rosetta values', function () use ($makeImp
         ->and($connection->fresh()->type_map)
         ->toBeInstanceOf(TypeMap::class);
 });
+
+it('preserves property comments when storing and restoring metadata', function (?string $comment) {
+    Queue::fake();
+    $connection = TestCase::makeConnection();
+    $property = new MetadataProperty(
+        id: 'property-id',
+        name: '_fld1',
+        code: 1,
+        kind: PropertyKind::Field,
+        label: 'Description',
+        title: 'Description',
+        field: new StringField(100, false),
+        comment: $comment,
+    );
+    $object = TestCase::makeMetadata($connection, ['properties' => [$property]])->fresh();
+
+    expect($object->properties[0])
+        ->toEqual($property)
+        ->and($object->properties[0]->comment)
+        ->toBe($comment)
+        ->and($object->toArray()['properties'][0])
+        ->toEqual(json_decode(json_encode($property), true));
+})->with([null, "Developer note\nKeep this line."]);
 
 it('publishes an empty snapshot when the source has no supported objects', function () use ($makeImporter) {
     $importer = $makeImporter(0);

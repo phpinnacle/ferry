@@ -11,7 +11,7 @@ use PHPinnacle\Rosetta\Enums\PropertyKind;
 /**
  * @phpstan-import-type FieldData from FieldDecoder
  *
- * @phpstan-type PropertyData array{id: string, name: string, code: int, kind: 'field'|'reference', label: string, title: string, field: FieldData}
+ * @phpstan-type PropertyData array{id: string, name: string, code: int, kind: 'field'|'reference', label: string, title: string, field: FieldData, comment?: string}
  *
  * @implements CastsAttributes<list<MetadataProperty>, list<MetadataProperty>>
  */
@@ -54,6 +54,7 @@ class PropertiesCast implements CastsAttributes, SerializesCastableAttributes
             label: $data['label'],
             title: $data['title'],
             field: FieldDecoder::decode($data['field']),
+            comment: $data['comment'] ?? null,
         );
     }
 }
