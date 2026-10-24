@@ -16,6 +16,7 @@ return [
         'search_label' => 'Search :label',
         'empty' => 'No fields available.',
         'add_constant' => 'Add static value',
+        'static_value' => 'Static value',
         'remove_constant' => 'Remove',
     ],
     'mapping' => [

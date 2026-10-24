@@ -16,6 +16,7 @@ return [
         'search_label' => 'Поиск: :label',
         'empty' => 'Нет доступных полей.',
         'add_constant' => 'Добавить статическое значение',
+        'static_value' => 'Статическое значение',
         'remove_constant' => 'Удалить',
     ],
     'mapping' => [

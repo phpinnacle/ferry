@@ -4,7 +4,10 @@ use Filament\Actions\Action;
 use Filament\Actions\Testing\TestAction;
 use Filament\Forms\Components\Builder;
 use Filament\Forms\Components\Builder\Block;
+use Filament\Forms\Components\Hidden;
+use Filament\Forms\Components\KeyValue;
 use Filament\Forms\Components\Repeater;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Schemas\Components\Actions;
@@ -176,6 +179,65 @@ function field_binding_schema(FieldBinding $field, array $state = []): Schema
 
     return $schema;
 }
+
+it('round trips native non-null simple values and restores field defaults after unbinding', function (
+    string $editor,
+    mixed $value,
+) {
+    $input = match ($editor) {
+        'boolean' => Toggle::make('value')->default(false),
+        'integer' => TextInput::make('value')->integer()->default(0),
+        'multiple' => Select::make('value')->multiple()->options(['a' => 'A', 'b' => 'B'])->default([]),
+        'object' => KeyValue::make('value')->default([]),
+    };
+    $field = FieldBinding::make('bindings')
+        ->jsonSchema(['properties' => ['name' => [], 'email' => []]])
+        ->simple($input);
+    $schema = Schema::make(SchemaHost::make())->statePath('data')->components([$field]);
+    $rows = [
+        ['kind' => 'source', 'source' => 'name', 'target' => $value],
+        ['kind' => 'source', 'source' => 'email', 'target' => null],
+    ];
+    $schema->fill(['bindings' => $rows]);
+    expect($schema->getState()['bindings'])->toBe($rows);
+    $field->getAction('unbind')(['source' => 'name'])->call();
+    expect($schema->getState()['bindings'][0]['target'])->toBeNull();
+    $field->getAction('bind')(['source' => 'name'])->call();
+    expect($schema->getState()['bindings'][0]['target'])->toBe($input->getDefaultState());
+})->with([
+    'false' => ['boolean', false],
+    'zero' => ['integer', 0],
+    'empty array' => ['multiple', []],
+    'multiple values' => ['multiple', ['b', 'a']],
+    'object values' => ['object', ['value' => 'literal', 'other' => 'entry']],
+]);
+
+it('rejects a null value only while its simple binding is bound', function () {
+    $field = FieldBinding::make('bindings')
+        ->jsonSchema(['properties' => ['name' => []]])
+        ->simple(Select::make('value')->options(['a' => 'A'])->default(null));
+    $schema = field_binding_schema($field);
+    expect($schema->getState()['bindings'][0]['target'])->toBeNull();
+    $field->getAction('bind')(['source' => 'name'])->call();
+    expect($schema->getState(...))->toThrow(ValidationException::class);
+});
+
+it('rejects null produced by native simple field dehydration', function () {
+    $field = FieldBinding::make('bindings')
+        ->jsonSchema(['properties' => ['name' => []]])
+        ->simple(Hidden::make('value')->dehydrateStateUsing(fn () => null));
+    $schema = field_binding_schema($field, ['name' => 'input']);
+    expect($schema->getState(...))->toThrow(ValidationException::class);
+});
+
+it('permits an empty string when the child field preserves it', function () {
+    $field = FieldBinding::make('bindings')
+        ->jsonSchema(['properties' => ['name' => []]])
+        ->simple(Hidden::make('value')->dehydrateStateUsing(fn () => ''));
+    $schema = field_binding_schema($field, ['name' => 'input']);
+
+    expect($schema->getState()['bindings'][0]['target'])->toBe('');
+});
 
 it('renders accessible local connection controls for every source', function (bool $disabled) {
     $field = FieldBinding::make('bindings')
@@ -609,7 +671,7 @@ it('rejects malformed binding envelopes on submission', function (mixed $state) 
 it('rejects forged binding values and unknown sources on submission', function (string $source, mixed $binding) {
     $field = FieldBinding::make('bindings')
         ->jsonSchema(['properties' => ['name' => []]])
-        ->simple(TextInput::make('destination'));
+        ->simple(TextInput::make('destination')->string());
     $schema = field_binding_schema($field, ['name' => 'profile.name']);
     expect($schema->getState()['bindings'])
         ->toBe(MappingState::binding(['name' => 'profile.name'], [], array_column($field->getSources(), 'id')));
@@ -712,6 +774,154 @@ function field_binding_constants(): FieldBinding
         ->staticValues();
 }
 
+it('adds, edits, restores, and removes static values with a complete binding schema', function () {
+    $field = FieldBinding::make('bindings')
+        ->jsonSchema(['properties' => ['name' => []]])
+        ->schema(fn () => [
+            TextInput::make('topic')
+                ->required()
+                ->default('events')
+                ->dehydrateStateUsing(fn (string $state) => strtoupper($state)),
+            Toggle::make('enabled')->default(false),
+            Repeater::make('replacements')
+                ->schema([
+                    TextInput::make('search')->required(),
+                    TextInput::make('replace'),
+                ])
+                ->defaultItems(0),
+            Hidden::make('preview')->default('draft')->dehydrated(false),
+        ])
+        ->sourceSettings(fn () => [Toggle::make('flag')->default(false)])
+        ->staticValues();
+    $schema = field_binding_schema($field);
+    $field->getAction('addConstant')([])->call();
+    $key = array_key_first($field->getConstants());
+    $constant = $field->getConstants()[$key];
+    expect($field->getConstantTarget($key))->toBe([
+        'topic' => 'events',
+        'enabled' => false,
+        'replacements' => [],
+        'preview' => 'draft',
+    ]);
+    $constant->getComponent('input.static')->state('literal');
+    $constant->getComponent('output.topic')->state('audit');
+    $constant->getComponent('output.replacements')->state([['search' => 'old', 'replace' => 'new']]);
+    expect($field->getBindingValues()[1]['target']['topic'])->toBe('audit');
+    $expected = [
+        ['kind' => 'source', 'source' => 'name', 'target' => null, 'flag' => false],
+        [
+            'kind' => 'static',
+            'target' => [
+                'topic' => 'AUDIT',
+                'enabled' => false,
+                'replacements' => [['search' => 'old', 'replace' => 'new']],
+            ],
+            'static' => 'literal',
+            'flag' => false,
+        ],
+    ];
+    expect($schema->getState()['bindings'])->toBe($expected);
+    $schema->fill(['bindings' => $expected]);
+    expect($schema->getState()['bindings'])->toBe($expected);
+    view()->share('errors', new ViewErrorBag);
+    expect($schema->toHtml())->toContain('Static value', 'data-binding-constant=');
+    $key = array_key_first($field->getConstants());
+    $field->getAction('removeConstant')(['constant' => $key])->call();
+    expect($schema->getState()['bindings'])->toBe([$expected[0]]);
+});
+
+it('validates native fields in a static binding schema', function () {
+    $field = FieldBinding::make('bindings')
+        ->jsonSchema(['properties' => ['name' => []]])
+        ->schema([TextInput::make('topic')->required()])
+        ->staticValues();
+    $schema = field_binding_schema($field);
+    $field->getAction('addConstant')([])->call();
+    $key = array_key_first($field->getConstants());
+    $field->getConstants()[$key]->getComponent('input.static')->state('literal');
+    try {
+        $schema->getState();
+        test()->fail('The required child field should fail validation.');
+    } catch (ValidationException $exception) {
+        expect($exception->errors())->toHaveKey("data.bindings.bindings.{$key}.output.topic");
+    }
+});
+
+it('keeps independent static schema forms without inferring destination uniqueness', function () {
+    $field = FieldBinding::make('bindings')
+        ->jsonSchema(['properties' => ['name' => []]])
+        ->schema([TextInput::make('destination')->default('shared'), Toggle::make('enabled')->default(false)])
+        ->staticValues();
+    $schema = field_binding_schema($field);
+    foreach (['first', 'second'] as $value) {
+        $field->getAction('addConstant')([])->call();
+        $key = array_key_last($field->getConstants());
+        $field->getConstants()[$key]->getComponent('input.static')->state($value);
+    }
+    $rows = $schema->getState()['bindings'];
+    expect($rows[1]['target'])
+        ->toBe(['destination' => 'shared', 'enabled' => false])
+        ->and($rows[2]['target'])
+        ->toBe($rows[1]['target']);
+    $key = array_key_last($field->getConstants());
+    $field->getConstants()[$key]->getComponent('output.enabled')->state(true);
+    $rows = $schema->getState()['bindings'];
+    expect($rows[1]['target']['enabled'])->toBeFalse()->and($rows[2]['target']['enabled'])->toBeTrue();
+});
+
+it('preserves an empty static binding schema as an array', function () {
+    $field = FieldBinding::make('bindings')
+        ->jsonSchema(['properties' => ['name' => []]])
+        ->schema(Schema::make()->components([]))
+        ->staticValues();
+    $schema = field_binding_schema($field);
+    $field->getAction('addConstant')([])->call();
+    $key = array_key_first($field->getConstants());
+    $field->getConstants()[$key]->getComponent('input.static')->state('literal');
+    expect($field->getConstantTarget($key))->toBe([]);
+    $expected = [
+        ['kind' => 'source', 'source' => 'name', 'target' => null],
+        ['kind' => 'static', 'target' => [], 'static' => 'literal'],
+    ];
+    expect($schema->getState()['bindings'])->toBe($expected);
+    $schema->fill(['bindings' => $expected]);
+    expect($schema->getState()['bindings'])->toBe($expected);
+    $field->getAction('bind')(['source' => 'name'])->call();
+    $expected[0]['target'] = [];
+    expect($schema->getState()['bindings'])->toBe($expected);
+});
+
+it('adds and restores static pairs with native non-string targets', function (string $editor, mixed $target) {
+    $input = match ($editor) {
+        'boolean' => Toggle::make('value')->default($target),
+        'integer' => TextInput::make('value')->integer()->default($target),
+        'multiple' => Select::make('value')->multiple()->options(['a' => 'A'])->default($target),
+    };
+    $field = FieldBinding::make('bindings')
+        ->jsonSchema(['properties' => ['name' => []]])
+        ->simple($input)
+        ->staticValues();
+    $schema = field_binding_schema($field);
+    $field->getAction('addConstant')([])->call();
+    $key = array_key_first($field->getConstants());
+    expect($field->getConstantTarget($key))->toBe($target);
+    $field->getConstants()[$key]->getComponent('input.static')->state('literal');
+    $expected = [
+        ['kind' => 'source', 'source' => 'name', 'target' => null],
+        ['kind' => 'static', 'target' => $target, 'static' => 'literal'],
+    ];
+    expect($schema->getState()['bindings'])->toBe($expected);
+    $schema->fill(['bindings' => $expected]);
+    expect($schema->getState()['bindings'])->toBe($expected);
+    view()->share('errors', new ViewErrorBag);
+    expect($schema->toHtml())->toContain('data-binding-constant=');
+})->with([
+    'false' => ['boolean', false],
+    'zero' => ['integer', 0],
+    'empty array' => ['multiple', []],
+    'array' => ['multiple', ['a']],
+]);
+
 it('round trips static values beside bindings without treating them as sources', function () {
     $field = field_binding_constants();
     $state = ['name' => 'profile.name', 'status' => ['value' => 'active']];
@@ -763,18 +973,19 @@ it('validates every static value field', function () {
     expect($schema->getState(...))->toThrow(ValidationException::class);
 });
 
-it('rejects duplicate static targets without changing the binding state', function () {
-    $field = field_binding_constants();
+it('rejects duplicate static targets without changing the binding state', function (mixed $target) {
+    $field = field_binding_constants()->simple(Hidden::make('destination'));
     $schema = field_binding_schema($field, ['name' => 'profile.name', 'status' => ['value' => 'active']]);
+    $field->getConstants()[array_key_first($field->getConstants())]->getComponent('output.destination')->state($target);
     $field->getAction('addConstant')([])->call();
     $constant = $field->getConstants()[array_key_last($field->getConstants())];
-    $constant->getComponent('output.destination')->state('status');
+    $constant->getComponent('output.destination')->state($target);
     $constant->getComponent('input.static')->state('replacement');
     $state = $field->getRawState();
 
     expect($schema->getState(...))->toThrow(ValidationException::class);
     expect($field->getRawState())->toBe($state);
-});
+})->with(['string' => ['status'], 'boolean' => [false], 'integer' => [0], 'array' => [['a']], 'empty array' => [[]]]);
 
 it('rejects static values unless the component enables them', function () {
     $field = FieldBinding::make('bindings')

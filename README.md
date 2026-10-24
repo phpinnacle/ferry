@@ -522,7 +522,9 @@ The FieldBinding toolbar has an All / Bound / Unbound switch, defaulting to All.
 
 Unbound sources are submitted with `target: null` and retain their validated source settings. Their disabled destination editor drafts are excluded. Disabled fields disable binding controls and child inputs. Inline editors keep their own Livewire update settings. On narrow screens the line runs vertically between stacked cards. Source cards do not show a direction arrow. Connection controls remain visible on devices without hover. Hover and focus feedback starts after 100 ms and fades over 180 ms; leaving has no delay. Reduced-motion preferences disable the fade while retaining the short activation delay.
 
-Binding state is the same flat row list. Each source row contains `kind: source`, its `source` identifier, the editor data in `target` or null when unbound, and any configured source settings. Use `simple()` with a single Filament field to store non-empty strings in `target`. Without an explicit field `default()`, each editor defaults to its literal source property key. Explicit defaults (including `null`), saved bindings, and edited values retain their native Filament behavior. Defaults do not bind sources automatically. Custom `schema()` forms keep their own defaults.
+Binding state is the same flat row list. Each source row contains `kind: source`, its `source` identifier, the editor data in `target` or null when unbound, and any configured source settings. Use `simple()` with a single Filament field to store its native value in `target`. Bound values must be non-null, including after native dehydration; `false`, `0`, and empty arrays are valid. Child fields retain their own validation and conversion rules. Add `required()` only when those stricter rules are wanted: it also rejects empty arrays and strings. An empty string is allowed if the child preserves it; fields that convert it to `null` fail submission while bound.
+
+Without an explicit field `default()`, each editor defaults to its literal source property key. For other field types, provide a suitable native default, for example `simple(Toggle::make('enabled')->default(false))`. Explicit defaults (including `null`), saved bindings, and edited values retain their native Filament behavior. Defaults do not bind sources automatically; an explicit `null` remains an editor draft until replaced with a non-null bound value. Custom `schema()` forms keep their own defaults.
 
 For example:
 
@@ -563,7 +565,7 @@ FieldBinding::make('bindings')
 
 Choose `simple()` or `schema()` for a field. Both accept closures and use native Filament child schemas, including defaults, validation, reactive callbacks, relative state reads, and nested `Repeater` or `Builder` components. `destination` is an example field name, not a reserved key. Destination syntax, duplicate destinations, and transformation behavior belong to the consuming application; the component stores the configured data without interpreting paths or executing transformations.
 
-Use `staticValues()` with `simple()` to enable static pairs. The default is disabled; pass `staticValues(false)` to disable them explicitly. The component supplies a full-width native input with a Value placeholder and an accessible hidden label; it accepts scalar values. **Add static value** creates an immediately connected pair with the first unused `static_N` destination. The source card shows a readable title (`Static 1`) alongside the technical property (`static_1`), without a separate section heading. The right card reuses the `simple()` field without changing its name or rules. Hover or focus the connecting line to reveal a danger trash button, which removes the pair including its value and settings.
+Use `staticValues()` with `simple()` or `schema()` to enable static pairs. The default is disabled; pass `staticValues(false)` to disable them explicitly. The component supplies a full-width native input with a Value placeholder and an accessible hidden label; it accepts scalar values. **Add static value** creates an immediately connected pair. With `simple()`, it uses the field's explicit default, or the first unused `static_N` destination when no default was configured. The source card shows a readable title (`Static 1`) alongside the technical property (`static_1`), without a separate section heading. Non-string simple targets are displayed as JSON. The right card reuses the configured field or schema without changing child names or rules. Hover or focus the connecting line to reveal a danger trash button, which removes the pair including its value and settings.
 
 ```php
 FieldBinding::make('bindings')
@@ -576,11 +578,28 @@ FieldBinding::make('bindings')
 //  ['kind' => 'static', 'target' => 'status', 'static' => 'active']]
 ```
 
+With `schema()`, each static pair receives the whole binding form and its own defaults, validation, nested components, and dehydration callbacks. Its source card is titled **Static value**, independently of the form's contents. The whole form is stored in `target`; no field is treated as the destination identifier, and no generated name is inserted into the form. Empty forms are stored as `[]`.
+
+```php
+use Filament\Forms\Components\Toggle;
+
+FieldBinding::make('bindings')
+    ->jsonSchema(['properties' => ['name' => ['type' => 'string']]])
+    ->schema([
+        TextInput::make('channel')->required(),
+        Toggle::make('enabled')->default(false),
+    ])
+    ->staticValues();
+
+// [['kind' => 'source', 'source' => 'name', 'target' => null],
+//  ['kind' => 'static', 'target' => ['channel' => 'audit', 'enabled' => false], 'static' => 'active']]
+```
+
 `sourceSettings()` also supplies settings after Value in static cards. Its callback may accept `?Closure $inputSchema = null`: static cards receive a closure returning their current input `JsonSchema`, while ordinary sources leave this argument null. For a static card, `$source` is its stable internal row key. Use the supplied closure in a transform editor's `inputSchema()` callback; existing native scalar values retain their types. Native dehydrated settings are included in the static row, alongside `static` and `target`.
 
 Without `staticValues()` the component rejects static rows on submission, and the bound-sources counter never includes them. This replaces the former `constants([...])` schema registration.
 
-Source bindings and static values share one serialized list. Static targets must be unique. A static target may share a source identifier because their rows have explicit kinds; no value is overwritten. Uniqueness of actual destinations across source and static rows remains the consumer's responsibility.
+Source bindings and static values share one serialized list. With `simple()`, static targets must be unique, compared with their native types. A static target may share a source identifier because their rows have explicit kinds; no value is overwritten. With `schema()`, repeated form values are allowed; the component does not infer uniqueness rules for any child field. Uniqueness of actual destinations across source and static rows remains the consumer's responsibility.
 
 Use `sourceSettings(fn (string $source) => [Actions::make([...])])` for native source actions, as with `FieldMapping`. They remain available on unbound sources.
 

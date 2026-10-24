@@ -9,16 +9,20 @@
 <div @class(['space-y-2' => $dense, 'space-y-3' => ! $dense]) data-binding-constants>
     @foreach ($field->getConstants() as $key => $constant)
         @php
-            $property = $field->getConstantTarget($key);
+            $target = $field->getConstantTarget($key);
+            $property = $field->getSimpleField() === null ? null : (is_string($target) ? $target : json_encode($target, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR));
+            $title = $property === null ? __('phpinnacle-ferry::schema-forms.binding.static_value') : Str::headline($property);
             $remove = ($field->getAction('removeConstant'))(['constant' => $key]);
-            $removeLabel = $remove->getLabel().' '.$property;
+            $removeLabel = $remove->getLabel().' '.($property ?? $title);
         @endphp
         <div class="field-binding-columns grid grid-cols-1 items-stretch gap-y-2 md:gap-0" wire:key="{{ $field->getId() }}-{{ $key }}" data-binding-constant="{{ $key }}" x-show="matchesFilter(true)">
             <div @class(['field-mapping-row is-mapped relative min-w-0 space-y-2 rounded-lg border border-gray-200 bg-white dark:border-white/10 dark:bg-gray-900', 'px-3 py-2' => $dense, 'px-4 py-3' => ! $dense])>
                 <div class="ferry-mapping-heading">
                     <span class="ferry-mapping-names">
-                        <span class="ferry-mapping-name has-title">{{ Str::headline($property) }}</span>
-                        <span class="ferry-mapping-property">{{ $property }}</span>
+                        <span class="ferry-mapping-name has-title">{{ $title }}</span>
+                        @if ($property !== null)
+                            <span class="ferry-mapping-property">{{ $property }}</span>
+                        @endif
                     </span>
                     <span class="ferry-mapping-types">
                         <span class="ferry-mapping-type">{{ $field->getConstantInputSchema($key)->singleType() }}</span>

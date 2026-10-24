@@ -17,6 +17,7 @@ use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Js;
 use Illuminate\Translation\PotentiallyTranslatedString;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use PHPinnacle\Ferry\Forms\Concerns\HasColumnSpans;
 use PHPinnacle\Ferry\Forms\Concerns\HasSourceSettings;
 use PHPinnacle\Ferry\Forms\Concerns\Searchable;
@@ -25,7 +26,7 @@ use PHPinnacle\Ferry\Forms\Concerns\Searchable;
  * @phpstan-import-type MappingItem from JsonSchema
  * @phpstan-import-type Definition from JsonSchema
  * @phpstan-type SourceState array{kind: 'source', source: string, target: mixed}&array<string, mixed>
- * @phpstan-type StaticState array{kind: 'static', target: string, static: mixed}&array<string, mixed>
+ * @phpstan-type StaticState array{kind: 'static', target: mixed, static: mixed}&array<string, mixed>
  * @phpstan-type State list<SourceState|StaticState>
  */
 class FieldBinding extends Field
@@ -176,7 +177,7 @@ class FieldBinding extends Field
         /** @var array{bound: array<string, bool>, bindings: array<string, array<string, mixed>>, previews: array<string, array<string, mixed>>} $state */
         $state = $this->getRawState();
         if (!($state['bound'][$key] ?? false) && !array_key_exists($key, $state['bindings'])) {
-            $schema->fill();
+            $schema->rawState([])->fill();
             /** @var array{bindings: array<string, array<string, mixed>>, previews: array<string, array<string, mixed>>} $state */
             $state = $this->getRawState();
             $state['previews'][$key] = $state['bindings'][$key];
@@ -192,7 +193,7 @@ class FieldBinding extends Field
         /** @var array{sources?: array<string, array<string, mixed>>, bindings?: array<string, mixed>, bound?: array<string, bool>, previews?: array<string, mixed>}|null $state */
         $state = $this->getRawState();
 
-        return $this->dehydrateBindings($state);
+        return $this->dehydrateBindings($state, validateTargets: false);
     }
 
     /** @return array<Schema> */
@@ -238,7 +239,10 @@ class FieldBinding extends Field
         foreach ($this->getSources() as $source) {
             $key = $this->getBindingKey($source['id']);
             if (array_key_exists($key, $bound)) {
-                $this->makeBindingSchema($source['id'], 'previews.' . $key)->fill();
+                $this
+                    ->makeBindingSchema($source['id'], 'previews.' . $key)
+                    ->rawState([])
+                    ->fill();
             } else {
                 $this->getBindingSchema($source['id']);
             }
@@ -312,11 +316,15 @@ class FieldBinding extends Field
             'source' => $key,
             'inputSchema' => fn () => fn () => $this->getConstantInputSchema($key),
         ]);
-        /** @var Field $target */
-        $target = $this->getSimpleField();
-        $target = clone $target;
-        if ($defaultTarget !== null) {
-            $target->default($defaultTarget);
+        /** @var Schema $output The default child schema always exists. */
+        $output = $this->getChildSchema();
+        $output = $output->getClone()->inlineLabel(false);
+        if ($defaultTarget !== null && $this->simpleField !== null) {
+            /** @var Field $target */
+            $target = $output->getComponents()[0];
+            if (!$target->hasDefaultState()) {
+                $target->default($defaultTarget);
+            }
         }
 
         return $this->makeChildSchema('constants')->components([
@@ -334,7 +342,13 @@ class FieldBinding extends Field
                 ->key('input')
                 ->statePath('input')
                 ->dense(),
-            Group::make([$target])->key('output')->statePath('output'),
+            Group::make()
+                ->schema($output)
+                ->key('output')
+                ->statePath('output')
+                ->default([])
+                // Native validation omits empty containers, which still represent an empty form.
+                ->dehydrateStateUsing(fn (?array $state) => $state ?? []),
         ]);
     }
 
@@ -354,10 +368,10 @@ class FieldBinding extends Field
 
     public function getConstantTarget(string $constant): mixed
     {
-        /** @var Field $simple */
         $simple = $this->getSimpleField();
+        $output = data_get($this->getBindingState(), $constant . '.output');
 
-        return data_get($this->getBindingState(), $constant . '.output.' . $simple->getName());
+        return $simple !== null ? data_get($output, $simple->getName()) : $output;
     }
 
     public function getBindAction(): Action
@@ -448,7 +462,7 @@ class FieldBinding extends Field
      * @param array{sources?: array<string, array<string, mixed>>, bindings?: array<string, mixed>, bound?: array<string, bool>, previews?: array<string, mixed>}|null $state
      * @return list<array<string, mixed>>
      */
-    private function dehydrateBindings(?array $state): array
+    private function dehydrateBindings(?array $state, bool $validateTargets = true): array
     {
         $sources = $this->decodeSourceSettings($state['sources'] ?? []);
         $bindings = $state['bindings'] ?? [];
@@ -460,21 +474,34 @@ class FieldBinding extends Field
             $key = $this->getBindingKey($id);
             $target = null;
             if (in_array($key, $boundKeys, true)) {
-                $target = $simple !== null ? data_get($bindings[$key], $simple->getName()) : $bindings[$key];
+                $target = $simple !== null ? data_get($bindings[$key], $simple->getName()) : $bindings[$key] ?? [];
+                if ($validateTargets && $simple !== null) {
+                    $this->assertNonNullTarget($target);
+                }
             }
             $rows[] = ['kind' => 'source', 'source' => $id, 'target' => $target] + ($sources[$id] ?? []);
         }
         foreach ($state['bindings'] ?? [] as $key => $data) {
             if (self::isConstantKey((string) $key)) {
                 /** @var array{input: array<string, mixed>, output: array<string, mixed>} $data */
-                /** @var Field $simple */
-                $simple = $this->getSimpleField();
-                $rows[] =
-                    ['kind' => 'static', 'target' => data_get($data['output'], $simple->getName())] + $data['input'];
+                $target = $simple !== null ? data_get($data['output'], $simple->getName()) : $data['output'];
+                if ($validateTargets && $simple !== null) {
+                    $this->assertNonNullTarget($target);
+                }
+                $rows[] = ['kind' => 'static', 'target' => $target] + $data['input'];
             }
         }
 
         return $rows;
+    }
+
+    private function assertNonNullTarget(mixed $target): void
+    {
+        if ($target === null) {
+            throw ValidationException::withMessages([
+                $this->getStatePath() ?? $this->getName() => __('A bound field must have a non-null value.'),
+            ]);
+        }
     }
 
     /** @param array<array-key, mixed> $arguments */
@@ -586,9 +613,12 @@ class FieldBinding extends Field
         foreach ($state as $entry) {
             $data = [];
             if ($entry['kind'] === 'static') {
-                /** @var Field $simple */
-                data_set($data, $simple->getName(), $entry['target']);
-                $bindings[self::CONSTANT_PREFIX . bin2hex($entry['target'])] = [
+                if ($simple !== null) {
+                    data_set($data, $simple->getName(), $entry['target']);
+                } else {
+                    $data = $entry['target'];
+                }
+                $bindings[self::CONSTANT_PREFIX . bin2hex(random_bytes(6))] = [
                     'input' => Arr::except($entry, ['kind', 'target']),
                     'output' => $data,
                 ];
@@ -712,7 +742,7 @@ class FieldBinding extends Field
 
         $sourceKeys = $this->getSourceStateKeys();
         $keys = array_values($sourceKeys);
-        $outputKeys = [];
+        $outputTargets = [];
         $simple = $this->getSimpleField();
 
         foreach ($value as $key => $binding) {
@@ -734,29 +764,32 @@ class FieldBinding extends Field
                 $validator = Validator::make([
                     'input' => $binding['input'] ?? null,
                     'output' => $binding['output'] ?? null,
-                    'target' => data_get($binding, 'output.' . $simple?->getName()),
                 ], [
                     'input' => ['required', 'array'],
-                    'output' => ['required', 'array'],
-                    'target' => ['required', 'string', Rule::notIn($outputKeys)],
+                    'output' => ['present', 'array'],
                 ]);
                 if ($validator->fails()) {
                     $fail($validator->errors()->first())->translate();
 
                     return;
                 }
-                /** @var array{target: string, static: mixed} $constant */
-                $constant = $validator->validated();
-                $outputKeys[] = $constant['target'];
             }
 
-            if (!$isConstant && ($bound[$key] ?? false) && $simple !== null) {
-                $destination = data_get($binding, $simple->getName());
+            if ($simple !== null) {
+                $destination = data_get($isConstant ? $binding['output'] : $binding, $simple->getName());
 
-                if (!is_string($destination) || $destination === '') {
-                    $fail('The :attribute field must bind each source to a non-empty string.')->translate();
+                if ($destination === null) {
+                    $fail('A bound field must have a non-null value.')->translate();
 
                     return;
+                }
+                if ($isConstant) {
+                    if (in_array($destination, $outputTargets, true)) {
+                        $fail('The :attribute field contains duplicate static targets.')->translate();
+
+                        return;
+                    }
+                    $outputTargets[] = $destination;
                 }
             }
         }
