@@ -82,6 +82,7 @@
                 <span
                     {{ (new ComponentAttributeBag)->class(['ferry-transform', 'is-disabled' => $disabled])->color(BadgeComponent::class, $transform->getColor()) }}
                     role="group"
+                    data-field-interactive
                     aria-label="{{ $transform->getLabel() }}"
                     x-sortable-item="{{ $index }}"
                     wire:key="{{ $action->getSchemaComponent()->getId() }}-{{ $action->getName() }}-{{ $index }}"

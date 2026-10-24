@@ -91,6 +91,7 @@ class FerryServiceProvider extends PackageServiceProvider
                 AlpineComponent::make('field-binding', __DIR__ . '/../resources/js/field-binding.js'),
                 AlpineComponent::make('field-transforms', __DIR__ . '/../resources/js/field-transforms.js'),
                 Css::make('field-mapping', __DIR__ . '/../resources/css/field-mapping.css'),
+                Css::make('field-transforms', __DIR__ . '/../resources/css/field-transforms.css'),
             ],
             package: self::PACKAGE,
         );

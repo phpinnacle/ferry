@@ -664,6 +664,21 @@ for (const inverse of [false, true]) {
 }
 
 
+test('custom interactive areas preserve a pending connection without knowing the child component', () => {
+    const component = editor();
+    const widget = {};
+    const event = {
+        target: { closest: selector => selector.split(', ').includes('[data-field-interactive]') ? widget : null },
+        currentTarget: { contains: element => element === widget },
+    };
+    component.selectFromCard(event, 'source', 'email');
+    assert.equal(component.selected, null);
+    component.select('source', 'email');
+    component.selectFromCard(event, 'target', 'contact');
+    assert.deepEqual(component.selected, { side: 'source', id: 'email' });
+    assert.deepEqual(component.state.targets, {});
+});
+
 test('an interactive group outside the card does not block empty card clicks', () => {
     const component = editor();
     component.selectFromCard({

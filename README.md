@@ -483,7 +483,7 @@ use Filament\Schemas\Components\Actions;
 
 Capture `$source` in your callback or pass it through `arguments()`. Native action visibility, icons and tooltips remain available. Use the same schema for source settings fields and actions; there is no separate source-action registry.
 
-During selection, compatible candidates highlight with a check; incompatible cards and their editors dim with a cross, and existing lines fade. Compatible destinations can replace an existing connection or static value. Unavailable clicks preserve the selection and mappings without an error. Connection lines reveal a cross and use danger colors on hover or keyboard focus, together with both endpoint dots; activate the line to disconnect. This custom focus feedback replaces the browser's rectangular outline. Empty card space, including the source-settings footer, selects the card; native buttons and editors keep their own actions. Outside selection, connected cards retain full contrast and existing incompatible connections remain visible for correction.
+During selection, compatible candidates highlight with a check; incompatible cards and their editors dim with a cross, and existing lines fade. Compatible destinations can replace an existing connection or static value. Unavailable clicks preserve the selection and mappings without an error. Connection lines reveal a cross and use danger colors on hover or keyboard focus, together with both endpoint dots; activate the line to disconnect. This custom focus feedback replaces the browser's rectangular outline. Empty card space, including the source-settings footer, selects the card; native buttons and editors keep their own actions. Mark custom interactive areas with `data-field-interactive` to exclude their descendants from card selection and connection clicks. Leave surrounding empty space unmarked when it should still select the card. Outside selection, connected cards retain full contrast and existing incompatible connections remain visible for correction.
 
 Both components support these presentation options:
 
@@ -502,7 +502,7 @@ Labels accept strings or closures; the switches accept booleans or closures. Col
 
 Use `warnings(source: [...], dest: [...])` on `FieldMapping` or `warnings([...])` on `FieldBinding` to highlight fields. Both accept closures and retain warnings for unavailable identifiers. Escape cancels mapping selection; keyboard controls and dark mode are supported.
 
-The fields use package views without registering `FerryPlugin`. Filament includes their shared stylesheet in the page head so cards are styled before the first render; JavaScript loads on demand. Publish assets after changes with `php artisan filament:assets`. JavaScript and CSS are distributed as source files and need no package build. Add the views to your application's Filament theme and rebuild it:
+The fields use package views without registering `FerryPlugin`. Filament includes the shared mapping/binding stylesheet and the separate `FieldTransforms` stylesheet in the page head so both render styled from the start; JavaScript loads on demand. The mapping/binding stylesheet contains no transformation editor styles. Publish assets after changes with `php artisan filament:assets`. JavaScript and CSS are distributed as source files and need no package build. Add the views to your application's Filament theme and rebuild it:
 
 ```css
 @source '../../../../vendor/phpinnacle/ferry/resources/views/**/*.blade.php';

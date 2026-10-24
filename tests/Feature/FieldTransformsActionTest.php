@@ -83,6 +83,7 @@ it('uses description colors for configurable and settings-free badges', function
         'Remove Mask field',
     );
     expect($html)->toContain('fieldTransforms(')->not->toContain('@js(');
+    expect(substr_count($html, 'data-field-interactive'))->toBe(2);
 });
 
 it('adds repeated transforms and edits only the selected instance', function () {
