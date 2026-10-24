@@ -24,6 +24,7 @@ use PHPinnacle\Ferry\Services\TransformRegistry;
 use PHPinnacle\Ferry\Tests\Fixtures\MappingState;
 use PHPinnacle\Ferry\Tests\Fixtures\SchemaHost;
 use PHPinnacle\Ferry\Tests\TestCase;
+use PHPinnacle\Ferry\Transformation;
 use PHPinnacle\Ferry\Transformations\Trim;
 use PHPinnacle\Rosetta\Data\MetadataProperty;
 use PHPinnacle\Rosetta\Enums\FieldType;
@@ -48,6 +49,57 @@ uses(TestCase::class);
 
 beforeEach(function () {
     Queue::fake();
+});
+
+it('keeps reference destinations distinct from ordinary UUID transform outputs', function () {
+    app(TransformRegistry::class)->register(Transformation::make('as_uuid')
+        ->inputSchema(['type' => 'string'])
+        ->outputSchema(['type' => 'string', 'format' => 'uuid']));
+    app(DestinationFactory::class)->register(new StaticDestination(
+        key: 'owners',
+        label: 'Owners',
+        table: 'owners',
+        primaryKey: 'id',
+        fields: [new DestinationField('owner', 'Owner', ColumnType::Reference, required: true)],
+    ));
+    $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
+    TestCase::makeMetadata($connection, ['system' => [
+        '_owner' => new ScalarField(FieldType::Uuid),
+        '_description' => new StringField(100, false),
+    ]]);
+    $form = SyncForm::configure(FilamentSchema::make(SchemaHost::make())->statePath('data')->operation('create'));
+    $form->fill([
+        'name' => 'Owners',
+        'code' => 'owners',
+        'connection_id' => $connection->id,
+        'source' => 'object-0',
+        'destination' => 'static:owners',
+        'schema' => MappingState::mapping(['owner' => MappingState::source('_owner')], [
+            '_description' => ['transforms' => [['type' => 'as_uuid', 'data' => []]]],
+        ]),
+    ]);
+    $mapping = $form->getComponentByStatePath('schema');
+    expect($mapping->getSourceSchema()['properties']['_owner'])->toMatchArray([
+        'type' => 'string',
+        'format' => 'uuid',
+        'x-ferry-reference' => true,
+    ]);
+    expect($mapping->getConnectionModes())
+        ->toHaveKey('_owner.owner', 'whole')
+        ->not->toHaveKey('_description.owner');
+    $state = $form->getState();
+    $owner = collect($state['schema'])->firstWhere('source', '_owner');
+    expect($owner['result'])->toMatchArray(['type' => 'string', 'format' => 'uuid', 'x-ferry-reference' => true]);
+    expect(SchemaMapping::fromArray($owner)->type())->toBe(ColumnType::Reference);
+
+    $mapping->rawState(MappingState::encode(
+        $mapping,
+        ['owner' => MappingState::source('_description')],
+        [
+            '_description' => ['transforms' => [['type' => 'as_uuid', 'data' => []]]],
+        ],
+    ));
+    expect($form->getState(...))->toThrow(ValidationException::class);
 });
 
 it('updates only static cards and the changed transform editor in a large dynamic form', function () {

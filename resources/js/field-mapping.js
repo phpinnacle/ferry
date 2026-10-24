@@ -159,7 +159,7 @@ export default function fieldMapping({ element, state, disabled, inverse = false
         },
 
         selectFromCard(event, side, id) {
-            const control = event.target.closest('button, a, input, select, textarea, label, [role="button"], [data-inline-builder-item], [role="combobox"], [contenteditable]');
+            const control = event.target.closest('button, a, input, select, textarea, label, [role="button"], [data-field-interactive], [role="combobox"], [contenteditable]');
             if (control && event.currentTarget.contains(control)) return;
             this.select(side, id);
         },

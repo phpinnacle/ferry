@@ -99,7 +99,7 @@ final class BuiltinStaticForms
         }
 
         $field = match ($property->annotation('format')) {
-            'uuid', 'ferry-reference' => TextInput::make('value')->uuid(),
+            'uuid' => TextInput::make('value')->uuid(),
             'phone' => TextInput::make('value')->tel(),
             'email' => TextInput::make('value')->email(),
             'date' => DatePicker::make('value')->format('Y-m-d'),

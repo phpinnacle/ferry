@@ -31,7 +31,12 @@ it('presents formats, enums, nullable values and nested arrays without changing 
         ->toBe($logicalType);
 })->with([
     'format' => [['type' => 'string', 'format' => 'uuid'], 'uuid', false, 'string'],
-    'reference format' => [['type' => 'string', 'format' => 'ferry-reference'], 'uuid', false, 'string'],
+    'reference metadata' => [
+        ['type' => 'string', 'format' => 'uuid', 'x-ferry-reference' => true],
+        'uuid',
+        false,
+        'string',
+    ],
     'formatted alternatives' => [
         ['anyOf' => [['type' => 'string', 'format' => 'uuid'], ['type' => 'boolean']]],
         'uuid | boolean',
@@ -177,6 +182,11 @@ it('compares declared unions, nullability, formats and nested array types', func
     expect(JsonSchema::fromArray($source)->compatible(JsonSchema::fromArray($target)))->toBe($compatible);
 })->with([
     'matching scalar' => [['type' => 'string'], ['type' => 'string'], true],
+    'reference metadata does not restrict UUID compatibility' => [
+        ['type' => 'string', 'format' => 'uuid', 'x-ferry-reference' => true],
+        ['type' => 'string', 'format' => 'uuid'],
+        true,
+    ],
     'integer fits number' => [['type' => 'integer'], ['type' => 'number'], true],
     'number does not fit integer' => [['type' => 'number'], ['type' => 'integer'], false],
     'nullable integer fits nullable number' => [['type' => ['integer', 'null']], ['type' => ['number', 'null']], true],

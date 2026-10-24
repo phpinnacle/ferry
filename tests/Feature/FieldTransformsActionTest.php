@@ -83,6 +83,7 @@ it('uses description colors for configurable and settings-free badges', function
         'Remove Mask field',
     );
     expect($html)->toContain('inlineBuilder(')->not->toContain('@js(');
+    expect(substr_count($html, 'data-field-interactive'))->toBe(2);
 });
 
 it('adds repeated transforms and edits only the selected instance', function () {
@@ -288,14 +289,17 @@ it('offers and validates string transforms for formatted strings', function (arr
     'uri' => [['type' => 'string', 'format' => 'uri']],
 ]);
 
-it('preserves dedicated logical types for their declared formats', function (string $format) {
-    $this->field->inputSchema(['type' => ['string', 'null'], 'format' => $format]);
+it('preserves dedicated logical types from their schemas', function (array $definition) {
+    $this->field->inputSchema($definition);
 
     expect(array_keys($this->field->getAvailableTransforms(app(TransformRegistry::class))))
         ->toBe(['cast', 'filter']);
     $this->field->state([['type' => 'trim', 'data' => []]]);
     expect($this->field->getContainer()->getState(...))->toThrow(ValidationException::class);
-})->with(['date-time', 'ferry-reference']);
+})->with([
+    'date-time' => [['type' => ['string', 'null'], 'format' => 'date-time']],
+    'reference' => [['type' => ['string', 'null'], 'format' => 'uuid', 'x-ferry-reference' => true]],
+]);
 
 it('offers JSONPath filtering for array and object inputs', function (array $input) {
     $this->field->inputSchema($input);
