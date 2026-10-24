@@ -49,9 +49,9 @@ enum ColumnType: string implements HasLabel
     public static function fromJsonSchema(JsonSchema $schema): ?self
     {
         return match ($schema->singleType()) {
-            'string' => match ($schema->annotation('format')) {
-                'ferry-reference' => self::Reference,
-                'date-time' => self::DateTime,
+            'string' => match (true) {
+                $schema->annotation('x-ferry-reference') === true => self::Reference,
+                $schema->annotation('format') === 'date-time' => self::DateTime,
                 default => self::String,
             },
             'integer' => self::Integer,
@@ -100,11 +100,11 @@ enum ColumnType: string implements HasLabel
         };
     }
 
-    /** @return array{type: string, format?: string, minLength?: int, maxLength?: int, minimum?: int, description?: string} */
+    /** @return array{type: string, format?: string, x-ferry-reference?: true, minLength?: int, maxLength?: int, minimum?: int, description?: string} */
     public function jsonSchema(?Field $field = null): array
     {
         $schema = match ($this) {
-            self::Reference => ['type' => 'string', 'format' => 'ferry-reference'],
+            self::Reference => ['type' => 'string', 'format' => 'uuid', 'x-ferry-reference' => true],
             self::DateTime => ['type' => 'string', 'format' => 'date-time'],
             self::Decimal => ['type' => 'number'],
             default => ['type' => $this->value],

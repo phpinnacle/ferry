@@ -122,7 +122,7 @@ FerryPlugin::make()->destinations(new StaticDestination(
 
 The readonly `key` identifies the destination in the persisted synchronization. `table` is its target table; `fields` lists the permitted columns, their logical types and whether they are required. `StaticDestination` implements Filament's `HasLabel` contract. A `null` connection uses the Ferry connection. Fixed values are written into every row through `InsertField` transforms.
 
-`ColumnType::jsonSchema()` projects a logical type into the inline type and format used by the mapping editor; references remain distinct from strings, and dates use the `date-time` format.
+`ColumnType::jsonSchema()` projects a logical type into the inline schema used by the mapping editor. References use `type: string`, `format: uuid`, and `x-ferry-reference: true`; UUID strings without this annotation remain logical strings. Dates use the `date-time` format.
 
 `Sync.type` explicitly selects `DestinationType::Static` or `DestinationType::Dynamic` (the default). `Sync.destination` stores the registered key for static synchronizations or the generated table name for dynamic ones. `DestinationFactory::get($key)` returns the registered destination or `null`. Use `getOrFail($key)` when a static destination is required. `DestinationFactory::resolve($sync)` returns the registered static destination or a `DynamicDestination` for its generated table. `fieldsFor($sync)` returns the registered static destination's fields, or `null` for a dynamic or unavailable destination. `SyncObserver` initializes only a dynamic record's destination table name when created; static records retain their registered destination key.
 
@@ -134,7 +134,7 @@ The connection, object, and destination selectors use native browser selects wit
 
 Synchronization source schemas retain available Rosetta constraints through `ColumnType::jsonSchema($field)`. Strings with a positive length expose `maxLength`; fixed strings also expose the same `minLength`. Equal lower and upper limits are displayed as one value, such as `9`, instead of `9–9`. Zero or unknown length is unbounded. Non-negative numbers expose `minimum: 0`. Numeric descriptions show the available precision and scale, plus an exact textual range when both are known; large decimal bounds are built without floating-point conversion. Compact cards show this information when their title is hovered or focused. These descriptions summarize type metadata. Rosetta property comments are preserved in the source snapshot but are not included in the synchronization mapping cards. Numeric upper bounds remain textual hints rather than rounded JSON Schema numbers.
 
-The static synchronization form adds an exact-format connection condition to preserve its logical `ColumnType` contract: references and dates require an explicit Cast before connecting to a plain string destination. The reusable `FieldMapping` component keeps its more general directional format compatibility described below.
+The static synchronization form checks exact formats and logical reference types to preserve its `ColumnType` contract: references and dates require an explicit Cast before connecting to a plain string destination. The reusable `FieldMapping` component keeps its more general directional format compatibility described below.
 
 ## Transforms
 
@@ -183,7 +183,7 @@ use PHPinnacle\Ferry\Forms\JsonSchema;
 
 `getOutputSchema($input, $params)` returns a `JsonSchema` object. Without an output declaration it preserves the complete input schema, which is appropriate only when the transform guarantees that all its constraints remain true. A callback can return null when its settings are incomplete and no output can be determined. An empty schema array means unconstrained values, not an invalid chain.
 
-Each step consumes the preceding output schema. Cast replaces the value constraints with the selected scalar type and preserves nullability; repeated casts use that result. Trim, Substring and Mask accept strings, including formatted and nullable strings, but reject `date-time` and `ferry-reference`, which represent logical dates and references. Their outputs retain nullability and discard the original format, enum, pattern and length bounds. Custom descriptions can preserve or establish guarantees their execution actually provides.
+Each step consumes the preceding output schema. Cast replaces the value constraints with the selected scalar type and preserves nullability; repeated casts use that result. Trim, Substring and Mask accept strings, including formatted and nullable strings, but reject the `date-time` format and schemas with `x-ferry-reference: true`, which represent logical dates and references. Ordinary UUID strings remain supported. Their outputs retain nullability and discard the original format, enum, pattern and length bounds. Custom descriptions can preserve or establish guarantees their execution actually provides.
 
 Forms, menus and previews use descriptions without resolving execution handlers or requiring their configuration. Parameter validation in `FieldTransforms` runs the description's native Filament schema, including relative field rules. Synchronization mappings persist the final output JSON Schema as `result`; `FieldMapping::type()` derives its logical `ColumnType`, and `stringLength()` reads its maximum string length, including composed schemas. The final output of a source with a target must have a supported scalar column type.
 
@@ -390,7 +390,7 @@ FieldMapping::make('mapping')
 | JSON Schema type or format | Editor |
 | --- | --- |
 | `string` | `TextInput`; string enums use `Select` |
-| `uuid`, `ferry-reference` | `TextInput` with UUID validation |
+| `uuid` | `TextInput` with UUID validation |
 | `phone`, `email` | Telephone or email `TextInput` |
 | `date`, `time`, `date-time` | `DatePicker`, `TimePicker`, `DateTimePicker` |
 | `integer`, `number` | Integer or numeric `TextInput` |
@@ -461,7 +461,7 @@ Built-in scalar value transforms reject arrays and objects; Filter accepts every
 
 ### Presentation and assets
 
-Property `title`, `description`, `x-icon`, and `x-color` provide presentation metadata for mapping cards and binding sources. The property key is the technical name shown beside its title and the identifier used in state and connections. Search includes both the title and property key. `x-color` accepts a registered Filament color name or a literal hex/RGB color for the icon and title. Cards display the technical name, required marker, constraint hints, type chips, description and warnings; omitted icons reserve no space. Formats replace the general type label; `ferry-reference` is displayed as `uuid` while retaining its logical reference format for compatibility and transformations. Nullable types add a `null` chip, and enum tooltips list allowed values. `x-badges` accepts a list such as `[['label' => 'Imported', 'color' => 'info']]`; the type chip appears last. For framework schema builders, pass their inline `toArray()` result.
+Property `title`, `description`, `x-icon`, and `x-color` provide presentation metadata for mapping cards and binding sources. The property key is the technical name shown beside its title and the identifier used in state and connections. Search includes both the title and property key. `x-color` accepts a registered Filament color name or a literal hex/RGB color for the icon and title. Cards display the technical name, required marker, constraint hints, type chips, description and warnings; omitted icons reserve no space. Formats replace the general type label. Reference schemas display their standard `uuid` format; Ferry interprets `x-ferry-reference: true` for logical column types and transformations, while reusable mapping components do not interpret that annotation. Nullable types add a `null` chip, and enum tooltips list allowed values. `x-badges` accepts a list such as `[['label' => 'Imported', 'color' => 'info']]`; the type chip appears last. For framework schema builders, pass their inline `toArray()` result.
 
 Array chevrons expand item schemas and their scoped constraints, one row per nested level. Field constraints remain in the heading. Details start collapsed and work on connected or disabled cards without changing selection; lines follow card resizing. Source actions appear below the metadata. Colors use Filament's `primary` palette for connections, `warning` for required destinations and `danger` for conflicts, in light and dark themes.
 

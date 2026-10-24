@@ -1,6 +1,7 @@
 <?php
 
 use PHPinnacle\Ferry\Enums\ColumnType;
+use PHPinnacle\Ferry\Forms\JsonSchema;
 use PHPinnacle\Rosetta\Contracts\Field;
 use PHPinnacle\Rosetta\Enums\FieldType;
 use PHPinnacle\Rosetta\Fields\NumberField;
@@ -11,6 +12,29 @@ use PHPinnacle\Rosetta\Fields\UnionField;
 use Tests\TestCase;
 
 uses(TestCase::class);
+
+it('represents references as UUID strings with Ferry metadata', function () {
+    expect(ColumnType::Reference->jsonSchema())->toBe([
+        'type' => 'string',
+        'format' => 'uuid',
+        'x-ferry-reference' => true,
+    ]);
+});
+
+it('distinguishes reference metadata from ordinary UUID formats', function (array $definition, ColumnType $type) {
+    expect(ColumnType::fromJsonSchema(JsonSchema::fromArray($definition)))->toBe($type);
+})->with([
+    'uuid' => [['type' => 'string', 'format' => 'uuid'], ColumnType::String],
+    'reference' => [['type' => 'string', 'format' => 'uuid', 'x-ferry-reference' => true], ColumnType::Reference],
+    'nullable reference' => [
+        ['type' => ['string', 'null'], 'format' => 'uuid', 'x-ferry-reference' => true],
+        ColumnType::Reference,
+    ],
+    'composed reference' => [
+        ['allOf' => [['type' => 'string', 'format' => 'uuid'], ['x-ferry-reference' => true]]],
+        ColumnType::Reference,
+    ],
+]);
 
 it('maps typed Rosetta fields to destination column types', function (Field $field, ?ColumnType $type) {
     expect(ColumnType::fromField($field))->toBe($type);

@@ -288,14 +288,17 @@ it('offers and validates string transforms for formatted strings', function (arr
     'uri' => [['type' => 'string', 'format' => 'uri']],
 ]);
 
-it('preserves dedicated logical types for their declared formats', function (string $format) {
-    $this->field->inputSchema(['type' => ['string', 'null'], 'format' => $format]);
+it('preserves dedicated logical types from their schemas', function (array $definition) {
+    $this->field->inputSchema($definition);
 
     expect(array_keys($this->field->getAvailableTransforms(app(TransformRegistry::class))))
         ->toBe(['cast', 'filter']);
     $this->field->state([['key' => 'trim', 'params' => []]]);
     expect($this->field->getContainer()->getState(...))->toThrow(ValidationException::class);
-})->with(['date-time', 'ferry-reference']);
+})->with([
+    'date-time' => [['type' => ['string', 'null'], 'format' => 'date-time']],
+    'reference' => [['type' => ['string', 'null'], 'format' => 'uuid', 'x-ferry-reference' => true]],
+]);
 
 it('offers JSONPath filtering for array and object inputs', function (array $input) {
     $this->field->inputSchema($input);

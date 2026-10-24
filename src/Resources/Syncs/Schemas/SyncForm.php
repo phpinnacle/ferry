@@ -17,6 +17,7 @@ use PHPinnacle\Common\Concerns\FormSlug;
 use PHPinnacle\Ferry\Data\DestinationField;
 use PHPinnacle\Ferry\Data\FieldMapping as SchemaMapping;
 use PHPinnacle\Ferry\Destinations\StaticDestination;
+use PHPinnacle\Ferry\Enums\ColumnType;
 use PHPinnacle\Ferry\Enums\DestinationType;
 use PHPinnacle\Ferry\Enums\StructureStatus;
 use PHPinnacle\Ferry\Forms\FieldBinding;
@@ -383,6 +384,8 @@ class SyncForm
             ->canConnectUsing(
                 fn (JsonSchema $source, JsonSchema $target) => (
                     $source->annotation('format') === $target->annotation('format')
+                    && (ColumnType::fromJsonSchema($source) === ColumnType::Reference)
+                    === (ColumnType::fromJsonSchema($target) === ColumnType::Reference)
                 ),
             )
             ->warnings(source: $sourceWarnings, dest: $targetWarnings)
@@ -456,7 +459,7 @@ class SyncForm
         $container->getComponentByStatePath('schema')?->hydrateState($defaultState);
     }
 
-    /** @return array{type: 'object', properties: array<string, array{title: string, type: string, format?: string, minLength?: int, maxLength?: int, minimum?: int, description?: string}>} */
+    /** @return array{type: 'object', properties: array<string, array{title: string, type: string, format?: string, x-ferry-reference?: true, minLength?: int, maxLength?: int, minimum?: int, description?: string}>} */
     private static function sourceSchema(?ConnectionMetadata $object, bool $withKey = true): array
     {
         $properties = [];

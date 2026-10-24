@@ -184,7 +184,7 @@ final readonly class JsonSchema
             }
             $format = $this->annotation('format');
             if ($format !== null) {
-                return $format === 'ferry-reference' ? 'uuid' : $format;
+                return $format;
             }
             $types = array_values(array_diff($types, ['null']));
         }
@@ -347,8 +347,10 @@ final readonly class JsonSchema
         return $this->types() === ['null'] ? 'null' : null;
     }
 
-    /** @param 'title'|'description'|'format'|'x-icon'|'x-color' $name */
-    public function annotation(string $name): ?string
+    /**
+     * @return ($name is 'title'|'description'|'format'|'x-icon'|'x-color' ? string|null : mixed)
+     */
+    public function annotation(string $name): mixed
     {
         if (array_key_exists($name, $this->definition)) {
             return $this->definition[$name];

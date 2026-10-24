@@ -163,6 +163,19 @@ it('uses each cast result as the input to the next cast without resolving handle
     'integer to integer' => ['integer', ColumnType::Integer],
 ]);
 
+it('clears reference metadata when explicitly casting to a string', function () {
+    $input = JsonSchema::fromArray([
+        'type' => ['string', 'null'],
+        'format' => 'uuid',
+        'x-ferry-reference' => true,
+    ]);
+    $output = Cast::make()->getOutputSchema($input, ['type' => 'string']);
+
+    expect($output->toArray())->toBe(['type' => ['string', 'null']]);
+    expect(ColumnType::fromJsonSchema($output))->toBe(ColumnType::String);
+    expect(Trim::make()->accepts($output))->toBeTrue();
+});
+
 it('disables and rejects the current cast type in the native form', function (array $definition, string $current) {
     $schema = Schema::make(SchemaHost::make())
         ->statePath('data')
@@ -187,7 +200,11 @@ it('keeps all cast targets available when the current type is unknown or a union
     );
 
     expect($schema->getComponent('type')->getEnabledOptions())->toBe(ColumnType::castableOptions());
-})->with([[[]], [['type' => ['string', 'number', 'null']]], [['type' => 'string', 'format' => 'ferry-reference']]]);
+})->with([
+    [[]],
+    [['type' => ['string', 'number', 'null']]],
+    [['type' => 'string', 'format' => 'uuid', 'x-ferry-reference' => true]],
+]);
 
 it('keeps the Kafka null replacement default implicit and persists disabling it', function (?string $setting) {
     $schema = Schema::make(SchemaHost::make())

@@ -50,7 +50,7 @@ it('registers native editors for basic types and string formats', function (arra
     'null' => [['type' => 'null'], TextInput::class],
     'enum' => [['type' => 'string', 'enum' => ['draft', 'active']], Select::class],
     'uuid' => [['type' => 'string', 'format' => 'uuid'], TextInput::class],
-    'reference' => [['type' => 'string', 'format' => 'ferry-reference'], TextInput::class],
+    'reference' => [['type' => 'string', 'format' => 'uuid', 'x-ferry-reference' => true], TextInput::class],
     'phone' => [['type' => 'string', 'format' => 'phone'], TextInput::class],
     'email' => [['type' => 'string', 'format' => 'email'], TextInput::class],
     'date' => [['type' => 'string', 'format' => 'date'], DatePicker::class],
@@ -91,6 +91,10 @@ it('round trips built-in static values with their native types', function (array
     'enum' => [['type' => 'string', 'enum' => ['draft', 'active']], 'active'],
     'uuid' => [
         ['type' => 'string', 'format' => 'uuid'],
+        '550e8400-e29b-41d4-a716-446655440000',
+    ],
+    'reference' => [
+        ['type' => 'string', 'format' => 'uuid', 'x-ferry-reference' => true],
         '550e8400-e29b-41d4-a716-446655440000',
     ],
     'email' => [['type' => 'string', 'format' => 'email'], 'user@example.com'],
@@ -149,6 +153,7 @@ it('validates submitted values through built-in fields', function (array $proper
     'required' => [['type' => 'string'], ''],
     'length' => [['type' => 'string', 'maxLength' => 3], 'long'],
     'uuid' => [['type' => 'string', 'format' => 'uuid'], 'invalid'],
+    'reference' => [['type' => 'string', 'format' => 'uuid', 'x-ferry-reference' => true], 'invalid'],
     'email' => [['type' => 'string', 'format' => 'email'], 'invalid'],
     'phone' => [['type' => 'string', 'format' => 'phone'], 'letters'],
     'integer' => [['type' => 'integer'], '1.5'],
