@@ -3,7 +3,7 @@
 namespace PHPinnacle\Ferry\Enums;
 
 use Filament\Support\Contracts\HasLabel;
-use PHPinnacle\Ferry\Forms\JsonSchema;
+use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Rosetta\Contracts\Field;
 use PHPinnacle\Rosetta\Enums\FieldType;
 use PHPinnacle\Rosetta\Fields\NumberField;

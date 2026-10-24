@@ -3,10 +3,10 @@
 namespace PHPinnacle\Ferry\Data;
 
 use JsonSerializable;
+use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Casts\FieldDecoder;
 use PHPinnacle\Ferry\Enums\ColumnType;
 use PHPinnacle\Ferry\Enums\FieldKind;
-use PHPinnacle\Ferry\Forms\JsonSchema;
 use PHPinnacle\Rosetta\Contracts\Field;
 use PHPinnacle\Rosetta\Fields\StringField;
 

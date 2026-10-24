@@ -25,6 +25,7 @@
         "filament/filament": "^4.0|^5.0",
         "php": "^8.4",
         "phpinnacle/common": "^1.0",
+        "phpinnacle/eidos": "^1.0",
         "phpinnacle/franz": "^1.0",
         "phpinnacle/jason": "^1.0",
         "phpinnacle/rosetta": "^1.0",

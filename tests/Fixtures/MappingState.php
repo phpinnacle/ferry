@@ -2,7 +2,7 @@
 
 namespace PHPinnacle\Ferry\Tests\Fixtures;
 
-use PHPinnacle\Ferry\Forms\FieldMapping;
+use PHPinnacle\Eidos\Forms\FieldMapping;
 
 /**
  * @phpstan-import-type SourceEntry from FieldMapping

@@ -4,7 +4,7 @@ namespace PHPinnacle\Ferry\Services;
 
 use Illuminate\Container\Attributes\Singleton;
 use LogicException;
-use PHPinnacle\Ferry\Forms\JsonSchema;
+use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Transformation;
 
 /**

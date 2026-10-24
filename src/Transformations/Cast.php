@@ -4,8 +4,8 @@ namespace PHPinnacle\Ferry\Transformations;
 
 use Filament\Forms\Components\Select;
 use Filament\Support\Icons\Heroicon;
+use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Enums\ColumnType;
-use PHPinnacle\Ferry\Forms\JsonSchema;
 use PHPinnacle\Ferry\Transformation;
 
 final class Cast

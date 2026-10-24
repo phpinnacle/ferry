@@ -1,7 +1,7 @@
 <?php
 
+use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Enums\ColumnType;
-use PHPinnacle\Ferry\Forms\JsonSchema;
 use PHPinnacle\Rosetta\Contracts\Field;
 use PHPinnacle\Rosetta\Enums\FieldType;
 use PHPinnacle\Rosetta\Fields\NumberField;

@@ -2,7 +2,7 @@
 
 [![Latest Version on Packagist](https://img.shields.io/packagist/v/phpinnacle/ferry.svg?style=flat-square)](https://packagist.org/packages/phpinnacle/ferry)
 
-Ferry manages 1C database connections, source structure snapshots, synchronization mappings, and Kafka Connect connectors in Filament. It also provides reusable `FieldMapping` and `FieldBinding` form fields.
+Ferry manages 1C database connections, source structure snapshots, synchronization mappings, and Kafka Connect connectors in Filament. Its forms use reusable `FieldMapping` and `FieldBinding` fields from Eidos.
 
 ## Features
 
@@ -10,8 +10,7 @@ Ferry manages 1C database connections, source structure snapshots, synchronizati
 - `ConnectionFactory` service that tests current (possibly unsaved) form values, always closes the temporary connection, and reports a sanitized result.
 - Queued structure preparation built on `phpinnacle/rosetta`, storing the semantic 1C metadata as `ConnectionMetadata` records.
 - Filament `ConnectionResource` with create/edit/list pages, "Test connection" and "Fetch structure" actions, a structure status badge and driver-based default port suggestion.
-- Reusable JSON Schema-based `FieldMapping` form field with connection lines, type checks, array collections, inline static editors, and reversible column layout.
-- `FieldBinding` form field that binds configured sources to strings or custom Filament schemas.
+- JSON Schema-based mapping and binding forms built on `phpinnacle/eidos`, with Ferry-owned transformation settings and logical column compatibility.
 - `Sync` model storing the source object, the field mapping schema and the generated destination table name.
 - Static destinations: application-registered tables such as customers or products that synchronizations fill instead of a generated table.
 - Filament `SyncResource` that selects an active connection with a ready structure and an object from the published snapshot, maps source fields to column names and keeps the physical destination table in sync with the record.
@@ -134,7 +133,7 @@ The connection, object, and destination selectors use native browser selects wit
 
 Synchronization source schemas retain available Rosetta constraints through `ColumnType::jsonSchema($field)`. Strings with a positive length expose `maxLength`; fixed strings also expose the same `minLength`. Equal lower and upper limits are displayed as one value, such as `9`, instead of `9–9`. Zero or unknown length is unbounded. Non-negative numbers expose `minimum: 0`. Numeric descriptions show the available precision and scale, plus an exact textual range when both are known; large decimal bounds are built without floating-point conversion. Compact cards show this information when their title is hovered or focused. These descriptions summarize type metadata. Rosetta property comments are preserved in the source snapshot but are not included in the synchronization mapping cards. Numeric upper bounds remain textual hints rather than rounded JSON Schema numbers.
 
-The static synchronization form checks exact formats and logical reference types to preserve its `ColumnType` contract: references and dates require an explicit Cast before connecting to a plain string destination. The reusable `FieldMapping` component keeps its more general directional format compatibility described below.
+The static synchronization form checks exact formats and logical reference types to preserve its `ColumnType` contract: references and dates require an explicit Cast before connecting to a plain string destination. The reusable `FieldMapping` component keeps Eidos's more general [directional format compatibility](https://github.com/phpinnacle/eidos#compatibility-and-output-schemas).
 
 ## Transforms
 
@@ -169,12 +168,12 @@ Transformation::make('replace')
 
 Labels, icons, descriptions, and colors accept values or closures. `color()` defaults to `primary` and accepts a Filament color name, a shade palette such as `Color::Emerald`, or `null`, styling source chips. The Add transform picker uses plain labels. `schema()` accepts an array of Filament components or a closure receiving the selected `?ConnectionMetadata $object` and the preceding `?JsonSchema $input`; `getSchema($object, $input)` returns fresh components for each form. Fluent methods return a new description, leaving the original unchanged.
 
-`inputSchema()` describes supported values using the same compatibility rules as `FieldMapping`: types, enums, directional formats, string lengths and array items. Alternatively, pass a predicate `fn (JsonSchema $input) => bool` to define custom compatibility checks. Without an input schema, a description accepts any input. `accepts($input)` checks a `Forms\JsonSchema` value object directly, without projecting it to `ColumnType`.
+`inputSchema()` describes supported values using the same compatibility rules as `FieldMapping`: types, enums, directional formats, string lengths and array items. Alternatively, pass a predicate `fn (JsonSchema $input) => bool` to define custom compatibility checks. Without an input schema, a description accepts any input. `accepts($input)` checks a `PHPinnacle\Eidos\Forms\JsonSchema` value object directly, without projecting it to `ColumnType`.
 
 `outputSchema()` declares a fixed JSON Schema array or a callback receiving the full input schema and settings. For example, a string transform that preserves null values can declare:
 
 ```php
-use PHPinnacle\Ferry\Forms\JsonSchema;
+use PHPinnacle\Eidos\Forms\JsonSchema;
 
 ->outputSchema(fn (JsonSchema $input, array $params) => [
     'type' => in_array('null', $input->types(), true) ? ['string', 'null'] : 'string',
@@ -222,7 +221,7 @@ Transform settings are ordered `['type' => 'mask', 'data' => ['replacement' => '
 
 ### Built-in transforms
 
-The built-in `CastTransform` casts a field to a `ColumnType`. `ColumnType::castType()` exposes its Kafka Connect type and is `null` for references and dates, which Kafka Connect cannot cast. The native Cast selector disables the current type using the output of preceding transforms, including nullable scalar inputs. Unknown inputs or unions with several non-null types keep every supported target available. Repeated casts can alternate between types.
+The built-in `CastTransform` casts a field to a `ColumnType`. It accepts unions of scalar types, including null, and rejects arrays and objects. `ColumnType::castType()` exposes its Kafka Connect type and is `null` for references and dates, which Kafka Connect cannot cast. The native Cast selector disables the current type using the output of preceding transforms, including nullable scalar inputs. Unknown inputs or unions with several non-null types keep every supported target available. Repeated casts can alternate between types.
 
 **Replace null with default** controls Kafka's `replace.null.with.default`: it defaults to Yes and uses the default declared in the field schema, preserving null when no default exists. Choosing No stores `replace_null_with_default: "false"`; the default Yes remains implicit. The output schema remains nullable when the input is nullable, because a Kafka field default is not guaranteed.
 
@@ -245,6 +244,31 @@ The predicate runs at its position in the ordered chain, so preceding Trim or Ca
 The form stores `condition`, `mode`, and `missing_or_null_behavior` (`include`, `exclude`, or `fail`; default `include`). These settings configure [Confluent's `Filter$Value`](https://docs.confluent.io/kafka-connectors/transforms/current/filter-confluent.html). Kafka Connect checks JSONPath syntax; Ferry validates the required expression and enum settings. Confluent applies missing/null behavior to paths outside predicates; missing or null references inside `[?()]` are treated as undefined and do not match. Ferry emits a predicate, so those native predicate semantics apply. Filters skip tombstones through the negated `RecordIsTombstone` predicate, preserving Debezium deletions.
 
 The source connector captures fields with a target or transforms; unbound filter fields are excluded from destination writes by the sink whitelist. The form resets source settings when the connection, object or destination changes. Saved filters using the former `type`/`value` comparison parameters must be reconfigured as predicates; there is no automatic conversion of stored settings.
+
+### Source settings and transforms
+
+For the Ferry transformation editor, use the standalone `FieldTransforms` field:
+
+```php
+use PHPinnacle\Ferry\Forms\FieldTransforms;
+
+->sourceSettings(fn (string $source) => [
+    FieldTransforms::make('transforms')
+        ->label($source)
+        ->object($object)
+        ->inputSchema($sourceSchema['properties'][$source]),
+])
+```
+
+`object()` accepts the selected `?ConnectionMetadata`, which is passed to transformation forms. `inputSchema(array|Closure)` supplies the original source property definition. The field passes this complete schema through `TransformRegistry::resultSchema()` to determine compatible additions. Mapping consumers use the same result in their `outputSchema()` callbacks for hints and connection checks. For static source settings, pass `fn () => $inputSchema()->toArray()` to `FieldTransforms::inputSchema()`; Eidos supplies this closure through the source-settings callback.
+
+An empty editor shows a muted `+ Transform` aligned with the source title, without a frame, shadow, background, or hover tooltip. Hovering the enabled plus button or Transform label, or focusing the editor, emphasizes the text and plus icon together. Empty footer space leaves them muted. In `FieldMapping`, it can start or complete a connection in either direction, including inverse mode. Only `+ Transform` opens the catalog in an empty editor. With transforms, a native Filament input frame contains a persistent `+` button and compact chips; its free space also opens the catalog. One row is reserved so the first chip does not change the input height. Further chips wrap while the add button stays on the first row. The Add transform button stays visible but disabled when no compatible transforms are available.
+
+Transforms can repeat. Those with settings open a native form; others are added immediately. Click a configurable chip label to edit, its separate remove button to delete, and drag the label or press Alt+Left / Alt+Right to reorder. Settings modals contain no deletion action. Ordering blocks positions that make the complete schema chain incompatible, refreshing allowed positions after parameter or input changes. Hovering and rejected moves make no request; accepted orders are checked again on the server before state changes. Existing chips remain editable and removable after an incompatible change, but submission rejects the chain and additions remain unavailable until it is corrected. Native parameter forms retain their validation.
+
+`FieldTransforms` actions partially render their editor by default; use `partiallyRenderAfterStateUpdated(false)` when an application needs a full form refresh. Parameter forms are built when opened, rather than while rendering every source menu.
+
+`FieldTransforms` configures Common’s `InlineBuilder` with transformation blocks and owns the JSON Schema compatibility checks and string parameter contract. The shared editor owns ordered `type`/`data` state, native parameter forms, menus, chips and ordering. Neither mapping component interprets this format or requires a transformation registry.
 
 ### Editing synchronization transforms
 
@@ -290,334 +314,20 @@ Debezium only snapshots a source connector's tables once, when its replication s
 
 ## Field mapping
 
-`FieldMapping` connects the named properties of two inline JSON Schema objects. Configuration accepts arrays or Filament-evaluated closures. Property names are stable identifiers, including numeric names and names containing dots.
+Ferry uses Eidos's `PHPinnacle\Eidos\Forms\FieldMapping` and `FieldBinding` fields. Their state, configuration, static editors, presentation and asset setup are documented in the [Eidos README](https://github.com/phpinnacle/eidos#field-mapping). Replace former `PHPinnacle\Ferry\Forms` imports for these fields and their `JsonSchema`, `SchemaCompatibility`, and `BuiltinStaticForms` helpers with `PHPinnacle\Eidos\Forms`.
 
-Ferry's `Forms\JsonSchema` adapter uses [Jason](https://github.com/phpinnacle/jason) for schema values and local JSON Pointer `$ref` resolution. Serialized definitions retain their original references; property views resolve them. Mapping fields require schema object definitions; Boolean schemas are rejected by this adapter.
+Published mapping/binding translation overrides now belong under `phpinnacle-eidos::schema-forms.*`. Republish assets with `php artisan filament:assets`, scan Eidos views in the application theme, and rebuild the theme after updating.
 
-```php
-use PHPinnacle\Ferry\Forms\FieldMapping;
-
-FieldMapping::make('mapping')
-    ->jsonSchema(
-        source: ['type' => 'object', 'properties' => [
-            'name' => ['type' => 'string', 'title' => 'Display name'],
-            'email' => ['type' => 'string'],
-            'phones' => ['type' => 'array', 'items' => ['type' => 'string']],
-        ]],
-        dest: ['type' => 'object', 'required' => ['contact'], 'properties' => [
-            'contact' => ['type' => 'string', 'title' => 'Contact name'],
-            'phone_numbers' => ['type' => 'array', 'items' => ['type' => 'string']],
-        ]],
-    );
-```
-
-Required destinations come from the destination object's `required` list. Array destinations derive their multiple-connection capability from `type: array` and `items`.
-
-### State and connections
-
-State is one list of rows, with every source represented exactly once. A source row contains `kind: source`, its literal `source` identifier, a nullable `target`, and its settings:
-
-```php
-[
-    ['kind' => 'source', 'source' => 'name', 'target' => 'contact'],
-    ['kind' => 'source', 'source' => 'email', 'target' => null],
-    ['kind' => 'source', 'source' => 'phones', 'target' => 'phone_numbers'],
-]
-```
-
-An array destination accepts a whole-array source or several item sources. Each item is a separate source row naming the same target; list order preserves item order. The component derives whole-array versus item mode from the effective source and destination schemas. A string `name` and a string `email` can therefore both name `phone_numbers`, while an array `phones` connects to that target as a whole value.
-
-Connecting a whole array replaces the individual items; connecting an item replaces a whole array. Arrays are never flattened. An array source can itself become an item when `items` describes a compatible array. Each source permits at most one connection. Click a line to remove it, or focus it and press Enter or Space.
-
-`inverse()` only swaps the columns: destinations appear on the left and sources on the right. State, static editors, cardinality, and source settings stay the same, so switching orientation requires no data conversion.
-
-### Compatibility and output schemas
-
-Schema compatibility is directional: declared source values must fit the destination's supported constraints. Checks include types, nullability, formats, string lengths, alternatives, and nested array items. An omitted type imposes no type restriction; other supported constraints still apply. An `integer` source can connect to a `number` destination without a Cast; the reverse requires an explicit transformation. This also applies to unions and nested array items, preserving nullability and enum restrictions. Other type names must match. A formatted string can connect to an unrestricted string. A destination with a format requires the same source format: UUID cannot connect to `date` or `date-time`, and `date` cannot connect to `date-time`.
-
-String bounds use JSON Schema's `minLength` and `maxLength`. A source maximum of 255 cannot connect to a destination maximum of 64; 64 can connect to 255 or an unbounded destination. A missing source maximum is unbounded, and a missing minimum is zero. Formats do not imply length bounds. Composed `allOf` bounds intersect; every source alternative must fit a destination alternative.
-
-Both optional checks are enabled by default. Configure them per field with an immutable `SchemaCompatibility` value:
-
-```php
-use PHPinnacle\Ferry\Forms\SchemaCompatibility;
-
-FieldMapping::make('mapping')
-    ->jsonSchema(source: $sourceSchema, dest: $destinationSchema)
-    ->compatibility(
-        SchemaCompatibility::make()
-            ->formats()
-            ->stringLengths(false)
-    );
-```
-
-`formats(false)` disables format checks; `stringLengths(false)` disables both length checks. Type, nullability, and array-item checks remain active. Add application restrictions with `canConnectUsing()`:
-
-```php
-use PHPinnacle\Ferry\Forms\JsonSchema;
-
-->canConnectUsing(fn (JsonSchema $source, JsonSchema $target) =>
-    ($source->toArray()['x-domain'] ?? null) === ($target->toArray()['x-domain'] ?? null)
-)
-```
-
-The callback receives effective source and destination property schemas, or the destination item schema for an item connection. It runs only after the configured checks pass and cannot override their rejection. `toArray()` exposes each inline definition, including application metadata. The same server-computed connection modes drive client availability and form validation.
-
-The component projects `type`, `format`, `minLength`, `maxLength`, `enum`, `items`, `required`, `properties`, `allOf`, `anyOf`, and `oneOf` definitions after resolving local references. An enum destination requires an explicit source enum whose values are a subset of its allowed values; an unrestricted string or date cannot connect to a Status enum. `allOf` intersects enum constraints and types, treating `number` intersected with `integer` as `integer`; array items use the same checks. Enum equality preserves JSON value types, compares numbers by value, and ignores object property order. These are Ferry's compatibility rules; they do not validate runtime payloads or prove arbitrary JSON Schema containment. Other constraints such as `pattern`, numeric bounds, item counts, and uniqueness are displayed as metadata but are not enforced by connection compatibility; native static editors remain responsible for their value validation.
-
-Use `outputSchema(array|Closure)` for the effective source object schema after applying source settings. It replaces the input schema for source type chips, constraint hints and compatibility checks. Declare only formats and bounds guaranteed by the transformation: a logical string output alone does not preserve an email/UUID format or establish a length limit. The consumer supplies this schema; the field does not execute transforms or infer their guarantees.
-
-### Static values
-
-Use `FieldMapping::staticValues()` to add static source cards and connect them manually to existing destinations. The default is disabled; `staticValues(false)` disables the mode. **Add static value** creates an unconnected `static_N` card titled `Static N`, with a full-width string input, Value placeholder, and accessible hidden label. Existing scalar values retain their native types. These cards use the usual compatibility checks, support Inverse mode, and accept the configured `sourceSettings()` schema.
-
-Disconnecting retains the card as a draft. While disconnected, a gray trash action on the right of the footer removes it; the action is hidden while connected. It aligns with the first row of source settings, reserving space so transforms do not shift or overlap it. It appears on card hover or keyboard focus and stays visible on devices without hover. Only connected cards appear in submitted rows, so an empty unconnected Value does not require validation. Connected values must be non-empty scalars.
-
-```php
-FieldMapping::make('mapping')
-    ->jsonSchema(source: $sourceSchema, dest: $destinationSchema)
-    ->staticValues();
-```
-
-Static source settings receive the generated identifier as `$source` and a `Closure(): JsonSchema` as `$inputSchema`; normal source settings receive `null` for `$inputSchema`. Pass `fn () => $inputSchema()->toArray()` to `FieldTransforms::inputSchema()`. An `outputSchema()` callback should start from `$component->getSourceSchema()`, which includes the static cards, and apply the supplied settings to determine compatibility. The field does not execute or infer transforms. Submitted static rows retain `kind`, `target`, and `static`, plus their validated source settings; there is no extra source identifier or rename in the public row.
-
-The static-source mode replaces destination-side `staticForms()` editors while enabled. Without `staticValues()`, static values use rows such as `['kind' => 'static', 'target' => 'contact', 'static' => 'Customer']`. Without a matching `staticForms()` editor, non-empty scalar values are accepted. With an editor, its native rules and casts define accepted values. These destination-side static values count as mapped without a source or line in either orientation; the consumer owns domain validation.
-
-Use `withBuiltinStaticForms()` to register standard Filament editors:
-
-```php
-FieldMapping::make('mapping')
-    ->jsonSchema(source: $sourceSchema, dest: $destinationSchema)
-    ->withBuiltinStaticForms();
-```
-
-| JSON Schema type or format | Editor |
-| --- | --- |
-| `string` | `TextInput`; string enums use `Select` |
-| `uuid` | `TextInput` with UUID validation |
-| `phone`, `email` | Telephone or email `TextInput` |
-| `date`, `time`, `date-time` | `DatePicker`, `TimePicker`, `DateTimePicker` |
-| `integer`, `number` | Integer or numeric `TextInput` |
-| `boolean` | `Toggle`; nullable booleans use a three-state `Select` |
-| `array` with string, numeric, or Boolean `items` | Simple `Repeater` with the item's string, numeric, enum, date/time, or Boolean editor |
-| Other arrays, nullable arrays, `object` | No built-in editor; register a custom `staticForms()` factory |
-| `null` | Read-only null value |
-
-The built-in fields follow destination `required` and nullable types, string length limits, and numeric minimum/maximum bounds. Dates serialize as `Y-m-d`, times as `H:i:s`, and date-times as `Y-m-d\TH:i:sP`. Repeaters use `items` to select and validate each field, apply `minItems` and `maxItems`, and use Filament's distinct validation for string and numeric `uniqueItems`. Boolean items use a Select. Empty arrays are allowed unless `minItems` requires entries. Existing custom type factories take precedence when `withBuiltinStaticForms()` is called after `staticForms()`.
-
-There are no built-in JSON editors. Objects, arrays without a supported scalar item type, and nullable arrays offer connections only unless a custom factory is registered. The installed Filament simple repeater cannot hydrate composite items without changing their values or preserve `null` separately from `[]`.
-
-Use `staticForms()` to assign custom inline Filament editors to JSON Schema types:
-
-```php
-use Filament\Forms\Components\TextInput;
-use Filament\Forms\Components\Toggle;
-
-FieldMapping::make('mapping')
-    ->jsonSchema(source: $sourceSchema, dest: $destinationSchema)
-    ->staticForms([
-        'string' => fn () => TextInput::make('value')->hiddenLabel()->required()->maxLength(120),
-        'boolean' => fn () => Toggle::make('value')->label('Enabled')->default(false),
-    ]);
-```
-
-Each factory returns a fresh field named `value`, or `null` when the property is unsupported. It can receive the destination identifier as `$target`, the matched schema type as `$type`, and the `FieldMapping` as `$component`. The component selects the non-null type of a nullable property; a null-only property matches the `null` factory. Every destination whose factory returns a field shows an editor; unavailable factories, unregistered types, and unions with several non-null types offer connections only. There is no fallback text editor or static-value checkbox.
-
-An unconnected destination immediately shows its configured editor and becomes a static value initialized with the field's default. Every visible editor counts as mapped, including an empty one. Its native validation, state casts, and dehydration callbacks run on submission; `required()` can reject an empty editor. Values retain their field's type, including `false`, zero, arrays, and `null` when allowed. Custom factories must declare their own value validation.
-
-Livewire uses encoded source and destination keys internally so dots and numeric names remain literal identifiers. Fill the form with the public row list; submitted `getState()` uses the same shape and preserves typed values. Editor templates are rendered up front; Alpine mounts or removes them when connections change, without a server request. Connecting a source replaces and hides the static editor. Removing the destination's final connection restores it with a fresh copy of the configured default, so edits to nested values do not change future resets. Native live fields and actions still make their usual requests. Native child actions, including Repeater Add, work on their first request after local connection changes.
-
-### Source settings and transforms
-
-Both `FieldMapping` and `FieldBinding` accept `sourceSettings(array|Closure)`: a native Filament schema displayed inside every source card, including unconnected or unbound sources. A closure can receive the literal source identifier as `$source`. Each source has a separate child schema with its own defaults, validation, relative `Get`/`Set`, callbacks, and dehydration. Use `live()` on fields that must recompute other server-rendered configuration.
-
-```php
-->sourceSettings(fn (string $source) => [
-    TextInput::make('alias')->default($source)->required(),
-    Toggle::make('enabled')->default(true),
-])
-```
-
-Settings are validated and submitted for every source, including sources with `target: null`. Removing a connection preserves its source settings. A configured `FieldTransforms::make('transforms')` produces `transforms` alongside `kind`, `source`, and `target`; reserve those keys for row metadata. `getSourceSettings()` reads all current source-keyed settings for callbacks such as `outputSchema()`, before native child dehydration. The components do not interpret the settings.
-
-For the Ferry transformation editor, use the standalone `FieldTransforms` field:
-
-```php
-use PHPinnacle\Ferry\Forms\FieldTransforms;
-
-->sourceSettings(fn (string $source) => [
-    FieldTransforms::make('transforms')
-        ->label($source)
-        ->object($object)
-        ->inputSchema($sourceSchema['properties'][$source]),
-])
-```
-
-`object()` accepts the selected `?ConnectionMetadata`, which is passed to transformation forms. `inputSchema(array|Closure)` supplies the original source property definition. The field passes this complete schema through `TransformRegistry::resultSchema()` to determine compatible additions. Mapping consumers use the same result in their `outputSchema()` callbacks for hints and connection checks.
-
-An empty editor shows a muted `+ Transform` aligned with the source title, without a frame, shadow, background, or hover tooltip. Hovering the enabled plus button or Transform label, or focusing the editor, emphasizes the text and plus icon together. Empty footer space leaves them muted. In `FieldMapping`, it can start or complete a connection in either direction, including inverse mode. Only `+ Transform` opens the catalog in an empty editor. With transforms, a native Filament input frame contains a persistent `+` button and compact chips; its free space also opens the catalog. One row is reserved so the first chip does not change the input height. Further chips wrap while the add button stays on the first row. The Add transform button stays visible but disabled when no compatible transforms are available.
-
-Transforms can repeat. Those with settings open a native form; others are added immediately. Click a configurable chip label to edit, its separate remove button to delete, and drag the label or press Alt+Left / Alt+Right to reorder. Settings modals contain no deletion action. Ordering blocks positions that make the complete schema chain incompatible, refreshing allowed positions after parameter or input changes. Hovering and rejected moves make no request; accepted orders are checked again on the server before state changes. Existing chips remain editable and removable after an incompatible change, but submission rejects the chain and additions remain unavailable until it is corrected. Native parameter forms retain their validation.
-
-`FieldTransforms` actions partially render their editor by default; use `partiallyRenderAfterStateUpdated(false)` when an application needs a full form refresh. `FieldBinding` adds and removes static pairs by rendering only its static section, preserving other editor drafts. With array-defined source and destination schemas, `FieldMapping` updates affected source cards, its static section when needed, and the server-calculated connection matrix. Live source-setting updates can also refresh type headings without rebuilding other editors. Search, visibility filters, mappings and other drafts remain in place. Source or destination schema callbacks retain full component rendering because they can change the set of fields. Parameter forms are built when opened, rather than while rendering every source menu.
-
-Built-in scalar value transforms reject arrays and objects; Filter accepts every input type because its predicate can inspect nested values. Custom descriptions can declare their input schemas. Cast accepts unions of scalar types, including null. The built-in string transforms require a known string type, optionally nullable, and reject logical date/reference formats. `FieldTransforms` configures Common’s `InlineBuilder` with transformation blocks and owns the JSON Schema compatibility checks and string parameter contract. The shared editor owns ordered `type`/`data` state, native parameter forms, menus, chips and ordering. Neither mapping component interprets this format or requires a transformation registry.
-
-### Presentation and assets
-
-Property `title`, `description`, `x-icon`, and `x-color` provide presentation metadata for mapping cards and binding sources. The property key is the technical name shown beside its title and the identifier used in state and connections. Search includes both the title and property key. `x-color` accepts a registered Filament color name or a literal hex/RGB color for the icon and title. Cards display the technical name, required marker, constraint hints, type chips, description and warnings; omitted icons reserve no space. Formats replace the general type label. Reference schemas display their standard `uuid` format; Ferry interprets `x-ferry-reference: true` for logical column types and transformations, while reusable mapping components do not interpret that annotation. Nullable types add a `null` chip, and enum tooltips list allowed values. `x-badges` accepts a list such as `[['label' => 'Imported', 'color' => 'info']]`; the type chip appears last. For framework schema builders, pass their inline `toArray()` result.
-
-Array chevrons expand item schemas and their scoped constraints, one row per nested level. Field constraints remain in the heading. Details start collapsed and work on connected or disabled cards without changing selection; lines follow card resizing. Source actions appear below the metadata. Colors use Filament's `primary` palette for connections, `warning` for required destinations and `danger` for conflicts, in light and dark themes.
-
-Add source actions through `sourceSettings()` with Filament's native `Actions` component. The callback receives the source identifier, including for disconnected sources and inverse mode:
-
-```php
-use Filament\Actions\Action;
-use Filament\Notifications\Notification;
-use Filament\Schemas\Components\Actions;
-
-->sourceSettings(fn (string $source) => [
-    Actions::make([
-        Action::make('inspect')
-            ->label('Inspect ' . $source)
-            ->action(fn () => Notification::make()->title($source)->send()),
-    ]),
-])
-```
-
-Capture `$source` in your callback or pass it through `arguments()`. Native action visibility, icons and tooltips remain available. Use the same schema for source settings fields and actions; there is no separate source-action registry.
-
-During selection, compatible candidates highlight with a check; incompatible cards and their editors dim with a cross, and existing lines fade. Compatible destinations can replace an existing connection or static value. Unavailable clicks preserve the selection and mappings without an error. Connection lines reveal a cross and use danger colors on hover or keyboard focus, together with both endpoint dots; activate the line to disconnect. This custom focus feedback replaces the browser's rectangular outline. Empty card space, including the source-settings footer, selects the card; native buttons and editors keep their own actions. Mark custom interactive areas with `data-field-interactive` to exclude their descendants from card selection and connection clicks. Leave surrounding empty space unmarked when it should still select the card. Outside selection, connected cards retain full contrast and existing incompatible connections remain visible for correction.
-
-Both components support these presentation options:
-
-| Option | Default | Behavior |
-| --- | --- | --- |
-| `labels(source: ..., dest: ...)` | Source / Destination or Binding | Set the column headings. |
-| `columnSpans(source: ..., target: ..., gap: ...)` | `5, 5, 2` | Set relative widths for sources, targets, and the connection area between them. |
-| `searchable()` | `false` | Show field search inputs. |
-| `contained()` | `true` | Show the outer border, background, and toolbar with its filter and counters. |
-| `dense()` | `false` | Reduce padding and gaps; use 56 px minimum cards instead of 80 px. |
-| `compact()` | `false` | Hide field descriptions and show them in title tooltips on hover or focus. |
-
-Labels accept strings or closures; the switches accept booleans or closures. Column spans are positive integers. For example, `->columnSpans(source: 4, target: 7, gap: 1)` gives the target more space while narrowing the connection area. In `FieldMapping::inverse()`, each width follows its source or target side. `FieldBinding` uses the same proportions for headings and rows, and still stacks them on narrow screens. Filament's `columnSpan()` continues to control the whole field's span in its parent form.
-
-`dense()` and `compact()` work independently. Dense source cards use a 4 px gap before source settings. Compact descriptions reserve no layout space. `contained(false)` preserves column headings, optional search, and editors. All combinations preserve form values. The FieldMapping toolbar has an All / Mapped / Unmapped switch, defaulting to All. It filters both sides, combines with search, and preserves all mappings and static values. Static destination values count as mapped. Changing the filter cancels a pending connection and refreshes visible lines; it makes no server request.
-
-Use `warnings(source: [...], dest: [...])` on `FieldMapping` or `warnings([...])` on `FieldBinding` to highlight fields. Both accept closures and retain warnings for unavailable identifiers. Escape cancels mapping selection; keyboard controls and dark mode are supported.
-
-Both fields keep their UI translations in `resources/lang/{locale}/schema-forms.php`, under `phpinnacle-ferry::schema-forms.*`. For published translation overrides, move the `mapping` and `binding` entries from `resources.php` into `schema-forms.php`. The shared static-value caption is `schema-forms.value`. Numeric source descriptions now use `resources.sync.constraints.{precision,scale,range}`; synchronization field captions remain under `resources.sync.fields.*`.
-
-The fields use package views without registering `FerryPlugin`. Filament includes the shared mapping/binding stylesheet and Common’s `InlineBuilder` stylesheet used by `FieldTransforms` in the page head so both render styled from the start; JavaScript loads on demand. The mapping/binding stylesheet contains no transformation editor styles. Publish assets after changes with `php artisan filament:assets`. JavaScript and CSS are distributed as source files and need no package build. Add the views to your application's Filament theme and rebuild it:
-
-```css
-@source '../../../../vendor/phpinnacle/ferry/resources/views/**/*.blade.php';
-```
-
-The path above assumes the theme lives at `resources/css/filament/admin/theme.css`.
-
-## Field binding
-
-`FieldBinding` displays separate source and destination cards and supports the presentation options above. Destination forms are always visible. Unbound forms are disabled beneath a translucent overlay with a centered **Bind** icon button and excluded from validation and submission. Click **Bind** to enable an editor. Bound cards have a connecting line with endpoint dots styled like `FieldMapping`. Hover or focus the line to reveal a cross and highlight it and both dots in danger; click it or press Enter or Space to unbind. Bind and unbind update locally without a request; the next request validates and submits the selected bindings. Unbind restores the form defaults prepared on page load.
-
-The FieldBinding toolbar has an All / Bound / Unbound switch, defaulting to All. It filters source/destination pairs, combines with source search, and preserves bindings, source settings, and editor drafts. Static pairs appear in All and Bound. Bind and unbind immediately update the visible pairs without a request.
-
-Unbound sources are submitted with `target: null` and retain their validated source settings. Their disabled destination editor drafts are excluded. Disabled fields disable binding controls and child inputs. Inline editors keep their own Livewire update settings. On narrow screens the line runs vertically between stacked cards. Source cards do not show a direction arrow. Connection controls remain visible on devices without hover. Hover and focus feedback starts after 100 ms and fades over 180 ms; leaving has no delay. Reduced-motion preferences disable the fade while retaining the short activation delay.
-
-Binding state is the same flat row list. Each source row contains `kind: source`, its `source` identifier, the editor data in `target` or null when unbound, and any configured source settings. Use `simple()` with a single Filament field to store its native value in `target`. Bound values must be non-null, including after native dehydration; `false`, `0`, and empty arrays are valid. Child fields retain their own validation and conversion rules. Add `required()` only when those stricter rules are wanted: it also rejects empty arrays and strings. An empty string is allowed if the child preserves it; fields that convert it to `null` fail submission while bound.
-
-Without an explicit field `default()`, each editor defaults to its literal source property key. For other field types, provide a suitable native default, for example `simple(Toggle::make('enabled')->default(false))`. Explicit defaults (including `null`), saved bindings, and edited values retain their native Filament behavior. Defaults do not bind sources automatically; an explicit `null` remains an editor draft until replaced with a non-null bound value. Custom `schema()` forms keep their own defaults.
-
-For example:
-
-```php
-use Filament\Forms\Components\TextInput;
-use PHPinnacle\Ferry\Forms\FieldBinding;
-
-FieldBinding::make('bindings')
-    ->jsonSchema(['type' => 'object', 'properties' => [
-        'name' => ['type' => 'string', 'title' => 'Customer name'],
-        'email' => ['type' => 'string', 'title' => 'Email address'],
-    ]])
-    ->simple(TextInput::make('destination')->required());
-
-// [['kind' => 'source', 'source' => 'name', 'target' => 'customer.name'],
-//  ['kind' => 'source', 'source' => 'email', 'target' => 'contact.email']]
-```
-
-Use `schema()` to store each binding as an associative array whose keys and values are defined by its child components:
-
-```php
-use Filament\Forms\Components\Select;
-
-FieldBinding::make('bindings')
-    ->jsonSchema(['properties' => ['name' => ['type' => 'string'], 'email' => ['type' => 'string']]])
-    ->schema([
-        TextInput::make('destination')->required(),
-        Select::make('transform')->options([
-            'trim' => 'Trim',
-            'lowercase' => 'Lowercase',
-        ]),
-    ]);
-
-// [['kind' => 'source', 'source' => 'name',
-//   'target' => ['destination' => 'customer.name', 'transform' => 'trim']],
-//  ['kind' => 'source', 'source' => 'email', 'target' => null]]
-```
-
-Choose `simple()` or `schema()` for a field. Both accept closures and use native Filament child schemas, including defaults, validation, reactive callbacks, relative state reads, and nested `Repeater` or `Builder` components. `destination` is an example field name, not a reserved key. Destination syntax, duplicate destinations, and transformation behavior belong to the consuming application; the component stores the configured data without interpreting paths or executing transformations.
-
-Use `staticValues()` with `simple()` or `schema()` to enable static pairs. The default is disabled; pass `staticValues(false)` to disable them explicitly. The component supplies a full-width native input with a Value placeholder and an accessible hidden label; it accepts scalar values. **Add static value** creates an immediately connected pair. With `simple()`, it uses the field's explicit default, or the first unused `static_N` destination when no default was configured. The source card shows a readable title (`Static 1`) alongside the technical property (`static_1`), without a separate section heading. Non-string simple targets are displayed as JSON. The right card reuses the configured field or schema without changing child names or rules. Hover or focus the connecting line to reveal a danger trash button, which removes the pair including its value and settings.
-
-```php
-FieldBinding::make('bindings')
-    ->jsonSchema(['properties' => ['name' => ['type' => 'string'], 'email' => ['type' => 'string']]])
-    ->simple(TextInput::make('destination')->required())
-    ->staticValues();
-
-// [['kind' => 'source', 'source' => 'name', 'target' => 'customer_name'],
-//  ['kind' => 'source', 'source' => 'email', 'target' => null],
-//  ['kind' => 'static', 'target' => 'status', 'static' => 'active']]
-```
-
-With `schema()`, each static pair receives the whole binding form and its own defaults, validation, nested components, and dehydration callbacks. Its source card is titled **Static value**, independently of the form's contents. The whole form is stored in `target`; no field is treated as the destination identifier, and no generated name is inserted into the form. Empty forms are stored as `[]`.
-
-```php
-use Filament\Forms\Components\Toggle;
-
-FieldBinding::make('bindings')
-    ->jsonSchema(['properties' => ['name' => ['type' => 'string']]])
-    ->schema([
-        TextInput::make('channel')->required(),
-        Toggle::make('enabled')->default(false),
-    ])
-    ->staticValues();
-
-// [['kind' => 'source', 'source' => 'name', 'target' => null],
-//  ['kind' => 'static', 'target' => ['channel' => 'audit', 'enabled' => false], 'static' => 'active']]
-```
-
-`sourceSettings()` also supplies settings after Value in static cards. Its callback may accept `?Closure $inputSchema = null`: static cards receive a closure returning their current input `JsonSchema`, while ordinary sources leave this argument null. For a static card, `$source` is its stable internal row key. Use the supplied closure in a transform editor's `inputSchema()` callback; existing native scalar values retain their types. Native dehydrated settings are included in the static row, alongside `static` and `target`.
-
-Without `staticValues()` the component rejects static rows on submission, and the bound-sources counter never includes them. This replaces the former `constants([...])` schema registration.
-
-Source bindings and static values share one serialized list. With `simple()`, static targets must be unique, compared with their native types. A static target may share a source identifier because their rows have explicit kinds; no value is overwritten. With `schema()`, repeated form values are allowed; the component does not infer uniqueness rules for any child field. Uniqueness of actual destinations across source and static rows remains the consumer's responsibility.
-
-Use `sourceSettings(fn (string $source) => [Actions::make([...])])` for native source actions, as with `FieldMapping`. They remain available on unbound sources.
-
-`jsonSchema(array|Closure)` supplies the source object schema and the same property metadata as `FieldMapping`. Its `required` annotations describe source properties; they do not require the user to bind them. The native `schema()` method continues to describe the per-binding Filament editor. Source identifiers retain their literal identity, including numeric identifiers and dots. `labels(source: 'Source', dest: 'Binding')` sets the headings and accepts closures. Configuration is trusted developer code; source identifiers and binding shapes are validated on submission, while the child fields define the value validation.
-
-`getBindingValues()` reads the current public row list for callbacks before native child dehydration. Submit the parent schema with `getState()` to run validation and return the list with native child values. Internal Livewire keys are encoded to preserve dots and numeric identifiers; fill forms using the public state shown above. Package views, theme setup and asset publishing are shared with `FieldMapping` as described above.
+The synchronization form supplies source and destination schemas, transformation settings, and effective output schemas. Ferry owns logical column compatibility through `canConnectUsing()`, including interpretation of `x-ferry-reference: true`; Eidos treats application annotations as opaque metadata.
 
 ## Testing
 
 ```bash
 vendor/bin/pest --no-coverage packages/ferry/tests
-node --test packages/ferry/tests/Unit/*Test.js
 node --test packages/common/tests/inline-builder.test.js
 ```
 
-Run these commands from the monorepo root. The PHP suite covers structure publication and stale runs, transactional table changes, destination constraints, connector requests, transformation rules, authorization, and form submission. It uses SQLite and transport doubles; no live 1C database or Kafka cluster is required. The JavaScript suite covers connection selection, cardinality, static values, preservation of source settings, and visible connection geometry using explicit server-provided connection modes. Common's shared editor suite covers constrained drag and keyboard ordering. PHP and JavaScript suites run independently; the JavaScript suite needs no PHP application or asset build.
+Run these commands from the monorepo root. The PHP suite covers structure publication and stale runs, transactional table changes, destination constraints, connector requests, transformation rules, authorization, and form submission. It uses SQLite and transport doubles; no live 1C database or Kafka cluster is required. Eidos’s JavaScript suite covers connection selection, cardinality, static values, preservation of source settings, and visible connection geometry using explicit server-provided connection modes. Common's shared editor suite covers constrained drag and keyboard ordering. PHP and JavaScript suites run independently; the JavaScript suite needs no PHP application or asset build.
 
 ## Changelog and license
 
