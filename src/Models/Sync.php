@@ -6,9 +6,10 @@ use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Facades\Config;
+use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Casts\SchemaCast;
 use PHPinnacle\Ferry\Casts\TransformsCast;
-use PHPinnacle\Ferry\Data\DestinationField;
 use PHPinnacle\Ferry\Data\FieldMapping;
 use PHPinnacle\Ferry\Data\TransformSetting;
 use PHPinnacle\Ferry\Enums\ColumnType;
@@ -16,6 +17,7 @@ use PHPinnacle\Ferry\Enums\DestinationType;
 use PHPinnacle\Ferry\Enums\SyncStatus;
 use PHPinnacle\Ferry\Models\Concerns\HasConnector;
 use PHPinnacle\Ferry\Observers\SyncObserver;
+use PHPinnacle\Jason\Schema;
 
 /**
  * @property string $id
@@ -72,6 +74,15 @@ class Sync extends Model
         'transforms',
     ];
 
+    protected static function booted(): void
+    {
+        static::creating(function (self $sync) {
+            if ($sync->type === DestinationType::Dynamic) {
+                $sync->destination = Config::string('phpinnacle-ferry.sync.table_prefix') . $sync->code;
+            }
+        });
+    }
+
     /** @param array{touch?: bool|null} $options */
     public function save(array $options = []): bool
     {
@@ -106,13 +117,10 @@ class Sync extends Model
         }
     }
 
-    /**
-     * @param list<DestinationField>|null $destinationFields
-     * @return list<string>
-     */
-    public function brokenColumns(?ConnectionMetadata $object, ?array $destinationFields = null): array
+    /** @return list<string> */
+    public function brokenColumns(?ConnectionMetadata $object, ?Schema $destinationSchema = null): array
     {
-        if ($object === null || $this->type === DestinationType::Static && $destinationFields === null) {
+        if ($object === null || $this->type === DestinationType::Static && $destinationSchema === null) {
             /** @var list<string> */
             return array_map(
                 static fn (FieldMapping $mapping) => $mapping->target ?? $mapping->source,
@@ -120,7 +128,8 @@ class Sync extends Model
             );
         }
 
-        $fields = array_column($destinationFields ?? [], null, 'id');
+        $schema = JsonSchema::fromArray($destinationSchema?->keywords() ?? []);
+        $fields = $schema->properties();
         $columns = [];
         $destinationColumns = [];
 
@@ -139,9 +148,14 @@ class Sync extends Model
                 }
             }
 
-            if ($mapping->target !== null && $destinationFields !== null) {
+            if ($mapping->target !== null && $destinationSchema !== null) {
                 $destinationField = $fields[$mapping->target] ?? null;
-                if ($destinationField === null || $type === null || !$type->canMapTo($destinationField->type)) {
+                if (
+                    $destinationField === null
+                    || $type === null
+                    || ($target = ColumnType::fromJsonSchema($destinationField)) === null
+                    || !$type->canMapTo($target)
+                ) {
                     $destinationColumns[] = $mapping->target;
                 }
             }
@@ -151,19 +165,18 @@ class Sync extends Model
             }
         }
 
-        foreach ($fields as $field) {
-            if ($field->required) {
-                $destinationColumns[] = $field->id;
+        foreach ($schema->required() as $column) {
+            if (array_key_exists($column, $fields)) {
+                $destinationColumns[] = $column;
             }
         }
 
         return array_values(array_unique([...$columns, ...$destinationColumns]));
     }
 
-    /** @param list<DestinationField>|null $destinationFields */
-    public function hasValidSchema(ConnectionMetadata $object, ?array $destinationFields = null): bool
+    public function hasValidSchema(ConnectionMetadata $object, ?Schema $destinationSchema = null): bool
     {
-        return $this->brokenColumns($object, $destinationFields) === [];
+        return $this->brokenColumns($object, $destinationSchema) === [];
     }
 
     /** @return list<string> */
@@ -232,8 +245,7 @@ class Sync extends Model
         return $changes;
     }
 
-    /** @param list<DestinationField>|null $destinationFields */
-    public function shouldResume(ConnectionMetadata $object, ?array $destinationFields = null): bool
+    public function shouldResume(ConnectionMetadata $object, ?Schema $destinationSchema = null): bool
     {
         if ($this->connector === null) {
             return false;
@@ -246,19 +258,24 @@ class Sync extends Model
         return (
             $this->status === SyncStatus::Pause
             && !$this->is_paused
-            && $this->hasValidSchema($object, $destinationFields)
+            && $this->hasValidSchema($object, $destinationSchema)
         );
     }
 
     /** @return array<string, string> */
-    public function columnMap(ConnectionMetadata $object, string $keyColumn = self::ID_COLUMN): array
+    public function columnMap(ConnectionMetadata $object, ?string $keyColumn = self::ID_COLUMN): array
     {
-        $columns = [ConnectionMetadata::KEY_COLUMN => $keyColumn];
+        $columns = $keyColumn !== null ? [ConnectionMetadata::KEY_COLUMN => $keyColumn] : [];
 
         foreach ($this->schema as $mapping) {
             $column = $mapping->source !== null ? $object->physicalColumn($mapping->source) : null;
 
-            if ($mapping->target !== null && $column !== null && $column !== ConnectionMetadata::KEY_COLUMN) {
+            if (
+                $mapping->target !== null
+                && $column !== null
+                && ($keyColumn === null
+                || $column !== ConnectionMetadata::KEY_COLUMN)
+            ) {
                 $columns[$column] = $mapping->target;
             }
         }

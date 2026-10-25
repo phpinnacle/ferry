@@ -18,15 +18,6 @@ class SyncObserver
         private readonly ConnectorManager $connectors,
     ) {}
 
-    public function creating(Sync $sync): void
-    {
-        $destination = $this->destinations->resolve($sync);
-
-        if ($sync->type === DestinationType::Dynamic) {
-            $sync->destination = $destination->table;
-        }
-    }
-
     public function created(Sync $sync): void
     {
         if ($sync->type === DestinationType::Dynamic) {
@@ -69,7 +60,7 @@ class SyncObserver
 
             if (
                 $object !== null
-                && $sync->shouldResume($object, $this->destinations->fieldsFor($sync))
+                && $sync->shouldResume($object, $this->destinations->schemaFor($sync))
                 && $this->transforms->appliesTo($sync)
             ) {
                 $this->connectors->activate($sync, refreshSource: false);

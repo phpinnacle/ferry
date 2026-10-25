@@ -16,6 +16,7 @@ use PHPinnacle\Ferry\Resources\Actions\CheckStatusAction;
 use PHPinnacle\Ferry\Resources\Syncs\Actions\ActivateSyncAction;
 use PHPinnacle\Ferry\Resources\Syncs\Actions\PauseSyncAction;
 use PHPinnacle\Ferry\Resources\Syncs\Actions\RestartSyncAction;
+use PHPinnacle\Ferry\Resources\Syncs\Schemas\SyncForm;
 use PHPinnacle\Ferry\Resources\Syncs\SyncResource;
 
 class SyncTable
@@ -59,7 +60,14 @@ class SyncTable
             ])
             ->headerActions([
                 CreateAction::make()
-                    ->label(__('phpinnacle-ferry::resources.sync.actions.create')),
+                    ->label(__('phpinnacle-ferry::resources.sync.actions.create'))
+                    ->modalIcon(SyncResource::getNavigationIcon())
+                    ->modalHeading(__('phpinnacle-ferry::resources.sync.pages.create'))
+                    ->modalDescription(__('phpinnacle-ferry::resources.sync.modals.create.description'))
+                    ->schema(SyncForm::creation(...))
+                    ->mutateDataUsing(SyncForm::forCreate(...))
+                    ->createAnother(false)
+                    ->successRedirectUrl(fn (Sync $record) => SyncResource::getUrl('edit', ['record' => $record])),
             ])
             ->toolbarActions([
                 DeleteBulkAction::make()

@@ -9,13 +9,30 @@ use PHPinnacle\Ferry\Models\Connection;
 use PHPinnacle\Ferry\Models\ConnectionMetadata;
 use PHPinnacle\Ferry\Models\Connector;
 use PHPinnacle\Ferry\Models\Sync;
+use PHPinnacle\Ferry\Resources\Syncs\Schemas\SyncForm;
+use PHPinnacle\Ferry\Services\DestinationFactory;
 use PHPinnacle\Rosetta\Enums\FieldType;
 use PHPinnacle\Rosetta\Enums\MetadataKind;
 use PHPinnacle\Rosetta\Fields\ScalarField;
 use Tests\TestCase as ApplicationTestCase;
 
+/**
+ * @phpstan-import-type CreateState from SyncForm
+ * @phpstan-import-type EditState from SyncForm
+ */
 abstract class TestCase extends ApplicationTestCase
 {
+    /**
+     * @param CreateState&EditState $data
+     * @return array<string, mixed>
+     */
+    public static function mappedSyncAttributes(array $data, DestinationFactory $destinations): array
+    {
+        $attributes = SyncForm::forCreate($data, $destinations);
+
+        return [...$attributes, ...SyncForm::forUpdate($data, new Sync($attributes), $destinations)];
+    }
+
     /**
      * @param  array<string, mixed>  $attributes
      * @param  array<string, mixed>  $state

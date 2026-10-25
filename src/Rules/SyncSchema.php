@@ -7,7 +7,6 @@ use Illuminate\Support\Facades\Validator;
 use Illuminate\Translation\PotentiallyTranslatedString;
 use Illuminate\Validation\ValidationException;
 use PHPinnacle\Eidos\Forms\JsonSchema;
-use PHPinnacle\Ferry\Data\DestinationField;
 use PHPinnacle\Ferry\Data\FieldMapping;
 use PHPinnacle\Ferry\Data\TransformSetting;
 use PHPinnacle\Ferry\Destinations\StaticDestination;
@@ -91,7 +90,8 @@ readonly class SyncSchema
         array $transforms = [],
     ): array {
         $mappings = [];
-        $fields = array_column($destination->fields ?? [], null, 'id');
+        $destinationSchema = JsonSchema::fromArray($destination?->getSchema()->keywords() ?? []);
+        $fields = $destinationSchema->properties();
 
         $sources = $bindings + array_fill_keys(array_keys($transforms['fields'] ?? []), null);
         foreach ($sources as $source => $column) {
@@ -140,7 +140,6 @@ readonly class SyncSchema
             }
 
             if ($destination !== null && $column !== null) {
-                self::assertNotKeyField($object, $source);
                 self::assertCompatibleWithDestination($fields, $column, $mapping->type());
             }
 
@@ -170,14 +169,14 @@ readonly class SyncSchema
             $mappings[] = $mapping;
         }
 
-        foreach ($object->mappableFields(withKey: $destination === null) as $entry) {
+        foreach ($object->mappableFields() as $entry) {
             if (!array_key_exists($entry['source'], $sources)) {
                 $mappings[] = new FieldMapping($entry['source'], null, $object->field($entry['source']));
             }
         }
 
         if ($destination !== null) {
-            self::assertRequiredFieldsMapped($fields, $mappings);
+            self::assertRequiredFieldsMapped($destinationSchema, $mappings);
         }
 
         return $mappings;
@@ -194,7 +193,8 @@ readonly class SyncSchema
     /** @param list<FieldMapping> $mappings */
     public static function assertValid(array $mappings, ?StaticDestination $destination): void
     {
-        $fields = array_column($destination->fields ?? [], null, 'id');
+        $destinationSchema = JsonSchema::fromArray($destination?->getSchema()->keywords() ?? []);
+        $fields = $destinationSchema->properties();
         foreach ($mappings as $mapping) {
             if ($mapping->target === null) {
                 continue;
@@ -212,11 +212,11 @@ readonly class SyncSchema
             }
         }
         if ($destination !== null) {
-            self::assertRequiredFieldsMapped($fields, $mappings);
+            self::assertRequiredFieldsMapped($destinationSchema, $mappings);
         }
     }
 
-    /** @param array<string, DestinationField> $fields */
+    /** @param array<string, JsonSchema> $fields */
     private static function assertCompatibleWithDestination(
         array $fields,
         string $column,
@@ -232,40 +232,27 @@ readonly class SyncSchema
             ]);
         }
 
-        if ($type === null || !$type->canMapTo($field->type)) {
+        if ($type === null || ($target = ColumnType::fromJsonSchema($field)) === null || !$type->canMapTo($target)) {
             throw ValidationException::withMessages([
                 'data.schema' => __('phpinnacle-ferry::resources.sync.errors.incompatible_destination_field', [
-                    'field' => $field->label,
+                    'field' => $field->annotation('title') ?? $column,
                 ]),
             ]);
         }
     }
 
-    private static function assertNotKeyField(ConnectionMetadata $object, string $source): void
-    {
-        if ($object->physicalColumn($source) === ConnectionMetadata::KEY_COLUMN) {
-            throw ValidationException::withMessages([
-                'data.schema' => __('phpinnacle-ferry::resources.sync.errors.key_field_not_mappable', [
-                    'field' => $source,
-                ]),
-            ]);
-        }
-    }
-
-    /**
-     * @param array<string, DestinationField> $fields
-     * @param list<FieldMapping> $mappings
-     */
-    private static function assertRequiredFieldsMapped(array $fields, array $mappings): void
+    /** @param list<FieldMapping> $mappings */
+    private static function assertRequiredFieldsMapped(JsonSchema $schema, array $mappings): void
     {
         $mapped = array_map(static fn (FieldMapping $mapping) => $mapping->target, $mappings);
+        $fields = $schema->properties();
 
-        foreach ($fields as $field) {
-            if ($field->required && !in_array($field->id, $mapped, true)) {
+        foreach ($schema->required() as $column) {
+            if (!in_array($column, $mapped, true)) {
                 throw ValidationException::withMessages([
                     'data.schema' => __(
                         'phpinnacle-ferry::resources.sync.errors.required_destination_field_missing',
-                        ['field' => $field->label],
+                        ['field' => $fields[$column]->annotation('title') ?? $column],
                     ),
                 ]);
             }

@@ -7,17 +7,21 @@ use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\ViewErrorBag;
 use Illuminate\Validation\ValidationException;
+use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Data\FieldMapping;
 use PHPinnacle\Ferry\Data\TransformSetting;
 use PHPinnacle\Ferry\Destinations\StaticDestination;
 use PHPinnacle\Ferry\Enums\ColumnType;
 use PHPinnacle\Ferry\Enums\DestinationType;
+use PHPinnacle\Ferry\Enums\FieldKind;
 use PHPinnacle\Ferry\Enums\StructureStatus;
 use PHPinnacle\Ferry\Enums\SyncStatus;
+use PHPinnacle\Ferry\Models\ConnectionMetadata;
 use PHPinnacle\Ferry\Models\Sync;
 use PHPinnacle\Ferry\Resources\Syncs\Pages\EditSync;
 use PHPinnacle\Ferry\Resources\Syncs\Schemas\SyncForm;
 use PHPinnacle\Ferry\Services\DestinationFactory;
+use PHPinnacle\Ferry\Services\TransformFactory;
 use PHPinnacle\Ferry\Services\TransformRegistry;
 use PHPinnacle\Ferry\Tests\Fixtures\MappingState;
 use PHPinnacle\Ferry\Tests\Fixtures\SchemaHost;
@@ -82,7 +86,7 @@ it('prepares typed synchronization attributes from its form', function (?string 
     expect($createState['destination'])->toBe($destination === null ? 'dynamic' : 'static:' . $destination);
     expect($createState)->not->toHaveKey('type');
 
-    $sync = Sync::create(SyncForm::forCreate(
+    $sync = Sync::create(TestCase::mappedSyncAttributes(
         $createState,
         $destinations,
     ));
@@ -114,7 +118,7 @@ it('prepares typed synchronization attributes from its form', function (?string 
         ->toBe($destination === null);
 
     if ($destination !== null) {
-        expect($sync->fresh()->constantColumns())->toBe([]);
+        expect($sync->fresh()->constantColumns())->toBe(['is_active']);
     }
 })->with(['dynamic' => [null], 'static' => ['customers']]);
 
@@ -149,7 +153,7 @@ it('keeps a static value through creating, filling and updating a static synchro
         ->toEqual($state);
     $state = $createState['schema'];
 
-    $sync = Sync::create(SyncForm::forCreate($createState, $destinations));
+    $sync = Sync::create(TestCase::mappedSyncAttributes($createState, $destinations));
 
     expect(array_column($sync->schema, 'source'))
         ->toBe(['_description', null, null, '_code'])
@@ -163,7 +167,7 @@ it('keeps a static value through creating, filling and updating a static synchro
 
     expect($form->getState()['schema'])->toEqual($state);
 
-    $livewire->data['schema']['constants']['static_1']['static'] = false;
+    $form->getComponentByStatePath('schema')->getStaticFormSchema('is_active')->getComponent('value')->state(false);
     $sync->update(SyncForm::forUpdate(
         $form->getState(),
         $sync,
@@ -202,7 +206,7 @@ it('keeps a typed static value through creating and filling a dynamic synchroniz
         ->toEqual($state);
     $state = $createState['schema'];
 
-    $sync = Sync::create(SyncForm::forCreate($createState, $destinations));
+    $sync = Sync::create(TestCase::mappedSyncAttributes($createState, $destinations));
 
     expect(Schema::hasColumns('ferry_sync_customers_sync', ['title', 'priority']))
         ->toBeTrue()
@@ -240,7 +244,7 @@ it('keeps transforms through creating, filling and updating a synchronization', 
             'tax_number' => MappingState::value('none'),
         ], ['_code' => ['transforms' => [['type' => 'cast', 'data' => ['type' => 'boolean']]]]]),
     ]);
-    $attributes = SyncForm::forCreate(
+    $attributes = TestCase::mappedSyncAttributes(
         $createForm->getState(),
         $destinations,
     );
@@ -406,7 +410,7 @@ it('persists and restores transforms on every source independently of its target
     );
     $description(['block' => 'cast'])->data(['data' => $cast['data']])->call();
     expect($mapping->getSourceSettings()['_description']['transforms'])->toBe([$hydratedCast]);
-    $attributes = SyncForm::forCreate(
+    $attributes = TestCase::mappedSyncAttributes(
         $form->getState(),
         app(DestinationFactory::class),
     );
@@ -474,7 +478,7 @@ it('rejects unsupported static values before persistence', function () {
         'system' => ['_description' => new StringField(length: 100, fixed: false)],
     ]);
 
-    expect(fn () => SyncForm::forCreate(
+    expect(fn () => TestCase::mappedSyncAttributes(
         [
             'connection_id' => $connection->id,
             'name' => 'Customers',
@@ -573,7 +577,7 @@ it('resolves the destination table from the registered static destination', func
         label: 'Customer directory',
         table: 'customers',
         primaryKey: 'customer_id',
-        fields: customers_destination()->fields,
+        schema: customers_destination()->getSchema(),
     ));
     $sync = TestCase::makeSync([
         'code' => 'customers_sync',
@@ -584,11 +588,21 @@ it('resolves the destination table from the registered static destination', func
         ],
     ]);
 
+    config(['database.connections.sqlite.host' => 'localhost']);
+    $connector = app(DestinationFactory::class)
+        ->resolve($sync)
+        ->connector(
+            $sync,
+            new ConnectionMetadata(['system' => ['_description' => new StringField(100, false)], 'properties' => []]),
+            'topic',
+            app(TransformFactory::class),
+        );
+
     expect($sync->type)
         ->toBe(DestinationType::Static)
         ->and($sync->destination)
         ->toBe('customer_directory')
-        ->and(app(DestinationFactory::class)->resolve($sync)->table)
+        ->and($connector['table.name.format'])
         ->toBe('customers')
         ->and(Schema::hasTable('ferry_sync_customers_sync'))
         ->toBeFalse();
@@ -648,17 +662,24 @@ it('pauses a synchronization and rejects editing when its destination is no long
         );
 });
 
-it('rejects creating a static synchronization for an unregistered destination', function () {
-    expect(fn () => TestCase::makeSync([
-        'type' => DestinationType::Static,
-        'destination' => 'missing',
-    ]))
+it('rejects an unregistered destination at the create form boundary', function () {
+    $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
+    TestCase::makeMetadata($connection);
+
+    expect(fn () => TestCase::mappedSyncAttributes([
+        'connection_id' => $connection->id,
+        'name' => 'Missing destination',
+        'code' => 'missing',
+        'source' => 'object-0',
+        'destination' => 'static:missing',
+        'schema' => [],
+    ], app(DestinationFactory::class)))
         ->toThrow(LogicException::class);
 
     expect(Sync::query()->count())->toBe(0);
 });
 
-it('creates a static source and persists its cast through the synchronization form', function () {
+it('edits a Boolean constant through the built-in form without a cast', function () {
     $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
     TestCase::makeMetadata($connection, ['system' => [
         '_description' => new StringField(length: 100, fixed: false),
@@ -678,27 +699,132 @@ it('creates a static source and persists its cast through the synchronization fo
         ]),
     ]);
     $mapping = $form->getComponentByStatePath('schema');
-    $mapping->getAction('addConstant')->call();
-    expect($mapping->getConnectionModes()['static_1'])->not->toHaveKey('is_active');
-    $mapping->getConstantValueSchema('static_1')->getComponent('static')->state('false');
-    $sourceKey = $mapping->getSourceStateKeys()['static_1'];
-    $form->getComponentByStatePath('schema.sources.' . $sourceKey . '.transforms')->state([
-        ['type' => 'cast', 'data' => ['type' => 'boolean']],
-    ]);
-    expect($mapping->getConnectionModes()['static_1']['is_active'])->toBe('whole');
-    $livewire->data['schema']['targets'][$mapping->getStateKeys()['is_active']] = MappingState::source('static_1');
+    expect($mapping->hasStaticForms())->toBeTrue();
+    expect($mapping->hasStaticValues())->toBeFalse();
+    $mapping->getStaticFormSchema('is_active')->getComponent('value')->state(false);
     $state = $form->getState();
     $constant = collect($state['schema'])->firstWhere('kind', 'static');
     expect($constant)->toBe([
         'kind' => 'static',
         'target' => 'is_active',
-        'static' => 'false',
-        'result' => ['type' => 'boolean'],
-        'transforms' => [['type' => 'cast', 'data' => ['type' => 'boolean']]],
+        'static' => false,
     ]);
-    $sync = Sync::create(SyncForm::forCreate($state, app(DestinationFactory::class)));
+    $sync = Sync::create(TestCase::mappedSyncAttributes($state, app(DestinationFactory::class)));
     expect(collect($sync->schema)->firstWhere('target', 'is_active')->type())->toBe(ColumnType::Boolean);
     $edit = SyncForm::configure(FormSchema::make($livewire)->statePath('data')->record($sync)->operation('edit'));
     $edit->fill(SyncForm::fill($sync->fresh()->toArray()));
     expect($edit->getState()['schema'])->toEqual($state['schema']);
+});
+
+it('preserves existing transformed constants when editing a static synchronization', function () {
+    $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
+    TestCase::makeMetadata($connection, ['system' => [
+        '_description' => new StringField(100, false),
+        '_code' => new StringField(11, true),
+    ]]);
+    $sync = TestCase::makeSync([
+        'connection_id' => $connection->id,
+        'type' => DestinationType::Static,
+        'destination' => 'customers',
+        'schema' => [
+            new FieldMapping('_description', 'name', new StringField(100, false)),
+            new FieldMapping('_code', 'tax_number', new StringField(11, true)),
+            new FieldMapping(
+                null,
+                'is_active',
+                null,
+                result: JsonSchema::fromArray(['type' => 'boolean']),
+                transforms: [new TransformSetting('cast', ['type' => 'boolean'])],
+                static: 'false',
+                kind: FieldKind::Static,
+            ),
+        ],
+    ]);
+    $original = $sync->schema[2];
+    $form = SyncForm::configure(
+        FormSchema::make(SchemaHost::make())->statePath('data')->record($sync)->operation('edit'),
+    );
+    $form->fill(SyncForm::fill($sync->toArray()));
+
+    $sync->update(SyncForm::forUpdate($form->getState(), $sync, app(DestinationFactory::class)));
+
+    expect($form->getComponentByStatePath('schema')->hasStaticValues())->toBeTrue();
+    expect(collect($sync->fresh()->schema)->firstWhere('kind', FieldKind::Static))->toEqual($original);
+});
+
+it('creates an unmapped pending synchronization from only its identifying fields', function (DestinationType $type) {
+    $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
+    TestCase::makeMetadata($connection);
+    $form = SyncForm::creation(FormSchema::make(SchemaHost::make())->statePath('data')->operation('create'));
+    $form->fill([
+        'name' => 'New synchronization',
+        'code' => 'new_sync',
+        'connection_id' => $connection->id,
+        'source' => 'object-0',
+        'destination' => $type === DestinationType::Static ? 'static:customers' : 'dynamic',
+    ]);
+
+    expect(array_keys($form->getFlatFields()))->toBe(['name', 'code', 'connection_id', 'source', 'destination']);
+    $state = $form->getState();
+    expect($state)->not->toHaveKey('schema');
+    $sync = Sync::create(SyncForm::forCreate($state, app(DestinationFactory::class)));
+
+    expect($sync->fresh()->status)->toBe(SyncStatus::Pending);
+    expect($sync->schema)->toBe([]);
+    expect($sync->connector_id)->toBeNull();
+    expect($sync->type)->toBe($type);
+    if ($type === DestinationType::Dynamic) {
+        expect(Schema::getColumnListing($sync->destination))->toBe([Sync::ID_COLUMN]);
+    } else {
+        expect(Schema::hasTable('customers'))->toBeFalse();
+        $edit = SyncForm::configure(
+            FormSchema::make(SchemaHost::make())->statePath('data')->record($sync)->operation('edit'),
+        );
+        $edit->fill(SyncForm::fill($sync->toArray()));
+        expect($edit->getComponentByStatePath('schema')->getTargetWarnings())->toBe([]);
+        expect(fn () => SyncForm::forUpdate(
+            ['name' => $sync->name, 'schema' => []],
+            $sync,
+            app(DestinationFactory::class),
+        ))
+            ->toThrow(ValidationException::class);
+    }
+})->with([DestinationType::Dynamic, DestinationType::Static]);
+
+it('locks identifying fields on edit and ignores attempts to change them through submitted data', function () {
+    $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
+    TestCase::makeMetadata($connection);
+    $sync = Sync::create(SyncForm::forCreate([
+        'name' => 'Original name',
+        'code' => 'original_code',
+        'connection_id' => $connection->id,
+        'source' => 'object-0',
+        'destination' => 'dynamic',
+    ], app(DestinationFactory::class)));
+    $identity = $sync->only(['code', 'connection_id', 'source', 'type', 'destination']);
+    $form = SyncForm::configure(
+        FormSchema::make(SchemaHost::make())->statePath('data')->record($sync)->operation('edit'),
+    );
+    $form->fill(SyncForm::fill($sync->toArray()));
+    expect($form->getComponent('name')->isDisabled())->toBeFalse();
+    foreach (['code', 'connection_id', 'source', 'destination'] as $field) {
+        expect($form->getComponent($field)->isDisabled())->toBeTrue();
+    }
+
+    $sync->update(SyncForm::forUpdate(
+        [
+            'name' => 'Renamed',
+            'schema' => [],
+            'code' => 'changed_code',
+            'connection_id' => 'another-connection',
+            'source' => 'another-object',
+            'type' => DestinationType::Static,
+            'destination' => 'static:customers',
+        ],
+        $sync,
+        app(DestinationFactory::class),
+    ));
+
+    expect($sync->fresh()->name)->toBe('Renamed');
+    expect($sync->fresh()->only(array_keys($identity)))->toBe($identity);
 });

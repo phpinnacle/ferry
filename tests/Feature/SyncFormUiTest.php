@@ -10,7 +10,6 @@ use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
 use PHPinnacle\Eidos\Forms\FieldBinding;
 use PHPinnacle\Eidos\Forms\FieldMapping;
-use PHPinnacle\Ferry\Data\DestinationField;
 use PHPinnacle\Ferry\Data\FieldMapping as SchemaMapping;
 use PHPinnacle\Ferry\Destinations\StaticDestination;
 use PHPinnacle\Ferry\Enums\ColumnType;
@@ -26,6 +25,7 @@ use PHPinnacle\Ferry\Tests\Fixtures\SchemaHost;
 use PHPinnacle\Ferry\Tests\TestCase;
 use PHPinnacle\Ferry\Transformation;
 use PHPinnacle\Ferry\Transformations\Trim;
+use PHPinnacle\Jason\Schema;
 use PHPinnacle\Rosetta\Data\MetadataProperty;
 use PHPinnacle\Rosetta\Enums\FieldType;
 use PHPinnacle\Rosetta\Enums\MetadataKind;
@@ -60,7 +60,9 @@ it('keeps reference destinations distinct from ordinary UUID transform outputs',
         label: 'Owners',
         table: 'owners',
         primaryKey: 'id',
-        fields: [new DestinationField('owner', 'Owner', ColumnType::Reference, required: true)],
+        schema: Schema::object([
+            'owner' => Schema::string()->format('uuid')->with('x-ferry-reference', true)->title('Owner'),
+        ])->required(['owner']),
     ));
     $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
     TestCase::makeMetadata($connection, ['system' => [
@@ -200,38 +202,11 @@ it('refreshes mapping compatibility when transform actions change the source typ
         ->not->toHaveKey('schema-component::form.schema');
     $page->assertSet('data.schema.targets', $targets);
 
-    $page->callAction(TestAction::make('addConstant')->schemaComponent('schema', 'form'));
-    expect(array_keys($page->effects['partials']))->toEqualCanonicalizing([
-        'schema-component::form.schema.staticSources',
-        'schema-component::form.schema.configuration',
-    ]);
-    expect($page->effects['partials']['schema-component::form.schema.staticSources'])
-        ->toContain('data-mapping-static-source="static_1"')
-        ->not->toContain('data-mapping-source-settings="_description"', 'data-mapping-source-settings="_code"');
-    $field = $page->instance()->form->getComponentByStatePath('schema');
-    $staticPath = 'schema.sources.' . $field->getSourceStateKeys()['static_1'] . '.transforms';
-    $page->update(calls: [[
-        'method' => 'mountAction',
-        'params' => ['fieldTransforms', ['block' => 'trim'], ['schemaComponent' => 'form.' . $staticPath]],
-        'path' => '',
-    ]], updates: ['data.schema.constants.static_1.static' => '  draft  ']);
-    $page
-        ->assertHasNoErrors()
-        ->assertSet('data.schema.constants.static_1.static', '  draft  ')
-        ->assertSet('data.' . $staticPath, [['type' => 'trim', 'data' => []]]);
-    expect($page->effects)->not->toHaveKey('html');
-    expect($page->effects['partials'])->not->toHaveKey('schema-component::form.schema');
-    $page->callAction(TestAction::make('removeConstant')
-        ->schemaComponent('schema', 'form')
-        ->arguments(['constant' => 'static_1']));
-    expect(array_keys($page->effects['partials']))->toEqualCanonicalizing([
-        'schema-component::form.schema.staticSources',
-        'schema-component::form.schema.configuration',
-    ]);
-    $page->assertSet('data.schema.constants', [])->assertSet('data.schema.targets', $targets);
+    expect($page->instance()->form->getComponentByStatePath('schema')->getStaticFormSchema('is_active'))
+        ->not->toBeNull();
 });
 
-it('shows Rosetta string bounds and exact numeric metadata in both mapping modes', function (string $destination) {
+it('shows Rosetta comments and constraints in both mapping modes', function (string $destination, ?string $comment) {
     app(DestinationFactory::class)->register(customers_destination());
     $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
     TestCase::makeMetadata($connection, [
@@ -240,15 +215,28 @@ it('shows Rosetta string bounds and exact numeric metadata in both mapping modes
             '_code' => new StringField(8, true),
             '_description' => new StringField(100, false),
         ],
-        'properties' => [new MetadataProperty(
-            id: 'price-id',
-            name: '_fld17',
-            code: 17,
-            kind: PropertyKind::Field,
-            label: 'Price',
-            title: 'Price',
-            field: new NumberField(20, 2, true),
-        )],
+        'properties' => [
+            new MetadataProperty(
+                id: 'price-id',
+                name: '_fld17',
+                code: 17,
+                kind: PropertyKind::Field,
+                label: 'Price',
+                title: 'Price',
+                field: new NumberField(20, 2, true),
+                comment: $comment,
+            ),
+            new MetadataProperty(
+                id: 'days-id',
+                name: '_fld18',
+                code: 18,
+                kind: PropertyKind::Field,
+                label: 'Payment days',
+                title: 'Payment days',
+                field: new NumberField(10, 0, false),
+                comment: $comment,
+            ),
+        ],
     ]);
     $form = SyncForm::configure(FilamentSchema::make(SchemaHost::make())->statePath('data')->operation('create'));
     $form->fill([
@@ -264,9 +252,16 @@ it('shows Rosetta string bounds and exact numeric metadata in both mapping modes
         ->and($sources['_description']['presentation']['constraints'])
         ->toBe([['kind' => 'length', 'value' => '≤ 100', 'scope' => []]])
         ->and($sources['_fld17']['description'])
-        ->toBe('Digits: 20; Decimal places: 2; Value: 0 … 999999999999999999.99')
+        ->toBe($comment)
+        ->and($sources['_fld18']['description'])
+        ->toBe($comment)
+        ->and($sources['_code']['description'])
+        ->toBeNull()
         ->and($sources['_fld17']['presentation']['constraints'])
-        ->toBe([['kind' => 'range', 'value' => '≥ 0', 'scope' => []]]);
+        ->toBe([
+            ['kind' => 'range', 'value' => '≥ 0 · < 1000000000000000000', 'scope' => []],
+            ['kind' => 'multiple', 'value' => '× 0.01', 'scope' => []],
+        ]);
     $key = $mapping->getSourceStateKeys()['_code'];
     expect(
         $form
@@ -275,7 +270,8 @@ it('shows Rosetta string bounds and exact numeric metadata in both mapping modes
             ->toArray(),
     )
         ->toMatchArray(['type' => 'string', 'minLength' => 8, 'maxLength' => 8]);
-})->with([DestinationType::Dynamic->value, 'static:customers']);
+})->with([DestinationType::Dynamic->value, 'static:customers'])
+    ->with([null, "Imported from 1C.\nKeep <original> text."]);
 
 /** @return Collection<string, Select> */
 $selects = function (array $state) {
@@ -400,8 +396,8 @@ it('binds dynamic fields and connects static fields to the declared destination 
     /** @var FieldMapping $mapping */
     $mapping = $form('customers')->getComponentByStatePath('schema');
 
-    expect($mapping->hasStaticValues())->toBeTrue();
-    expect($mapping->hasStaticForms())->toBeFalse();
+    expect($mapping->hasStaticValues())->toBeFalse();
+    expect($mapping->hasStaticForms())->toBeTrue();
 
     expect(array_column($binding->getSources(), 'label', 'id'))
         ->toBe([
@@ -412,7 +408,7 @@ it('binds dynamic fields and connects static fields to the declared destination 
         ->and(array_column($binding->getSources(), 'name', 'id'))
         ->toBe(['_idrref' => '_idrref', '_description' => '_description', '_fld1' => '_fld1'])
         ->and(array_column($mapping->getSources(), 'type', 'id'))
-        ->toBe(['_description' => 'string', '_fld1' => 'string'])
+        ->toBe(['_idrref' => 'string', '_description' => 'string', '_fld1' => 'string'])
         ->and(array_column($mapping->getTargets(), 'required', 'id'))
         ->toBe(['name' => true, 'tax_number' => true, 'is_active' => false])
         ->and(array_column($mapping->getTargets(), 'type', 'id'))
@@ -422,7 +418,7 @@ it('binds dynamic fields and connects static fields to the declared destination 
         ->and($form('customers')->getComponentByStatePath('schema'))
         ->toBeInstanceOf(FieldMapping::class);
 
-    expect($mapping->getConnectionModes()['_fld1'] ?? [])->toBe([]);
+    expect($mapping->getConnectionModes()['_fld1'])->toBe(['name' => 'whole', 'tax_number' => 'whole']);
 
     $schema = $form('customers');
     $schema->fill([
@@ -476,12 +472,13 @@ it('validates the static mapping against the declared destination fields', funct
             $row,
             array_flip(['field', 'result']),
         ), $schema->getState()['schema']))
-            ->toBe(MappingState::mapping($mapping, [
+            ->toBe(MappingState::mapping($mapping + ['is_active' => MappingState::value(false)], [
                 '_description' => ['transforms' => []],
                 '_code' => ['transforms' => []],
+                '_idrref' => ['transforms' => []],
             ]))
             ->and(
-                SyncForm::forCreate(
+                TestCase::mappedSyncAttributes(
                     $schema->getState(),
                     app(DestinationFactory::class),
                 )['type'],
@@ -629,7 +626,7 @@ it('offers dynamic and every registered static destination in one select', funct
         label: 'Static destination named dynamic',
         table: 'other_customers',
         primaryKey: 'id',
-        fields: customers_destination()->fields,
+        schema: customers_destination()->getSchema(),
     ));
 
     $fields = $selects([]);
@@ -672,7 +669,7 @@ it('resets the shared schema when switching destinations', function (string $fro
         label: 'Other customers',
         table: 'other_customers',
         primaryKey: 'id',
-        fields: customers_destination()->fields,
+        schema: customers_destination()->getSchema(),
     ));
     $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
     TestCase::makeMetadata($connection, ['system' => ['_description' => new StringField(length: 100, fixed: false)]]);
@@ -817,7 +814,7 @@ it('edits physical source names while keeping metadata identities through column
         ],
     ]);
     $state = $form->getState();
-    $attributes = SyncForm::forCreate($state, app(DestinationFactory::class));
+    $attributes = TestCase::mappedSyncAttributes($state, app(DestinationFactory::class));
     expect(array_column($state['schema'], 'source'))->toContain('_fld17')->not->toContain($property->id);
     expect(array_column($attributes['schema'], 'source'))->toContain($property->id)->not->toContain('_fld17');
     $sync = Sync::create($attributes);
@@ -849,9 +846,9 @@ it('shows each composite column as a separate source card and saves only its sel
         label: 'Owners',
         table: 'owners',
         primaryKey: 'id',
-        fields: [
-            new DestinationField('owner', 'Owner', ColumnType::Reference, required: true),
-        ],
+        schema: Schema::object([
+            'owner' => Schema::string()->format('uuid')->with('x-ferry-reference', true)->title('Owner'),
+        ])->required(['owner']),
     ));
     $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
     TestCase::makeMetadata($connection, ['properties' => [new MetadataProperty(
@@ -865,6 +862,7 @@ it('shows each composite column as a separate source card and saves only its sel
             new ReferenceField('catalog-a'),
             new ReferenceField('catalog-b'),
         ]),
+        comment: 'Customer or supplier who owns the record.',
     )]]);
     $form = SyncForm::configure(FilamentSchema::make(SchemaHost::make())->statePath('data')->operation('create'));
     $form->fill([
@@ -879,13 +877,16 @@ it('shows each composite column as a separate source card and saves only its sel
     ]);
     $mapping = $form->getComponentByStatePath('schema');
     $sources = array_column($mapping->getSources(), null, 'id');
+    foreach (['_fld17_type', '_fld17_rtref', '_fld17_rrref'] as $source) {
+        expect($sources[$source]['description'])->toBe('Customer or supplier who owns the record.');
+    }
     expect(array_keys($sources))
         ->toContain('_fld17_type', '_fld17_rtref', '_fld17_rrref')
         ->not
         ->toContain('_fld17')
         ->and($sources['_fld17_type']['label'])
         ->toBe('Owner · ' . __('phpinnacle-ferry::resources.sync.components.type'));
-    $data = SyncForm::forCreate($form->getState(), app(DestinationFactory::class));
+    $data = TestCase::mappedSyncAttributes($form->getState(), app(DestinationFactory::class));
     $bound = array_values(array_filter($data['schema'], fn (array $row) => $row['target'] !== null));
     expect($bound)
         ->toHaveCount(1)
@@ -899,3 +900,121 @@ it('shows each composite column as a separate source card and saves only its sel
     $bound = array_values(array_filter($filled['schema'], fn (array $row) => $row['target'] !== null));
     expect($bound[0]['source'])->toBe('_fld17_rrref');
 })->with([DestinationType::Dynamic->value, 'static:owners']);
+
+it('uses destination JSON Schema titles, constraints and required mappings in the editor', function () {
+    $schema = Schema::object([
+        'name' => Schema::string()->title('Customer name')->description('Official name')->max(100),
+        'is_active' => Schema::boolean()->title('Active'),
+    ])->required(['name']);
+    app(DestinationFactory::class)->register(new StaticDestination(
+        key: 'schema_customers',
+        label: 'Customers',
+        table: 'customers',
+        primaryKey: 'id',
+        schema: $schema,
+    ));
+    $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
+    TestCase::makeMetadata($connection, ['system' => ['_description' => new StringField(100, false)]]);
+    $form = SyncForm::configure(FilamentSchema::make(SchemaHost::make())->statePath('data')->operation('create'));
+    $form->fill([
+        'connection_id' => $connection->id,
+        'source' => 'object-0',
+        'destination' => 'static:schema_customers',
+        'schema' => MappingState::mapping(['name' => MappingState::source('_description')]),
+    ]);
+
+    $mapping = $form->getComponentByStatePath('schema');
+
+    expect($mapping->getTargetSchema())->toBe($schema->toArray());
+    expect($mapping->getRequiredTargets())->toBe(['name']);
+    expect(array_column($mapping->getTargets(), 'label', 'id'))->toBe([
+        'name' => 'Customer name',
+        'is_active' => 'Active',
+    ]);
+    expect(app(DestinationFactory::class)->schemaFor(new Sync([
+        'type' => DestinationType::Static,
+        'destination' => 'schema_customers',
+    ])))
+        ->toBe($schema);
+});
+
+it('omits empty optional forms and validates static values against destination bounds', function () {
+    app(DestinationFactory::class)->register(new StaticDestination(
+        key: 'bounded',
+        label: 'Bounded',
+        table: 'bounded',
+        primaryKey: 'id',
+        schema: Schema::object([
+            'name' => Schema::string()->max(3),
+            'description' => Schema::string()->nullable(),
+            'active' => Schema::boolean(),
+            'quantity' => Schema::integer(),
+        ])->required(['name']),
+    ));
+    $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
+    TestCase::makeMetadata($connection);
+    $form = SyncForm::configure(FilamentSchema::make(SchemaHost::make())->statePath('data')->operation('create'));
+    $form->fill([
+        'connection_id' => $connection->id,
+        'source' => 'object-0',
+        'destination' => 'static:bounded',
+        'name' => 'Bounded',
+        'code' => 'bounded',
+        'schema' => [],
+    ]);
+    $mapping = $form->getComponentByStatePath('schema');
+    $mapping->getStaticFormSchema('name')->getComponent('value')->state('abc');
+    $mapping->getStaticFormSchema('quantity')->getComponent('value')->state(0);
+
+    $data = TestCase::mappedSyncAttributes($form->getState(), app(DestinationFactory::class));
+
+    expect(array_column(
+        array_filter($data['schema'], fn (array $row) => $row['kind'] === 'static'),
+        'static',
+        'target',
+    ))
+        ->toBe(['name' => 'abc', 'active' => false, 'quantity' => 0]);
+    $mapping->getStaticFormSchema('name')->getComponent('value')->state('abcd');
+    expect($form->getState(...))->toThrow(ValidationException::class);
+});
+
+it('maps UUID references into bounded strings while respecting target length and direction', function () {
+    $destination = new StaticDestination(
+        key: 'references',
+        label: 'References',
+        table: 'references',
+        primaryKey: 'external_id',
+        schema: Schema::object([
+            'external_id' => Schema::string()->max(255),
+            'exact_id' => Schema::string()->max(36)->nullable(),
+            'short_id' => Schema::string()->max(35)->nullable(),
+            'uuid_id' => Schema::string()->format('uuid')->with('x-ferry-reference', true)->nullable(),
+        ])->required(['external_id']),
+    );
+    app(DestinationFactory::class)->register($destination);
+    $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
+    $object = TestCase::makeMetadata($connection, ['system' => [
+        '_partner' => new ReferenceField('catalog.partners'),
+        '_description' => new StringField(100, false),
+    ]]);
+    $form = SyncForm::configure(FilamentSchema::make(SchemaHost::make())->statePath('data')->operation('create'));
+    $form->fill([
+        'name' => 'References',
+        'code' => 'references',
+        'connection_id' => $connection->id,
+        'source' => 'object-0',
+        'destination' => 'static:references',
+        'schema' => MappingState::mapping(['external_id' => MappingState::source('_partner')]),
+    ]);
+    $mapping = $form->getComponentByStatePath('schema');
+
+    expect($mapping->getConnectionModes())
+        ->toHaveKey('_partner.external_id', 'whole')
+        ->toHaveKey('_partner.exact_id', 'whole')
+        ->not->toHaveKey('_partner.short_id')
+        ->not->toHaveKey('_description.uuid_id');
+    $sync = Sync::create(TestCase::mappedSyncAttributes($form->getState(), app(DestinationFactory::class)));
+    expect($sync->brokenColumns($object, $destination->getSchema()))->toBe([]);
+    expect($sync->schema[0]->source)->toBe('_partner');
+    expect($sync->schema[0]->target)->toBe('external_id');
+});

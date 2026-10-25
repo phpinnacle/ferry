@@ -151,7 +151,7 @@ it('maps a static value to a destination field without a source field', function
     );
 
     expect($mappings)
-        ->toHaveCount(4)
+        ->toHaveCount(5)
         ->and($mappings[1]->source)
         ->toBeNull()
         ->and($mappings[1]->field)

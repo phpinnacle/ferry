@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Support\Facades\Queue;
+use PHPinnacle\Ferry\Destinations\StaticDestination;
 use PHPinnacle\Ferry\Enums\DestinationType;
 use PHPinnacle\Ferry\Enums\StructureStatus;
 use PHPinnacle\Ferry\Rules\SyncSchema;
@@ -10,8 +11,11 @@ use PHPinnacle\Ferry\Services\SourceFactory;
 use PHPinnacle\Ferry\Services\TransformFactory;
 use PHPinnacle\Ferry\Services\TransformRegistry;
 use PHPinnacle\Ferry\Tests\TestCase;
+use PHPinnacle\Jason\Schema;
 use PHPinnacle\Rosetta\Data\MetadataProperty;
+use PHPinnacle\Rosetta\Enums\FieldType;
 use PHPinnacle\Rosetta\Enums\PropertyKind;
+use PHPinnacle\Rosetta\Fields\ScalarField;
 use PHPinnacle\Rosetta\Fields\StringField;
 
 use function PHPinnacle\Ferry\Tests\Fakes\customers_destination;
@@ -214,6 +218,7 @@ it('builds a static sink with fixed fields and its target connection', function 
         'schema' => SyncSchema::fromBindings(
             $object,
             [
+                '_idrref' => 'customer_id',
                 'title' => 'name',
             ],
             app(TransformRegistry::class),
@@ -233,12 +238,14 @@ it('builds a static sink with fixed fields and its target connection', function 
         ->toBe('customers')
         ->and($config['fields.whitelist'])
         ->toBe('customer_id,name,type,profile_id')
-        ->and($config['transforms.rename_keys.renames'])
-        ->toBe('_idrref:customer_id')
+        ->and($config['pk.mode'])
+        ->toBe('record_value')
+        ->and($config['pk.fields'])
+        ->toBe('customer_id')
         ->and($config['transforms.rename_values.renames'])
         ->toBe('_idrref:customer_id,_fld1:name')
         ->and($config['transforms'])
-        ->toBe('unwrap,rename_keys,rename_values,insert_type,insert_profile_id')
+        ->toBe('unwrap,rename_values,insert_type,insert_profile_id')
         ->and($config['transforms.insert_type.type'])
         ->toBe('org.apache.kafka.connect.transforms.InsertField$Value')
         ->and($config['transforms.insert_type.static.field'])
@@ -327,4 +334,50 @@ it('keeps configured sink hosts and environment ports while applying the default
     'host override' => ['db.kafka.internal', 5544, 'db.kafka.internal', 5544],
     'empty host override' => ['', 5432, 'db.internal', 5432],
     'default port' => [null, null, 'db.internal', 5432],
+]);
+
+it('uses the explicitly mapped record value as the static primary key', function (
+    array $bindings,
+    string $renames,
+    string $whitelist,
+) {
+    $destination = new StaticDestination(
+        key: 'explicit_keys',
+        label: 'Explicit keys',
+        table: 'explicit_keys',
+        primaryKey: 'id',
+        schema: Schema::object([
+            'id' => Schema::string()->format('uuid')->with('x-ferry-reference', true),
+            'source_id' => Schema::string()->format('uuid')->with('x-ferry-reference', true),
+        ])->required(['id']),
+    );
+    $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
+    $object = TestCase::makeMetadata($connection, ['system' => [
+        '_idrref' => new ScalarField(FieldType::Id),
+        '_owner' => new ScalarField(FieldType::Uuid),
+    ]]);
+    $sync = TestCase::makeSync([
+        'connection_id' => $connection->id,
+        'type' => DestinationType::Static,
+        'destination' => 'explicit_keys',
+        'schema' => SyncSchema::fromBindings($object, $bindings, app(TransformRegistry::class), $destination),
+    ]);
+
+    $config = $destination->connector($sync, $object, 'topic', $this->factory);
+
+    expect($config)->toMatchArray([
+        'pk.mode' => 'record_value',
+        'pk.fields' => 'id',
+        'fields.whitelist' => $whitelist,
+        'transforms.rename_values.renames' => $renames,
+        'delete.enabled' => 'false',
+    ]);
+    expect($config)->not->toHaveKey('transforms.rename_keys.type');
+})->with([
+    'source identifier' => [['_idrref' => 'id'], '_idrref:id', 'id'],
+    'another reference, with the source identifier mapped separately' => [
+        ['_owner' => 'id', '_idrref' => 'source_id'],
+        '_owner:id,_idrref:source_id',
+        'id,source_id',
+    ],
 ]);

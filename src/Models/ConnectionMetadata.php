@@ -103,7 +103,7 @@ class ConnectionMetadata extends Model
         return $this->sourceFields()[$source]->field ?? null;
     }
 
-    /** @return list<array{source: string, title: string, physical: string, type: ColumnType}> */
+    /** @return list<array{source: string, title: string, description: string|null, physical: string, type: ColumnType}> */
     public function mappableFields(bool $withKey = true): array
     {
         $fields = [];
@@ -115,6 +115,7 @@ class ConnectionMetadata extends Model
             $fields[] = [
                 'source' => $field->source,
                 'title' => $field->title,
+                'description' => $field->description,
                 'physical' => $field->physical,
                 'type' => $type,
             ];

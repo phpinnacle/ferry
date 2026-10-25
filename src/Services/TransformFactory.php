@@ -42,7 +42,7 @@ class TransformFactory
     public function pipeline(
         Sync $sync,
         ConnectionMetadata $object,
-        string $keyColumn = Sync::ID_COLUMN,
+        ?string $keyColumn = Sync::ID_COLUMN,
         bool $deletes = false,
         array $fixedValues = [],
     ): array {
@@ -79,10 +79,12 @@ class TransformFactory
             }
         }
 
-        $pipeline['rename_keys'] = [
-            'type' => 'org.apache.kafka.connect.transforms.ReplaceField$Key',
-            'renames' => self::renames([ConnectionMetadata::KEY_COLUMN => $keyColumn]),
-        ];
+        if ($keyColumn !== null) {
+            $pipeline['rename_keys'] = [
+                'type' => 'org.apache.kafka.connect.transforms.ReplaceField$Key',
+                'renames' => self::renames([ConnectionMetadata::KEY_COLUMN => $keyColumn]),
+            ];
+        }
         $pipeline['rename_values'] = [
             'type' => 'org.apache.kafka.connect.transforms.ReplaceField$Value',
             'renames' => self::renames($sync->columnMap($object, $keyColumn)),

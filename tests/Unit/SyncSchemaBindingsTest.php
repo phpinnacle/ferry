@@ -51,7 +51,7 @@ it('maps source fields to compatible static destination fields', function () {
     );
 
     expect(array_column($mappings, 'target', 'source'))
-        ->toBe(['_description' => 'name', '_code' => 'tax_number', '_marked' => null]);
+        ->toBe(['_description' => 'name', '_code' => 'tax_number', '_marked' => null, '_idrref' => null]);
 });
 
 it('rejects bindings that do not match source or destination declarations', function (
@@ -80,5 +80,10 @@ it('rejects bindings that do not match source or destination declarations', func
         'incompatible_destination_field',
         'Is Active',
     ],
-    'source key' => [['_idrref' => 'name', '_code' => 'tax_number'], true, 'key_field_not_mappable', '_idrref'],
+    'reference to boolean' => [
+        ['_idrref' => 'is_active', '_code' => 'tax_number'],
+        true,
+        'incompatible_destination_field',
+        'Is Active',
+    ],
 ]);

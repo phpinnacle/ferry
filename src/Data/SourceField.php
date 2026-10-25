@@ -17,6 +17,7 @@ final readonly class SourceField
         public string $physical,
         public string $title,
         public Field $field,
+        public ?string $description = null,
     ) {}
 
     /** @return list<self> */
@@ -34,6 +35,7 @@ final readonly class SourceField
                 $property->name . ($field instanceof ReferenceField ? 'rref' : ''),
                 $title,
                 $field,
+                $property->comment,
             )];
         }
 
@@ -74,6 +76,7 @@ final readonly class SourceField
                 $property->name . '_' . $suffix,
                 $title . ' · ' . __('phpinnacle-ferry::resources.sync.components.' . $suffix),
                 $column,
+                $property->comment,
             );
         }
 

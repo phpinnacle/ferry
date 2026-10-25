@@ -44,7 +44,6 @@ class SyncResource extends Resource
     {
         return [
             'index' => Pages\ListSyncs::route('/'),
-            'create' => Pages\CreateSync::route('/create'),
             'edit' => Pages\EditSync::route('/{record}/edit'),
         ];
     }

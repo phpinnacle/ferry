@@ -2,9 +2,8 @@
 
 namespace PHPinnacle\Ferry\Tests\Fakes;
 
-use PHPinnacle\Ferry\Data\DestinationField;
 use PHPinnacle\Ferry\Destinations\StaticDestination;
-use PHPinnacle\Ferry\Enums\ColumnType;
+use PHPinnacle\Jason\Schema;
 
 function customers_destination(?string $connectionName = null): StaticDestination
 {
@@ -13,11 +12,11 @@ function customers_destination(?string $connectionName = null): StaticDestinatio
         label: 'Customers',
         table: 'customers',
         primaryKey: 'customer_id',
-        fields: [
-            new DestinationField('name', 'Name', ColumnType::String, required: true),
-            new DestinationField('tax_number', 'Tax Number', ColumnType::String, required: true),
-            new DestinationField('is_active', 'Is Active', ColumnType::Boolean, required: false),
-        ],
+        schema: Schema::object([
+            'name' => Schema::string()->title('Name'),
+            'tax_number' => Schema::string()->title('Tax Number'),
+            'is_active' => Schema::boolean()->title('Is Active'),
+        ])->required(['name', 'tax_number']),
         connection: $connectionName,
         fixedValues: [
             'type' => 'Customer',

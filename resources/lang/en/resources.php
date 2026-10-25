@@ -105,11 +105,6 @@ return [
             'add_transform' => 'Add transform',
             'sink_connector_status' => 'Sink Connector Status',
         ],
-        'constraints' => [
-            'precision' => 'Digits',
-            'scale' => 'Decimal places',
-            'range' => 'Value',
-        ],
         'components' => [
             'type' => 'Value type',
             'l' => 'Boolean',
@@ -149,6 +144,9 @@ return [
             'mapping' => 'Field Mapping',
         ],
         'modals' => [
+            'create' => [
+                'description' => 'Choose the source object and destination. Configure field mappings after creation.',
+            ],
             'delete' => [
                 'heading' => 'Delete synchronization?',
                 'description_dynamic' => 'The destination table and all data stored in it will be permanently deleted',
@@ -176,7 +174,6 @@ return [
             'constant_column_taken' => 'The destination field ":column" is already mapped',
             'transform_field_unsupported' => 'Transform ":transform" cannot be applied to the source field ":field"',
             'required_destination_field_missing' => 'The required destination field ":field" is not mapped',
-            'key_field_not_mappable' => 'The source key field ":field" is synchronized into the destination primary key automatically and cannot be mapped',
             'invalid_mapping' => 'Synchronization ":code" cannot be activated: its field mapping is out of date',
             'invalid_transforms' => 'Synchronization ":code" cannot be activated: its transforms are no longer registered or no longer match the source',
         ],

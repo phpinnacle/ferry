@@ -449,3 +449,19 @@ it('keeps synchronizations active when the structure is republished unchanged', 
         ->and(Schema::hasTable($sync->destination))
         ->toBeTrue();
 });
+
+it('generates its dynamic table name on creation and preserves it after prefix and code changes', function () {
+    config(['phpinnacle-ferry.sync.table_prefix' => 'initial_']);
+    $sync = TestCase::makeSync(['code' => 'orders', 'destination' => 'ignored_table']);
+    DB::table('initial_orders')->insert([Sync::ID_COLUMN => 'row-1', 'external_id' => 'source-1']);
+
+    expect($sync->fresh()->destination)->toBe('initial_orders');
+    expect(Schema::hasTable('ignored_table'))->toBeFalse();
+
+    config(['phpinnacle-ferry.sync.table_prefix' => 'changed_']);
+    $sync->update(['code' => 'renamed']);
+
+    expect($sync->fresh()->destination)->toBe('initial_orders');
+    expect(DB::table('initial_orders')->value('external_id'))->toBe('source-1');
+    expect(Schema::hasTable('changed_renamed'))->toBeFalse();
+});

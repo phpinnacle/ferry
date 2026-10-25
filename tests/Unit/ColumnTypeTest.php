@@ -18,6 +18,8 @@ it('represents references as UUID strings with Ferry metadata', function () {
         'type' => 'string',
         'format' => 'uuid',
         'x-ferry-reference' => true,
+        'minLength' => 36,
+        'maxLength' => 36,
     ]);
 });
 
@@ -55,4 +57,17 @@ it('maps typed Rosetta fields to destination column types', function (Field $fie
     'unknown' => [new ScalarField(FieldType::Unknown), null],
     'undefined' => [new ScalarField(FieldType::Undefined), null],
     'union' => [new UnionField([new StringField(length: null, fixed: false)]), null],
+]);
+
+it('maps UUID references to strings in one direction', function (
+    ColumnType $source,
+    ColumnType $target,
+    bool $compatible,
+) {
+    expect($source->canMapTo($target))->toBe($compatible);
+})->with([
+    'reference to string' => [ColumnType::Reference, ColumnType::String, true],
+    'string to reference' => [ColumnType::String, ColumnType::Reference, false],
+    'reference to reference' => [ColumnType::Reference, ColumnType::Reference, true],
+    'reference to integer' => [ColumnType::Reference, ColumnType::Integer, false],
 ]);

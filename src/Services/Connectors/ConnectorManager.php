@@ -172,7 +172,7 @@ class ConnectorManager
             ]));
         }
 
-        if (!$sync->hasValidSchema($object, $this->destinations->fieldsFor($sync))) {
+        if (!$sync->hasValidSchema($object, $this->destinations->schemaFor($sync))) {
             throw new LogicException(__('phpinnacle-ferry::resources.sync.errors.invalid_mapping', [
                 'code' => $sync->code,
             ]));

@@ -60,7 +60,7 @@ it('stores and restores the exact native schema emitted by the form', function (
         ],
     ]);
     $state = $form->getState();
-    $attributes = SyncForm::forCreate($state, app(DestinationFactory::class));
+    $attributes = TestCase::mappedSyncAttributes($state, app(DestinationFactory::class));
     expect($attributes['schema'])->toBe($state['schema']);
 
     $sync = Sync::create($attributes);

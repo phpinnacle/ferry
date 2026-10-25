@@ -2,7 +2,6 @@
 
 namespace PHPinnacle\Ferry\Destinations;
 
-use Illuminate\Support\Facades\Config;
 use PHPinnacle\Ferry\Contracts\Destination;
 use PHPinnacle\Ferry\Models\ConnectionMetadata;
 use PHPinnacle\Ferry\Models\Sync;
@@ -11,13 +10,23 @@ use PHPinnacle\Ferry\Services\TransformFactory;
 
 final readonly class DynamicDestination implements Destination
 {
-    public string $table;
+    public function __construct(
+        private string $table,
+    ) {}
 
-    public function __construct(Sync $sync)
+    public function getLabel(): string
     {
-        $this->table = $sync->exists
-            ? $sync->destination
-            : Config::string('phpinnacle-ferry.sync.table_prefix') . $sync->code;
+        return $this->table;
+    }
+
+    public function getIcon(): ?string
+    {
+        return null;
+    }
+
+    public function getColor(): ?string
+    {
+        return null;
     }
 
     public function connector(

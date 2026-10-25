@@ -56,7 +56,9 @@ it('projects available Rosetta constraints without rounding numeric metadata', f
         new NumberField(5, 2, false),
         [
             'type' => 'number',
-            'description' => 'Digits: 5; Decimal places: 2; Value: -999.99 … 999.99',
+            'multipleOf' => 0.01,
+            'exclusiveMinimum' => -1000,
+            'exclusiveMaximum' => 1000,
         ],
     ],
     'unsigned decimal' => [
@@ -64,21 +66,26 @@ it('projects available Rosetta constraints without rounding numeric metadata', f
         [
             'type' => 'number',
             'minimum' => 0,
-            'description' => 'Digits: 5; Decimal places: 2; Value: 0 … 999.99',
+            'multipleOf' => 0.01,
+            'exclusiveMaximum' => 1000,
         ],
     ],
     'fractional digits only' => [
         new NumberField(3, 3, false),
         [
             'type' => 'number',
-            'description' => 'Digits: 3; Decimal places: 3; Value: -0.999 … 0.999',
+            'multipleOf' => 0.001,
+            'exclusiveMinimum' => -1,
+            'exclusiveMaximum' => 1,
         ],
     ],
     'large decimal' => [
         new NumberField(20, 2, false),
         [
             'type' => 'number',
-            'description' => 'Digits: 20; Decimal places: 2; Value: -999999999999999999.99 … 999999999999999999.99',
+            'multipleOf' => 0.01,
+            'exclusiveMinimum' => -1_000_000_000_000_000_000,
+            'exclusiveMaximum' => 1_000_000_000_000_000_000,
         ],
     ],
     'integer' => [
@@ -86,14 +93,14 @@ it('projects available Rosetta constraints without rounding numeric metadata', f
         [
             'type' => 'integer',
             'minimum' => 0,
-            'description' => 'Digits: 4; Decimal places: 0; Value: 0 … 9999',
+            'exclusiveMaximum' => 10_000,
         ],
     ],
     'unknown dimensions' => [new NumberField(null, null, true), ['type' => 'integer', 'minimum' => 0]],
-    'unknown scale' => [new NumberField(10, null, false), ['type' => 'integer', 'description' => 'Digits: 10']],
+    'unknown scale' => [new NumberField(10, null, false), ['type' => 'integer']],
     'unknown precision' => [
         new NumberField(null, 2, false),
-        ['type' => 'number', 'description' => 'Decimal places: 2'],
+        ['type' => 'number', 'multipleOf' => 0.01],
     ],
 ]);
 

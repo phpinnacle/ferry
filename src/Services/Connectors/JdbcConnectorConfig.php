@@ -17,6 +17,7 @@ final readonly class JdbcConnectorConfig
         private array $transforms,
         private ?string $connection = null,
         private bool $deletes = false,
+        private ?string $primaryKey = null,
     ) {}
 
     /** @return array<string, string> */
@@ -32,7 +33,8 @@ final readonly class JdbcConnectorConfig
             'connection.url' => $target['url'],
             'connection.user' => $target['username'],
             'connection.password' => $target['password'],
-            'pk.mode' => 'record_key',
+            'pk.mode' => $this->primaryKey !== null ? 'record_value' : 'record_key',
+            ...($this->primaryKey !== null ? ['pk.fields' => $this->primaryKey] : []),
             'insert.mode' => 'upsert',
             'delete.enabled' => $this->deletes ? 'true' : 'false',
             'auto.create' => 'false',

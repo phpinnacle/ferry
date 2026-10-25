@@ -100,11 +100,17 @@ enum ColumnType: string implements HasLabel
         };
     }
 
-    /** @return array{type: string, format?: string, x-ferry-reference?: true, minLength?: int, maxLength?: int, minimum?: int, description?: string} */
+    /** @return array{type: string, format?: string, x-ferry-reference?: true, minLength?: int, maxLength?: int, minimum?: int, exclusiveMinimum?: int|float, exclusiveMaximum?: int|float, multipleOf?: int|float} */
     public function jsonSchema(?Field $field = null): array
     {
         $schema = match ($this) {
-            self::Reference => ['type' => 'string', 'format' => 'uuid', 'x-ferry-reference' => true],
+            self::Reference => [
+                'type' => 'string',
+                'format' => 'uuid',
+                'x-ferry-reference' => true,
+                'minLength' => 36,
+                'maxLength' => 36,
+            ],
             self::DateTime => ['type' => 'string', 'format' => 'date-time'],
             self::Decimal => ['type' => 'number'],
             default => ['type' => $this->value],
@@ -120,31 +126,19 @@ enum ColumnType: string implements HasLabel
             if ($field->unsigned) {
                 $schema['minimum'] = 0;
             }
-            $description = self::numberDescription($field);
-            if ($description !== '') {
-                $schema['description'] = $description;
+            if ($field->scale !== null && $field->scale > 0) {
+                $schema['multipleOf'] = 10 ** (-$field->scale);
+            }
+            if ($field->precision !== null && $field->precision > 0 && $field->scale !== null) {
+                $limit = 10 ** ($field->precision - $field->scale);
+                if (!$field->unsigned) {
+                    $schema['exclusiveMinimum'] = -$limit;
+                }
+                $schema['exclusiveMaximum'] = $limit;
             }
         }
 
         return $schema;
-    }
-
-    private static function numberDescription(NumberField $field): string
-    {
-        $parts = [];
-        foreach (['precision' => $field->precision, 'scale' => $field->scale] as $kind => $value) {
-            if ($value !== null) {
-                $parts[] = __('phpinnacle-ferry::resources.sync.constraints.' . $kind) . ': ' . $value;
-            }
-        }
-        if ($field->precision !== null && $field->precision > 0 && $field->scale !== null) {
-            $whole = str_repeat('9', $field->precision - $field->scale);
-            $maximum = ($whole === '' ? '0' : $whole) . ($field->scale > 0 ? '.' . str_repeat('9', $field->scale) : '');
-            $minimum = $field->unsigned ? '0' : '-' . $maximum;
-            $parts[] = __('phpinnacle-ferry::resources.sync.constraints.range') . ': ' . $minimum . ' … ' . $maximum;
-        }
-
-        return implode('; ', $parts);
     }
 
     public function getLabel(): string
@@ -154,6 +148,10 @@ enum ColumnType: string implements HasLabel
 
     public function canMapTo(self $target): bool
     {
+        if ($this === self::Reference && $target === self::String) {
+            return true;
+        }
+
         $sourceSchema = JsonSchema::fromArray($this->jsonSchema());
         $targetSchema = JsonSchema::fromArray($target->jsonSchema());
 

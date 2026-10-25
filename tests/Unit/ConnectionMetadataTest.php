@@ -115,24 +115,45 @@ it('lists mappable fields with translated system titles and property titles', fu
             [
                 'source' => '_idrref',
                 'title' => __('phpinnacle-ferry::resources.sync.system_fields._idrref'),
+                'description' => null,
                 'physical' => '_idrref',
                 'type' => ColumnType::Reference,
             ],
             [
                 'source' => '_description',
                 'title' => __('phpinnacle-ferry::resources.sync.system_fields._description'),
+                'description' => null,
                 'physical' => '_description',
                 'type' => ColumnType::String,
             ],
             [
                 'source' => '_document12_idrref',
                 'title' => '_document12_idrref',
+                'description' => null,
                 'physical' => '_document12_idrref',
                 'type' => ColumnType::Reference,
             ],
-            ['source' => 'property-1', 'title' => 'Title 1', 'physical' => '_fld1', 'type' => ColumnType::String],
-            ['source' => 'property-2', 'title' => 'Label 2', 'physical' => '_fld2', 'type' => ColumnType::String],
-            ['source' => 'property-3', 'title' => '_fld3', 'physical' => '_fld3', 'type' => ColumnType::String],
+            [
+                'source' => 'property-1',
+                'title' => 'Title 1',
+                'description' => null,
+                'physical' => '_fld1',
+                'type' => ColumnType::String,
+            ],
+            [
+                'source' => 'property-2',
+                'title' => 'Label 2',
+                'description' => null,
+                'physical' => '_fld2',
+                'type' => ColumnType::String,
+            ],
+            [
+                'source' => 'property-3',
+                'title' => '_fld3',
+                'description' => null,
+                'physical' => '_fld3',
+                'type' => ColumnType::String,
+            ],
         ])
         ->and(array_column($object->mappableFields(withKey: false), 'source'))
         ->not->toContain('_idrref');
@@ -159,12 +180,14 @@ it('resolves a single reference to its physical column without changing its stab
             [
                 'source' => '_parentidrref',
                 'title' => __('phpinnacle-ferry::resources.sync.system_fields._parentidrref'),
+                'description' => null,
                 'physical' => '_parentidrref',
                 'type' => ColumnType::Reference,
             ],
             [
                 'source' => 'supplier-id',
                 'title' => 'Supplier',
+                'description' => null,
                 'physical' => '_fld17rref',
                 'type' => ColumnType::Reference,
             ],
