@@ -67,6 +67,7 @@ it('prepares typed replica attributes from its form', function (?string $destina
             : MappingState::mapping([
                 'name' => MappingState::source('_description'),
                 'tax_number' => MappingState::source('_code'),
+                'customer_id' => MappingState::source('_idrref'),
             ]),
     ];
 
@@ -113,7 +114,7 @@ it('prepares typed replica attributes from its form', function (?string $destina
         ->toEqual([
             '_description' => 'name',
             '_code' => 'tax_number',
-            '_idrref' => $destination === null ? 'external_id' : null,
+            '_idrref' => $destination === null ? 'external_id' : 'customer_id',
         ])
         ->and(Schema::hasTable('ferry_replica_customers_replica'))
         ->toBe($destination === null);
@@ -137,6 +138,7 @@ it('keeps a static value through creating, filling and updating a static replica
         'name' => MappingState::source('_description'),
         'is_active' => MappingState::value(true),
         'tax_number' => MappingState::value('none'),
+        'customer_id' => MappingState::source('_idrref'),
     ], ['_description' => ['transforms' => []], '_idrref' => ['transforms' => []], '_code' => ['transforms' => []]]);
 
     $createForm = ReplicaForm::configure(FormSchema::make($livewire)->statePath('data')->operation('create'));
@@ -248,6 +250,7 @@ it('keeps transforms through creating, filling and updating a replica', function
             'name' => MappingState::source('_description'),
             'is_active' => MappingState::source('_code'),
             'tax_number' => MappingState::value('none'),
+            'customer_id' => MappingState::source('_idrref'),
         ], ['_code' => ['transforms' => [['type' => 'cast', 'data' => ['type' => 'boolean']]]]]),
     ]);
     $attributes = TestCase::mappedReplicaAttributes(
@@ -307,7 +310,10 @@ it('resets source settings with mappings when the destination or source changes'
         'upstream_id' => $upstream->id,
         'source' => 'object-0',
         'destination' => 'static:customers',
-        'schema' => MappingState::mapping(['name' => MappingState::source('_code')], [
+        'schema' => MappingState::mapping([
+            'name' => MappingState::source('_code'),
+            'customer_id' => MappingState::source('_idrref'),
+        ], [
             '_code' => ['transforms' => $fieldTransforms],
         ]),
     ]);
@@ -497,7 +503,9 @@ it('rejects unsupported static values before persistence', function () {
                 'name' => MappingState::source('_description'),
                 'tax_number' => MappingState::value('x'),
                 'is_active' => MappingState::value('maybe'),
+                'customer_id' => MappingState::source('_idrref'),
             ], [
+                '_idrref' => ['field' => TestCase::keyMapping()->field->toArray()],
                 '_description' => [
                     'field' => JsonSchema::fromArray(['type' => 'string', 'maxLength' => 100])->toArray(),
                     'result' => ['type' => 'string', 'maxLength' => 100],
@@ -523,7 +531,11 @@ it('confirms removed and retyped dynamic columns when saving the form', function
         'type' => $change === 'static' ? DestinationType::Static : DestinationType::Dynamic,
         'destination' => $change === 'static' ? 'customers' : null,
         'schema' => [
-            ...($change === 'static' ? [] : [TestCase::keyMapping()]),
+            ...(
+                $change === 'static'
+                    ? [new FieldMapping('_idrref', 'customer_id', $object->field('_idrref'))]
+                    : [TestCase::keyMapping()]
+            ),
             new FieldMapping('_description', 'name', $object->field('_description')),
             new FieldMapping('_code', 'tax_number', $object->field('_code')),
         ],
@@ -594,6 +606,7 @@ it('resolves the destination table from the registered static destination', func
         'destination' => 'customer_directory',
         'schema' => [
             new FieldMapping('_description', 'name', JsonSchema::fromArray(['type' => 'string', 'maxLength' => 100])),
+            new FieldMapping('_idrref', 'customer_id', TestCase::keyMapping()->field),
         ],
     ]);
 
@@ -602,7 +615,10 @@ it('resolves the destination table from the registered static destination', func
         app(DestinationFactory::class)->resolve($replica),
         $replica,
         StructureItems::make([
-            'fields' => ['_description' => JsonSchema::fromArray(['type' => 'string', 'maxLength' => 100])],
+            'fields' => [
+                '_description' => JsonSchema::fromArray(['type' => 'string', 'maxLength' => 100]),
+                '_idrref' => TestCase::keyMapping()->field,
+            ],
             'sources' => [],
         ]),
         'topic',
@@ -630,6 +646,7 @@ it('does not affect the destination table when a static replica is deleted', fun
         'destination' => 'customers',
         'schema' => [
             new FieldMapping('_description', 'name', JsonSchema::fromArray(['type' => 'string', 'maxLength' => 100])),
+            new FieldMapping('_idrref', 'customer_id', TestCase::keyMapping()->field),
         ],
     ]);
 
@@ -704,6 +721,7 @@ it('edits a Boolean constant through the built-in form without a cast', function
         'schema' => MappingState::mapping([
             'name' => MappingState::source('_description'),
             'tax_number' => MappingState::source('_code'),
+            'customer_id' => MappingState::source('_idrref'),
         ]),
     ]);
     $mapping = $form->getComponentByStatePath('schema');
@@ -751,6 +769,7 @@ it('preserves existing transformed constants when editing a static replica', fun
                 static: 'false',
                 kind: FieldKind::Static,
             ),
+            new FieldMapping('_idrref', 'customer_id', TestCase::keyMapping()->field),
         ],
     ]);
     $original = $replica->schema[2];
@@ -827,7 +846,7 @@ it('locks identifying fields on edit and ignores attempts to change them through
     $replica->update(ReplicaForm::forUpdate(
         [
             'name' => 'Renamed',
-            'schema' => [],
+            'schema' => [TestCase::keyMapping()->jsonSerialize()],
             'code' => 'changed_code',
             'upstream_id' => 'another-upstream',
             'source' => 'another-object',

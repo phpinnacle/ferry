@@ -88,6 +88,7 @@ class TransformFactory
         if ($keyMap !== []) {
             $pipeline['rename_keys'] = [
                 'type' => 'org.apache.kafka.connect.transforms.ReplaceField$Key',
+                'include' => implode(',', array_keys($keyMap)),
                 'renames' => self::renames($keyMap),
             ];
         }

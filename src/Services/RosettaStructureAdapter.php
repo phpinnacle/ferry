@@ -75,6 +75,10 @@ class RosettaStructureAdapter implements StructureAdapter
                     $object->primary_key = $primaryKey['columns'] ?? [];
                     $object->schema = JsonSchema::fromArray([
                         ...$object->schema->toArray(),
+                        'required' => array_values(array_unique([
+                            ...$object->schema->required(),
+                            ...$object->primary_key,
+                        ])),
                         'x-primary-key' => $object->primary_key,
                     ]);
                 }

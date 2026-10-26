@@ -13,10 +13,11 @@ function customers_destination(?string $connectionName = null): StaticDestinatio
         table: 'customers',
         primaryKey: ['customer_id'],
         schema: Schema::object([
+            'customer_id' => Schema::string()->format('uuid')->with('x-ferry-reference', true)->title('Customer ID'),
             'name' => Schema::string()->title('Name'),
             'tax_number' => Schema::string()->title('Tax Number'),
             'is_active' => Schema::boolean()->title('Is Active'),
-        ])->required(['name', 'tax_number']),
+        ])->required(['customer_id', 'name', 'tax_number']),
         connection: $connectionName,
         fixedValues: [
             'type' => 'Customer',

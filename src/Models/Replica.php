@@ -148,7 +148,12 @@ class Replica extends Model
             if ($mapping->source !== null) {
                 $field = $object->field($mapping->source);
 
-                if ($field === null || !$mapping->sourceSchema()?->equals($field)) {
+                if (
+                    $field === null
+                    || !$mapping->sourceSchema()?->equals($field)
+                    || in_array($mapping->source, $object->primary_key, true)
+                    && $mapping->transforms !== []
+                ) {
                     $columns[] = $mapping->target ?? $mapping->source;
                 }
             }
@@ -158,8 +163,11 @@ class Replica extends Model
                 if (
                     $destinationField === null
                     || !$mapping->canMapTo($destinationField)
-                    || in_array($mapping->target, $destination->getPrimaryKey(), true)
-                    && !in_array($mapping->source, $object->primary_key, true)
+                    || in_array($mapping->target, $destination->getPrimaryKey(), true) !== in_array(
+                        $mapping->source,
+                        $object->primary_key,
+                        true,
+                    )
                 ) {
                     $destinationColumns[] = $mapping->target;
                 }
@@ -176,19 +184,14 @@ class Replica extends Model
             }
         }
 
-        if ($this->type === DestinationType::Dynamic) {
-            $columns = [...$columns, ...array_diff($object->primary_key, array_keys($this->columnMap($object)))];
-        }
+        $columns = [...$columns, ...array_diff($object->primary_key, array_keys($this->columnMap($object)))];
 
         return array_values(array_unique([...$columns, ...$destinationColumns]));
     }
 
     public function hasValidSchema(StructureItem $object, ?StaticDestination $destination = null): bool
     {
-        return (
-            ($this->type !== DestinationType::Dynamic || $object->primary_key !== [])
-            && $this->brokenColumns($object, $destination) === []
-        );
+        return $object->primary_key !== [] && $this->brokenColumns($object, $destination) === [];
     }
 
     /** @return list<string> */

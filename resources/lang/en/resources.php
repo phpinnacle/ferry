@@ -172,6 +172,7 @@ return [
             'transform_missing' => 'Transform ":transform" is not registered',
             'required_destination_field_missing' => 'The required destination field ":field" is not mapped',
             'destination_primary_key_source' => 'The destination primary-key field ":field" must map to a source primary-key field',
+            'source_primary_key_destination' => 'The source primary-key field ":field" must map to a destination primary-key field',
             'invalid_mapping' => 'Replica ":code" cannot be activated: its field mapping is out of date',
         ],
         'messages' => [

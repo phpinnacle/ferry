@@ -451,27 +451,37 @@ it('builds a configured pipeline without registering editor descriptions', funct
     $factory = app(TransformFactory::class);
     $replica = new Replica;
     $replica->forceFill([
-        'schema' => [new FieldMapping(
-            '_marked',
-            null,
-            JsonSchema::fromArray(['type' => 'boolean']),
-            transforms: [new TransformSetting('headless', [
-                'mode' => 'exclude',
-                'condition' => '@ == true',
-                'missing_or_null_behavior' => 'include',
-            ])],
-        )],
+        'schema' => [
+            new FieldMapping(
+                '_marked',
+                'is_active',
+                JsonSchema::fromArray(['type' => 'boolean']),
+                transforms: [new TransformSetting('headless', [
+                    'mode' => 'exclude',
+                    'condition' => '@ == true',
+                    'missing_or_null_behavior' => 'include',
+                ])],
+            ),
+            new FieldMapping('id', 'id', JsonSchema::fromArray(['type' => 'integer'])),
+        ],
     ]);
 
+    $object = StructureItems::make([
+        'primary_key' => ['id'],
+        'fields' => [
+            '_marked' => JsonSchema::fromArray(['type' => 'boolean']),
+            'id' => JsonSchema::fromArray(['type' => 'integer']),
+        ],
+        'sources' => [],
+    ]);
     expect($registry->get('headless'))
         ->toBeNull()
+        ->and($replica->hasValidSchema($object))
+        ->toBeTrue()
         ->and($factory->handler('headless'))
         ->toBe($handler)
         ->and(
-            $factory->pipeline($replica, StructureItems::make([
-                'fields' => ['_marked' => JsonSchema::fromArray(['type' => 'boolean'])],
-                'sources' => [],
-            ]))['transforms.field_0_0.filter.condition'],
+            $factory->pipeline($replica, $object)['transforms.field_0_0.filter.condition'],
         )
         ->toBe("$[?(@['_marked'] == true)]");
 });

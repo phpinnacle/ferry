@@ -45,6 +45,7 @@ it('reports removed and newly required destination fields', function () {
         'type' => DestinationType::Static,
         'destination' => 'customers',
         'schema' => [
+            new FieldMapping('_idrref', 'customer_id', $this->object->field('_idrref')),
             new FieldMapping('_description', 'name', JsonSchema::fromArray(['type' => 'string', 'maxLength' => 100])),
             new FieldMapping('_marked', 'is_retired', JsonSchema::fromArray(['type' => 'boolean'])),
         ],
@@ -86,14 +87,23 @@ it('ignores removed unused sources during structure review', function () {
     expect($replica->hasValidSchema($object))->toBeTrue();
 });
 
-it('rejects dynamic replication when the source loses its primary key', function () {
-    $replica = new Replica(['schema' => [
-        new FieldMapping('_idrref', 'id', $this->object->field('_idrref')),
-    ]]);
+it('rejects replication when the source loses its primary key', function (DestinationType $type) {
+    $destination = new StaticDestination('keyed', 'Keyed', 'keyed', ['id'], Schema::object([
+        'id' => Schema::string(),
+    ]));
+    $replica = new Replica([
+        'type' => $type,
+        'schema' => [
+            new FieldMapping('_idrref', 'id', $this->object->field('_idrref')),
+        ],
+    ]);
     $this->object->primary_key = [];
 
-    expect($replica->hasValidSchema($this->object))->toBeFalse();
-});
+    expect($replica->hasValidSchema(
+        $this->object,
+        $type === DestinationType::Static ? $destination : null,
+    ))->toBeFalse();
+})->with([DestinationType::Dynamic, DestinationType::Static]);
 
 it('reports static key mappings when the source or destination primary key changes', function () {
     $destination = new StaticDestination(
@@ -114,7 +124,15 @@ it('reports static key mappings when the source or destination primary key chang
     expect($replica->hasValidSchema($this->object, $destination))->toBeTrue();
 
     $changedDestination = new StaticDestination('keyed', 'Keyed', 'keyed', ['name'], $destination->getSchema());
-    expect($replica->brokenColumns($this->object, $changedDestination))->toBe(['name']);
+    expect($replica->brokenColumns($this->object, $changedDestination))->toBe(['id', 'name']);
+
+    $this->object->primary_key = ['_idrref', '_description'];
+    expect($replica->brokenColumns($this->object, $destination))->toBe(['name']);
+    $replica->schema = [new FieldMapping('_idrref', 'id', $this->object->field('_idrref'))];
+    expect($replica->brokenColumns($this->object, $destination))
+        ->toBe(['_description'])
+        ->and($replica->hasValidSchema($this->object, $destination))
+        ->toBeFalse();
 
     $this->object->primary_key = [];
     expect($replica->brokenColumns($this->object, $destination))
@@ -129,17 +147,24 @@ it('uses JSON Schema compatibility when saving and reviewing static replicas', f
     bool $allowed,
 ) {
     $field = JsonSchema::fromArray($source);
-    $object = StructureItems::make(['fields' => ['amount' => $field], 'sources' => []]);
+    $object = StructureItems::make([
+        'fields' => ['amount' => $field, '_idrref' => $this->object->field('_idrref')],
+        'sources' => [],
+    ]);
     $destination = new StaticDestination(
         'totals',
         'Totals',
         'totals',
         ['id'],
         Schema::object([
+            'id' => Schema::string(),
             'amount' => Schema::fromArray($target)->title('Amount'),
-        ])->required(['amount']),
+        ])->required(['id', 'amount']),
     );
-    $mappings = [new FieldMapping('amount', 'amount', $field)];
+    $mappings = [
+        new FieldMapping('amount', 'amount', $field),
+        new FieldMapping('_idrref', 'id', $object->field('_idrref')),
+    ];
 
     if ($allowed) {
         ReplicaSchema::assertValid($mappings, $destination, $object->primary_key);
@@ -219,19 +244,27 @@ it('compares native static values with destination enums and lengths', function 
     array $target,
     bool $allowed,
 ) {
-    $destination = new StaticDestination('labels', 'Labels', 'labels', ['id'], Schema::object([
-        'label' => Schema::fromArray($target),
-    ]));
+    $destination = new StaticDestination(
+        'labels',
+        'Labels',
+        'labels',
+        ['id'],
+        Schema::object([
+            'id' => Schema::string(),
+            'label' => Schema::fromArray($target),
+        ])->required(['id']),
+    );
     $mapping = new FieldMapping(null, 'label', null, static: $value, kind: FieldKind::Static);
+    $mappings = [$mapping, new FieldMapping('_idrref', 'id', $this->object->field('_idrref'))];
 
     if ($allowed) {
-        ReplicaSchema::assertValid([$mapping], $destination, $this->object->primary_key);
+        ReplicaSchema::assertValid($mappings, $destination, $this->object->primary_key);
     } else {
-        expect(fn () => ReplicaSchema::assertValid([$mapping], $destination, $this->object->primary_key))
+        expect(fn () => ReplicaSchema::assertValid($mappings, $destination, $this->object->primary_key))
             ->toThrow(ValidationException::class);
     }
 
-    $replica = new Replica(['type' => DestinationType::Static, 'schema' => [$mapping]]);
+    $replica = new Replica(['type' => DestinationType::Static, 'schema' => $mappings]);
     expect($replica->brokenColumns($this->object, $destination))->toBe($allowed ? [] : ['label']);
 })->with([
     'allowed enum' => ['active', ['type' => 'string', 'enum' => ['active', 'inactive']], true],

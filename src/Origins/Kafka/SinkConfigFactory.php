@@ -24,7 +24,8 @@ class SinkConfigFactory
         bool $unwrap = false,
     ): array {
         $dynamic = $replica->type === DestinationType::Dynamic;
-        $keyMap = $dynamic ? $replica->primaryKeyMap($object) : [];
+        $primaryKey = $destination->getPrimaryKey();
+        $keyMap = $replica->primaryKeyMap($object);
         $fixedValues = $destination->getFixedValues();
 
         return new JdbcConnectorConfig(
@@ -39,8 +40,7 @@ class SinkConfigFactory
             connection: $destination->getConnectionName(),
             targetHost: $targetHost,
             deletes: $dynamic,
-            primaryKey: $destination->getPrimaryKey(),
-            primaryKeyMode: $dynamic ? 'record_key' : 'record_value',
+            primaryKey: $primaryKey,
         )->toArray();
     }
 }

@@ -7,12 +7,16 @@ use Illuminate\Support\Facades\Schema;
 use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Data\FieldMapping;
 use PHPinnacle\Ferry\Data\TransformSetting;
+use PHPinnacle\Ferry\Destinations\StaticDestination;
+use PHPinnacle\Ferry\Enums\DestinationType;
 use PHPinnacle\Ferry\Enums\FieldKind;
 use PHPinnacle\Ferry\Enums\ReplicaStatus;
 use PHPinnacle\Ferry\Enums\StructureStatus;
 use PHPinnacle\Ferry\Models\Replica;
 use PHPinnacle\Ferry\Origins\Kafka\TransformFactory;
+use PHPinnacle\Ferry\Services\DestinationFactory;
 use PHPinnacle\Ferry\Services\ReplicaTableManager;
+use PHPinnacle\Ferry\Services\TransformRegistry;
 use PHPinnacle\Ferry\Tests\Fixtures\StructureItems;
 use PHPinnacle\Ferry\Tests\TestCase;
 
@@ -22,6 +26,93 @@ uses(TestCase::class);
 
 beforeEach(function () {
     Queue::fake();
+});
+
+it('pauses saved primary-key transforms during structure review without resolving transform registries', function (
+    DestinationType $type,
+) {
+    app(DestinationFactory::class)->register(new StaticDestination(
+        'keyed',
+        'Keyed',
+        'keyed',
+        ['id'],
+        \PHPinnacle\Jason\Schema::object([
+            'id' => \PHPinnacle\Jason\Schema::string(),
+        ])->required(['id']),
+    ));
+    $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
+    $attributes = ['primary_key' => ['record_id'], 'sources' => ['record_id' => ['type' => 'string']]];
+    $object = TestCase::makeItem($upstream, $attributes);
+    $replicas = [];
+    foreach ([
+        'trim' => [],
+        'filter' => [
+            'mode' => 'exclude',
+            'condition' => "@ == 'blocked'",
+            'missing_or_null_behavior' => 'include',
+        ],
+        'cast' => ['type' => 'integer'],
+    ] as $transform => $parameters) {
+        $replicas[$transform] = TestCase::makeReplica([
+            'upstream_id' => $upstream->id,
+            'code' => $transform,
+            'type' => $type,
+            'destination' => $type === DestinationType::Static ? 'keyed' : null,
+            'schema' => [new FieldMapping(
+                'record_id',
+                'id',
+                $object->field('record_id'),
+                result: $object->field('record_id'),
+                transforms: [
+                    new TransformSetting($transform, $parameters),
+                ],
+            )],
+        ], ['status' => ReplicaStatus::Active]);
+    }
+    app()->bind(
+        TransformRegistry::class,
+        fn () => throw new LogicException('Workers must not resolve UI descriptions.'),
+    );
+    app()->bind(TransformFactory::class, fn () => throw new LogicException('Workers must not resolve handlers.'));
+    TestCase::makeItem($upstream, [...$attributes, 'revision' => $upstream->structure->draftRevision()]);
+    $upstream->structure->publish();
+
+    foreach ($replicas as $transform => $replica) {
+        expect($replica->fresh()->status)
+            ->toBe(ReplicaStatus::Pause)
+            ->and($replica->fresh()->schema[0]->transforms[0]->type)
+            ->toBe($transform);
+    }
+})->with([DestinationType::Dynamic, DestinationType::Static]);
+
+it('pauses static replicas without removing mappings when the source key gains a component', function () {
+    app(DestinationFactory::class)->register(new StaticDestination(
+        'keyed',
+        'Keyed',
+        'keyed',
+        ['id'],
+        \PHPinnacle\Jason\Schema::object(['id' => \PHPinnacle\Jason\Schema::string()])->required(['id']),
+    ));
+    $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
+    $object = TestCase::makeItem($upstream, [
+        'primary_key' => ['record_id'],
+        'sources' => ['record_id' => ['type' => 'string'], 'tenant_id' => ['type' => 'string']],
+    ]);
+    $replica = TestCase::makeReplica([
+        'upstream_id' => $upstream->id,
+        'type' => DestinationType::Static,
+        'destination' => 'keyed',
+        'schema' => [new FieldMapping('record_id', 'id', $object->field('record_id'))],
+    ], ['status' => ReplicaStatus::Active]);
+    $original = $replica->schema;
+    TestCase::makeItem($upstream, [
+        'primary_key' => ['record_id', 'tenant_id'],
+        'sources' => ['record_id' => ['type' => 'string'], 'tenant_id' => ['type' => 'string']],
+        'revision' => $upstream->structure->draftRevision(),
+    ]);
+    $upstream->structure->publish();
+
+    expect($replica->fresh()->status)->toBe(ReplicaStatus::Pause)->and($replica->fresh()->schema)->toEqual($original);
 });
 
 it('stores ordered record transforms without applying them', function () {

@@ -2,6 +2,7 @@
 
 return [
     'transform_input_type' => 'The ":transform" transform does not support its input type.',
+    'primary_key_transforms_prohibited' => 'Transformations are prohibited on source primary-key fields.',
     'replica_schema' => [
         'format' => 'The field mapping must be a list of rows',
         'empty' => 'Add at least one field mapping',
@@ -11,6 +12,6 @@ return [
         'column_duplicate' => 'The column name ":column" is used more than once',
         'column_format' => 'The column name ":column" must start with a letter and contain only Latin letters, digits and underscores',
         'primary_key_required' => 'Map every source primary-key column: :columns',
-        'primary_key_missing' => 'The source must declare a primary key for a dynamic destination',
+        'primary_key_missing' => 'The source must declare a primary key',
     ],
 ];

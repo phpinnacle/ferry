@@ -47,7 +47,7 @@ it('allows the former technical column name', function () use ($validate) {
     expect($validate(['idrref']))->toBeNull();
 });
 
-it('requires a declared source primary key for dynamic bindings', function () {
+it('requires a declared source primary key for mappings', function () {
     $validator = Validator::make(['schema' => ['record_id']], ['schema' => [
         fn (string $attribute, mixed $value, Closure $fail) => ReplicaSchema::validatePrimaryKey([], $value, $fail),
     ]]);

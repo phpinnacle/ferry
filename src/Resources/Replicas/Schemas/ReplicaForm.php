@@ -283,6 +283,7 @@ class ReplicaForm
                 $mapping->sourceSettings(
                     function (string $source, ?Closure $inputSchema = null) use ($registry, $sourceSchema, $object) {
                         $static = $inputSchema !== null;
+                        $sourceIsKey = !$static && in_array($source, $object->primary_key ?? [], true);
                         $inputSchema ??= fn () => JsonSchema::fromArray($sourceSchema['properties'][$source]);
 
                         /** @var Closure(): JsonSchema $inputSchema */
@@ -307,6 +308,11 @@ class ReplicaForm
                                         : $sourceSchema['properties'][$source]['title'],
                                 )
                                 ->object($object)
+                                ->addable(!$sourceIsKey)
+                                ->rule('max:0', $sourceIsKey)
+                                ->validationMessages([
+                                    'max' => __('phpinnacle-ferry::validation.primary_key_transforms_prohibited'),
+                                ])
                                 ->inputSchema(fn () => $inputSchema()->toArray())
                                 ->dehydrated(
                                     fn (FieldTransforms $component) => !$static || $component->getSettings() !== [],
@@ -327,7 +333,7 @@ class ReplicaForm
             ->compact()
             ->warnings($warnings)
             ->label(__('phpinnacle-ferry::resources.replica.fields.schema'))
-            ->jsonSchema([...self::sourceSchema($object), 'required' => $object->primary_key ?? []])
+            ->jsonSchema(self::sourceSchema($object))
             ->labels(
                 source: __('phpinnacle-ferry::resources.replica.fields.source_title'),
                 dest: __('phpinnacle-ferry::resources.replica.fields.target_column'),
@@ -403,10 +409,23 @@ class ReplicaForm
             )
             ->canConnectUsing(
                 fn (JsonSchema $source, JsonSchema $target, string $sourceName, string $targetName) => (
-                    !in_array($targetName, $destination?->getPrimaryKey() ?? [], true)
-                    || in_array($sourceName, $object->primary_key ?? [], true)
+                    in_array($targetName, $destination?->getPrimaryKey() ?? [], true) === in_array(
+                        $sourceName,
+                        $object->primary_key ?? [],
+                        true,
+                    )
                 ),
             )
+            ->rule(fn (FieldMapping $component) => function (string $attribute, mixed $value, Closure $fail) use (
+                $component,
+                $object,
+            ) {
+                ReplicaSchema::validatePrimaryKey(
+                    $object->primary_key ?? [],
+                    array_values(array_filter($object->primary_key ?? [], $component->isSourceUsed(...))),
+                    $fail,
+                );
+            })
             ->outputSchema(function (FieldMapping $component, TransformRegistry $registry) {
                 /** @var array<string, array<array-key, TransformInput>> $fieldTransforms */
                 $fieldTransforms = array_map(
@@ -459,10 +478,17 @@ class ReplicaForm
         $container->getComponentByStatePath('schema')?->hydrateState($defaultState);
     }
 
-    /** @return array{type: 'object', properties: array<string, Definition&array{title: string}>} */
+    /** @return array{type: 'object', properties: array<string, Definition&array{title: string}>, required: list<string>} */
     private static function sourceSchema(?StructureItem $object): array
     {
-        return ['type' => 'object', 'properties' => $object?->mappableFields() ?? []];
+        return [
+            'type' => 'object',
+            'properties' => $object?->mappableFields() ?? [],
+            'required' => array_values(array_unique([
+                ...($object?->schema->required() ?? []),
+                ...($object->primary_key ?? []),
+            ])),
+        ];
     }
 
     /** @return array<string, string> */

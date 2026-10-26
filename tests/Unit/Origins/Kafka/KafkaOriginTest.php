@@ -6,6 +6,7 @@ use Illuminate\Support\Facades\Queue;
 use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Data\FieldMapping;
 use PHPinnacle\Ferry\Data\TransformSetting;
+use PHPinnacle\Ferry\Destinations\StaticDestination;
 use PHPinnacle\Ferry\Enums\ConnectorStatus;
 use PHPinnacle\Ferry\Enums\DestinationType;
 use PHPinnacle\Ferry\Enums\Driver as DatabaseDriver;
@@ -23,6 +24,7 @@ use PHPinnacle\Ferry\Services\OriginFactory;
 use PHPinnacle\Ferry\Tests\TestCase;
 use PHPinnacle\Franz\Client;
 use PHPinnacle\Franz\Exception\ApiException;
+use PHPinnacle\Jason\Schema;
 use Psr\Http\Client\ClientInterface;
 use Psr\Http\Message\RequestFactoryInterface;
 use Psr\Http\Message\RequestInterface;
@@ -256,12 +258,24 @@ it('uses each named origin target host only for its sink', function () {
 
 it('extracts new record state at the configured stage of each named origin', function (bool $static) {
     $replica = ferry_replica();
-    app(DestinationFactory::class)->register(customers_destination());
+    app(DestinationFactory::class)->register(new StaticDestination(
+        key: 'customers',
+        label: 'Customers',
+        table: 'customers',
+        primaryKey: ['customer_id'],
+        schema: Schema::object([
+            'customer_id' => Schema::string()->format('uuid'),
+            'name' => Schema::string(),
+            'tax_number' => Schema::string(),
+        ])->required(['customer_id', 'name', 'tax_number']),
+        fixedValues: customers_destination()->getFixedValues(),
+    ));
     if ($static) {
         $replica->forceFill([
             'type' => DestinationType::Static,
             'destination' => 'customers',
             'schema' => [
+                new FieldMapping('_idrref', 'customer_id', $replica->sourceObject()->field('_idrref')),
                 FieldMapping::fromArray(['kind' => 'static', 'target' => 'name', 'static' => 'Customer']),
                 FieldMapping::fromArray(['kind' => 'static', 'target' => 'tax_number', 'static' => '123']),
             ],
@@ -292,7 +306,7 @@ it('extracts new record state at the configured stage of each named origin', fun
             expect($sink['transforms'])
                 ->toBe(
                     $static
-                        ? 'drop_tombstones,rename_values,field_0_0,field_1_0,insert_type,insert_profile_id'
+                        ? 'drop_tombstones,rename_keys,rename_values,field_1_0,field_2_0,insert_type,insert_profile_id'
                         : 'rename_keys,rename_values',
                 );
             if ($static) {
@@ -312,13 +326,15 @@ it('extracts new record state at the configured stage of each named origin', fun
             expect($sink['transforms'])
                 ->toBe(
                     $static
-                        ? 'unwrap,rename_values,field_0_0,field_1_0,insert_type,insert_profile_id'
+                        ? 'unwrap,rename_keys,rename_values,field_1_0,field_2_0,insert_type,insert_profile_id'
                         : 'unwrap,rename_keys,rename_values',
                 );
         }
 
         expect($sink['delete.enabled'])->toBe($static ? 'false' : 'true');
-        expect($sink['pk.mode'])->toBe($static ? 'record_value' : 'record_key');
+        expect($sink['pk.mode'])->toBe('record_key');
+        expect($sink['transforms.rename_keys.include'])->toBe('_idrref');
+        expect($sink['transforms.rename_keys.renames'])->toBe($static ? '_idrref:customer_id' : '_idrref:external_id');
     }
 })->with(['dynamic' => [false], 'static' => [true]]);
 
@@ -331,6 +347,7 @@ it('builds sink configuration through the destination registry', function (?stri
             'type' => DestinationType::Static,
             'destination' => $destination,
             'schema' => [
+                new FieldMapping('_idrref', 'customer_id', TestCase::keyMapping()->field),
                 FieldMapping::fromArray(['kind' => 'static', 'target' => 'name', 'static' => 'Customer']),
                 FieldMapping::fromArray(['kind' => 'static', 'target' => 'tax_number', 'static' => '123']),
             ],
@@ -379,6 +396,68 @@ it('rejects missing source objects and incompatible mappings during assembly', f
         ->and($http->requests)
         ->toBe([]);
 })->with([true, false]);
+
+it('rejects all saved primary-key transforms during assembly', function (
+    DestinationType $type,
+    string $transform,
+    array $parameters,
+) {
+    $replica = ferry_replica();
+    $destination = new StaticDestination(
+        'keyed',
+        'Keyed',
+        'keyed',
+        ['id'],
+        Schema::object([
+            'id' => Schema::string(),
+        ])->required(['id']),
+    );
+    $destinations = new DestinationFactory;
+    $destinations->register($destination);
+    $replica->type = $type;
+    $replica->destination = $type === DestinationType::Static ? 'keyed' : $replica->destination;
+    $replica->schema = [new FieldMapping(
+        '_idrref',
+        'id',
+        TestCase::keyMapping()->field,
+        transforms: [new TransformSetting($transform, $parameters)],
+    )];
+    $http = new RecordingConnectClient;
+    expect(fn () => ferry_kafka_origin($http, destinations: $destinations)->make($replica))
+        ->toThrow(LogicException::class)
+        ->and($http->requests)
+        ->toBe([]);
+})->with([DestinationType::Dynamic, DestinationType::Static])->with([
+    'filter' => ['filter', ['condition' => '@ != null']],
+    'trim' => ['trim', []],
+    'cast' => ['cast', ['type' => 'integer']],
+]);
+
+it('blocks static connector assembly after the source key gains an unmapped component', function () {
+    $replica = ferry_replica();
+    $destination = new StaticDestination(
+        'keyed',
+        'Keyed',
+        'keyed',
+        ['external_id'],
+        Schema::object([
+            'external_id' => Schema::string(),
+        ])->required(['external_id']),
+    );
+    $destinations = new DestinationFactory;
+    $destinations->register($destination);
+    $replica->type = DestinationType::Static;
+    $replica->destination = 'keyed';
+    $http = new RecordingConnectClient;
+    $origin = ferry_kafka_origin($http, destinations: $destinations);
+    expect($origin->make($replica)->config['pk.fields'])->toBe('external_id');
+    $replica->sourceObject()->update(['primary_key' => ['_idrref', '_description']]);
+
+    expect(fn () => $origin->make($replica))
+        ->toThrow(LogicException::class)
+        ->and($http->requests)
+        ->toBe([]);
+});
 
 it('compiles both configurations before saving either connector', function () {
     $replica = ferry_replica();

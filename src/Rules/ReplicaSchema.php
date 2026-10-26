@@ -3,6 +3,7 @@
 namespace PHPinnacle\Ferry\Rules;
 
 use Closure;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Translation\PotentiallyTranslatedString;
 use Illuminate\Validation\ValidationException;
 use PHPinnacle\Eidos\Forms\JsonSchema;
@@ -89,9 +90,28 @@ readonly class ReplicaSchema
      */
     public static function assertValid(array $mappings, ?StaticDestination $destination, array $sourcePrimaryKey): void
     {
+        $sources = [];
+        foreach ($mappings as $mapping) {
+            if ($mapping->source !== null && $mapping->target !== null) {
+                $sources[] = $mapping->source;
+            }
+        }
+        Validator::validate(['data' => ['schema' => $sources]], ['data.schema' => [
+            fn (string $attribute, mixed $value, Closure $fail) => self::validatePrimaryKey(
+                $sourcePrimaryKey,
+                $sources,
+                $fail,
+            ),
+        ]]);
         $destinationSchema = JsonSchema::fromArray($destination?->getSchema()->keywords() ?? []);
         $fields = $destinationSchema->properties();
         foreach ($mappings as $mapping) {
+            $sourceIsKey = in_array($mapping->source, $sourcePrimaryKey, true);
+            if ($sourceIsKey && $mapping->transforms !== []) {
+                throw ValidationException::withMessages([
+                    'data.schema' => __('phpinnacle-ferry::validation.primary_key_transforms_prohibited'),
+                ]);
+            }
             if ($mapping->target === null) {
                 continue;
             }
@@ -105,13 +125,17 @@ readonly class ReplicaSchema
             if ($destination !== null) {
                 self::assertCompatibleWithDestination($fields, $mapping->target, $mapping);
                 if (
-                    in_array($mapping->target, $destination->getPrimaryKey(), true)
-                    && !in_array($mapping->source, $sourcePrimaryKey, true)
+                    in_array($mapping->target, $destination->getPrimaryKey(), true) !== $sourceIsKey
                 ) {
                     throw ValidationException::withMessages([
-                        'data.schema' => __('phpinnacle-ferry::resources.replica.errors.destination_primary_key_source', [
-                            'field' => $mapping->target,
-                        ]),
+                        'data.schema' => __(
+                            $sourceIsKey
+                                ? 'phpinnacle-ferry::resources.replica.errors.source_primary_key_destination'
+                                : 'phpinnacle-ferry::resources.replica.errors.destination_primary_key_source',
+                            [
+                                'field' => $sourceIsKey ? $mapping->source : $mapping->target,
+                            ],
+                        ),
                     ]);
                 }
             }

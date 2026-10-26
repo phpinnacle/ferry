@@ -200,13 +200,13 @@ it('builds a static sink with fixed fields and its target upstream', function (
         ->and($config['fields.whitelist'])
         ->toBe('customer_id,name,type,profile_id')
         ->and($config['pk.mode'])
-        ->toBe('record_value')
+        ->toBe('record_key')
         ->and($config['pk.fields'])
         ->toBe('customer_id')
         ->and($config['transforms.rename_values.renames'])
         ->toBe('_idrref:customer_id,_fld1:name')
         ->and($config['transforms'])
-        ->toBe('drop_tombstones,rename_values,insert_type,insert_profile_id')
+        ->toBe('drop_tombstones,rename_keys,rename_values,insert_type,insert_profile_id')
         ->and($config['transforms.insert_type.type'])
         ->toBe('org.apache.kafka.connect.transforms.InsertField$Value')
         ->and($config['transforms.insert_type.static.field'])
@@ -296,12 +296,11 @@ it('keeps configured sink hosts and environment ports while applying the default
     'default port' => [null, null, 'db.internal', 5432],
 ]);
 
-it('uses the explicitly mapped record value as the static primary key', function (
+it('selects and renames only source key fields mapped to the static primary key', function (
     array $bindings,
-    string $renames,
-    string $whitelist,
     array $primaryKey,
-    string $keyFields,
+    array $sourceKey,
+    array $expected,
 ) {
     $destination = new StaticDestination(
         key: 'explicit_keys',
@@ -311,25 +310,29 @@ it('uses the explicitly mapped record value as the static primary key', function
         schema: Schema::object([
             'id' => Schema::string()->format('uuid')->with('x-ferry-reference', true),
             'source_id' => Schema::string()->format('uuid')->with('x-ferry-reference', true),
-        ])->required(['id']),
+            '_owner' => Schema::string()->format('uuid')->with('x-ferry-reference', true),
+        ])->required($primaryKey),
     );
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
-    $object = TestCase::makeItem($upstream, ['fields' => [
-        '_idrref' => JsonSchema::fromArray([
-            'type' => 'string',
-            'format' => 'uuid',
-            'x-ferry-reference' => true,
-            'minLength' => 36,
-            'maxLength' => 36,
-        ]),
-        '_owner' => JsonSchema::fromArray([
-            'type' => 'string',
-            'format' => 'uuid',
-            'x-ferry-reference' => true,
-            'minLength' => 36,
-            'maxLength' => 36,
-        ]),
-    ]]);
+    $object = TestCase::makeItem($upstream, [
+        'primary_key' => $sourceKey,
+        'fields' => [
+            '_idrref' => JsonSchema::fromArray([
+                'type' => 'string',
+                'format' => 'uuid',
+                'x-ferry-reference' => true,
+                'minLength' => 36,
+                'maxLength' => 36,
+            ]),
+            '_owner' => JsonSchema::fromArray([
+                'type' => 'string',
+                'format' => 'uuid',
+                'x-ferry-reference' => true,
+                'minLength' => 36,
+                'maxLength' => 36,
+            ]),
+        ],
+    ]);
     $replica = TestCase::makeReplica([
         'upstream_id' => $upstream->id,
         'type' => DestinationType::Static,
@@ -344,27 +347,46 @@ it('uses the explicitly mapped record value as the static primary key', function
     $config = new SinkConfigFactory($this->factory)->make($destination, $replica, $object, 'topic');
 
     expect($config)->toMatchArray([
-        'pk.mode' => 'record_value',
-        'pk.fields' => $keyFields,
-        'fields.whitelist' => $whitelist,
-        'transforms.rename_values.renames' => $renames,
+        'pk.mode' => 'record_key',
+        'transforms.rename_keys.type' => 'org.apache.kafka.connect.transforms.ReplaceField$Key',
         'delete.enabled' => 'false',
+        ...$expected,
     ]);
-    expect($config)->not->toHaveKey('transforms.rename_keys.type');
 })->with([
-    'source identifier' => [['_idrref' => 'id'], '_idrref:id', 'id', ['id'], 'id'],
-    'another reference, with the source identifier mapped separately' => [
-        ['_owner' => 'id', '_idrref' => 'source_id'],
-        '_owner:id,_idrref:source_id',
-        'id,source_id',
+    'source identifier' => [
+        ['_idrref' => 'id'],
         ['id'],
-        'id',
+        ['_idrref'],
+        [
+            'pk.fields' => 'id',
+            'fields.whitelist' => 'id',
+            'transforms.rename_values.renames' => '_idrref:id',
+            'transforms.rename_keys.include' => '_idrref',
+            'transforms.rename_keys.renames' => '_idrref:id',
+        ],
     ],
     'composite key' => [
         ['_idrref' => 'id', '_owner' => 'source_id'],
-        '_idrref:id,_owner:source_id',
-        'id,source_id',
         ['source_id', 'id'],
-        'source_id,id',
+        ['_idrref', '_owner'],
+        [
+            'pk.fields' => 'source_id,id',
+            'fields.whitelist' => 'id,source_id',
+            'transforms.rename_values.renames' => '_idrref:id,_owner:source_id',
+            'transforms.rename_keys.include' => '_idrref,_owner',
+            'transforms.rename_keys.renames' => '_idrref:id,_owner:source_id',
+        ],
+    ],
+    'target named after an original key component' => [
+        ['_owner' => 'source_id', '_idrref' => '_owner'],
+        ['_owner', 'source_id'],
+        ['_idrref', '_owner'],
+        [
+            'pk.fields' => '_owner,source_id',
+            'fields.whitelist' => 'source_id,_owner',
+            'transforms.rename_values.renames' => '_owner:source_id,_idrref:_owner',
+            'transforms.rename_keys.include' => '_idrref,_owner',
+            'transforms.rename_keys.renames' => '_idrref:_owner,_owner:source_id',
+        ],
     ],
 ]);
