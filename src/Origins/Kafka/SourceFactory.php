@@ -2,6 +2,7 @@
 
 namespace PHPinnacle\Ferry\Origins\Kafka;
 
+use Illuminate\Support\Facades\Config;
 use PHPinnacle\Ferry\Models\Replica;
 use PHPinnacle\Ferry\Models\StructureItem;
 use PHPinnacle\Ferry\Models\Upstream;
@@ -26,6 +27,7 @@ class SourceFactory
         $tables = [];
         $columns = [];
         $keys = [];
+        $converterColumns = [];
 
         $objects = $upstream
             ->structure
@@ -49,15 +51,23 @@ class SourceFactory
                 $keys[$table] = sprintf('%s:%s', $table, implode(',', $object->primary_key));
             }
 
-            foreach ([...$object->primary_key, ...array_keys($replica->columnMap($object))] as $column) {
-                $columns[sprintf('%s.%s', $table, $column)] = true;
-            }
+            $sourceColumns = [...$object->primary_key, ...array_keys($replica->columnMap($object))];
 
             foreach ($replica->schema as $mapping) {
                 if ($mapping->source !== null && $mapping->isUsed()) {
                     if ($object->field($mapping->source) !== null) {
-                        $columns[sprintf('%s.%s', $table, $mapping->source)] = true;
+                        $sourceColumns[] = $mapping->source;
                     }
+                }
+            }
+
+            foreach (array_unique($sourceColumns) as $column) {
+                $qualifiedColumn = sprintf('%s.%s', $table, $column);
+                $columns[$qualifiedColumn] = true;
+                /** @var string|null $converter */
+                $converter = $object->field($column)?->annotation('x-ferry-converter');
+                if ($converter !== null) {
+                    $converterColumns[$converter][$qualifiedColumn] = true;
                 }
             }
         }
@@ -69,6 +79,19 @@ class SourceFactory
                 ...($keys !== [] ? ['message.key.columns' => implode(';', $keys)] : []),
             ]
             : ['table.include.list' => '(?!)'];
+
+        /** @var array<string, string> $converters */
+        $converters = Config::array('phpinnacle-ferry.kafka.converters');
+        $converterConfig = [];
+        if ($converters !== []) {
+            $converterConfig['converters'] = implode(',', array_keys($converters));
+            foreach ($converters as $name => $class) {
+                $converterConfig[$name . '.type'] = $class;
+                if (array_key_exists($name, $converterColumns)) {
+                    $converterConfig[$name . '.columns'] = implode(',', array_keys($converterColumns[$name]));
+                }
+            }
+        }
 
         /** @var array{host: string, port: int, username: string, password: string, database: string} $credentials */
         $credentials = $upstream->config;
@@ -89,12 +112,14 @@ class SourceFactory
             'publication.autocreate.mode' => 'filtered',
             'topic.prefix' => $this->topicPrefix($upstream),
             'binary.handling.mode' => 'hex',
+            'include.unknown.datatypes' => 'true',
             'read.only' => 'true',
             'signal.enabled.channels' => 'kafka',
             'signal.kafka.topic' => $signal['topic'],
             'signal.kafka.bootstrap.servers' => $signal['bootstrap_servers'],
             'signal.kafka.groupId' => $signal['group_id'],
             ...$scope,
+            ...$converterConfig,
             'transforms' => 'unwrap',
             'transforms.unwrap.type' => 'io.debezium.transforms.ExtractNewRecordState',
             'transforms.unwrap.delete.tombstone.handling.mode' => 'tombstone',

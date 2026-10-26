@@ -9,6 +9,11 @@ return [
     //        'default' => 'App\\Models\\Tenant::DEFAULT'
     //    ],
     'kafka' => [
+        'converters' => [
+            'uuid' => 'org.alpaka.kafka.UuidConverter',
+            'integer' => 'org.alpaka.kafka.IntegerConverter',
+            'mchar' => 'org.alpaka.kafka.MCharConverter',
+        ],
         'transforms' => [
             'cast' => \PHPinnacle\Ferry\Origins\Kafka\Transforms\CastTransform::class,
             'filter' => \PHPinnacle\Ferry\Origins\Kafka\Transforms\FilterTransform::class,

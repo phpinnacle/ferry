@@ -72,6 +72,7 @@ it('lists mappable fields with translated system titles and property titles', fu
         ->toBe([
             '_idrref' => __('phpinnacle-ferry::resources.replica.system_fields._idrref'),
             '_description' => __('phpinnacle-ferry::resources.replica.system_fields._description'),
+            '_keyfield' => '_keyfield',
             '_document12_idrref' => '_document12_idrref',
             '_fld1' => 'Title 1',
             '_fld2' => 'Label 2',
@@ -106,6 +107,7 @@ it('stores a single reference under its physical column name', function () use (
             'x-ferry-reference' => true,
             'minLength' => 36,
             'maxLength' => 36,
+            'x-ferry-converter' => 'uuid',
         ]);
 });
 
@@ -133,7 +135,7 @@ it('exposes independent scalar sources for every column of a composite reference
         ->and($object->field('_fld17_type')->toArray())
         ->toEqual(['type' => 'string', 'maxLength' => 2, 'minLength' => 2])
         ->and($object->field('_fld17_rtref')->toArray())
-        ->toEqual(['type' => 'string', 'maxLength' => 8, 'minLength' => 8])
+        ->toEqual(['type' => 'integer', 'x-ferry-converter' => 'integer'])
         ->and($object->field('_fld17_rrref')->toArray())
         ->toEqual([
             'type' => 'string',
@@ -141,6 +143,7 @@ it('exposes independent scalar sources for every column of a composite reference
             'x-ferry-reference' => true,
             'minLength' => 36,
             'maxLength' => 36,
+            'x-ferry-converter' => 'uuid',
         ]);
 });
 
@@ -189,7 +192,56 @@ it('exposes mixed composite value columns and omits the reference type code for 
             'x-ferry-reference' => true,
             'minLength' => 36,
             'maxLength' => 36,
+            'x-ferry-converter' => 'uuid',
         ]);
+});
+
+it('annotates physical system columns with their converter keys', function () use ($makeObject) {
+    $object = $makeObject([
+        'system' => [
+            '_idrref' => new ScalarField(FieldType::Id),
+            '_document12_idrref' => new ReferenceField('document-12'),
+            '_keyfield' => new ScalarField(FieldType::Binary),
+            '_recordertref' => new ScalarField(FieldType::Binary),
+            '_recorderrref' => new ScalarField(FieldType::Binary),
+            '_ownerid_type' => new ScalarField(FieldType::Binary),
+            '_ownerid_rtref' => new ScalarField(FieldType::Binary),
+            '_ownerid_rrref' => new ScalarField(FieldType::Binary),
+            '_predefinedid' => new ScalarField(FieldType::Uuid),
+            '_description' => new StringField(100, false),
+            '_version' => new NumberField(10, 0, true),
+        ],
+    ]);
+
+    expect(array_map(fn ($field) => $field->annotation('x-ferry-converter'), $object->schema->properties()))
+        ->toBe([
+            '_idrref' => 'uuid',
+            '_document12_idrref' => 'uuid',
+            '_keyfield' => 'integer',
+            '_recordertref' => 'integer',
+            '_recorderrref' => 'uuid',
+            '_ownerid_type' => null,
+            '_ownerid_rtref' => 'integer',
+            '_ownerid_rrref' => 'uuid',
+            '_predefinedid' => null,
+            '_description' => null,
+            '_version' => null,
+        ])
+        ->and($object->field('_recorderrref')->toArray())
+        ->toEqual([
+            'type' => 'string',
+            'format' => 'uuid',
+            'x-ferry-reference' => true,
+            'minLength' => 36,
+            'maxLength' => 36,
+            'x-ferry-converter' => 'uuid',
+        ])
+        ->and($object->field('_keyfield')->singleType())
+        ->toBe('integer')
+        ->and($object->field('_recordertref')->singleType())
+        ->toBe('integer')
+        ->and($object->field('_ownerid_rtref')->singleType())
+        ->toBe('integer');
 });
 
 it('expands references inside nested type definitions without duplicating their physical columns', function () use (

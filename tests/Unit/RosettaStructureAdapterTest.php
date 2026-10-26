@@ -80,6 +80,8 @@ it('prepares serializable context and reads physical primary keys for roots and 
         ->toBe($primaryKey)
         ->and($objects[0]->schema->properties())
         ->toHaveKey('_idrref')
+        ->and($objects[0]->field('_idrref')->annotation('x-ferry-converter'))
+        ->toBe('uuid')
         ->and($objects[0]->relationLoaded('children'))
         ->toBeTrue()
         ->and($objects[0]->children)
@@ -91,7 +93,11 @@ it('prepares serializable context and reads physical primary keys for roots and 
         ->and($objects[0]->children[0]->schema->annotation('x-primary-key'))
         ->toBe(['_document1_idrref', '_lineno3'])
         ->and($objects[0]->children[0]->schema->required())
-        ->toBe(['_document1_idrref', '_lineno3']);
+        ->toBe(['_document1_idrref', '_lineno3'])
+        ->and($objects[0]->children[0]->field('_document1_idrref')->annotation('x-ferry-converter'))
+        ->toBe('uuid')
+        ->and($objects[0]->children[0]->field('_keyfield')->annotation('x-ferry-converter'))
+        ->toBe('integer');
 })->with([
     'single column' => ['CREATE TABLE _document1 (_idrref TEXT PRIMARY KEY, _version INTEGER)', ['_idrref']],
     'composite in index order' => [

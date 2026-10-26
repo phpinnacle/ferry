@@ -3,6 +3,7 @@
 use Illuminate\Support\Facades\Queue;
 use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Data\FieldMapping;
+use PHPinnacle\Ferry\Data\TransformSetting;
 use PHPinnacle\Ferry\Destinations\StaticDestination;
 use PHPinnacle\Ferry\Enums\DestinationType;
 use PHPinnacle\Ferry\Enums\ReplicaStatus;
@@ -72,18 +73,94 @@ it('builds a debezium postgres connector config scoped to the tracked replicas',
             'signal.kafka.topic' => 'ferry-signal',
             'signal.kafka.bootstrap.servers' => 'kafka.test:9092',
             'signal.kafka.groupId' => 'ferry-signal',
+            'include.unknown.datatypes' => 'true',
+            'converters' => 'uuid,integer,mchar',
+            'uuid.type' => 'org.alpaka.kafka.UuidConverter',
+            'integer.type' => 'org.alpaka.kafka.IntegerConverter',
+            'mchar.type' => 'org.alpaka.kafka.MCharConverter',
         ]);
+});
+
+it('groups captured column annotations across replicas without inferring converters from names', function () {
+    $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
+    $upstream->forceFill(['config' => [...$upstream->config, 'schema' => 'warehouse']])->saveQuietly();
+    $object = TestCase::makeItem($upstream, [
+        'name' => 'records',
+        'primary_key' => ['record_id'],
+        'sources' => [
+            'record_id' => ['type' => 'string', 'x-ferry-converter' => 'uuid'],
+            'type_code' => ['type' => 'integer', 'x-ferry-converter' => 'integer'],
+            'filter_id' => ['type' => 'string', 'x-ferry-converter' => 'uuid'],
+            'unused_id' => ['type' => 'string', 'x-ferry-converter' => 'uuid'],
+            'plain_rref' => ['type' => 'string'],
+        ],
+    ]);
+    TestCase::makeReplica([
+        'upstream_id' => $upstream->id,
+        'code' => 'first',
+        'schema' => [
+            new FieldMapping('record_id', 'id', $object->field('record_id')),
+            new FieldMapping('type_code', 'type_code', $object->field('type_code')),
+            new FieldMapping('plain_rref', 'plain', $object->field('plain_rref')),
+            new FieldMapping('unused_id', null, $object->field('unused_id')),
+        ],
+    ], ['status' => ReplicaStatus::Active]);
+    TestCase::makeReplica([
+        'upstream_id' => $upstream->id,
+        'code' => 'second',
+        'schema' => [
+            new FieldMapping('record_id', 'id', $object->field('record_id')),
+            new FieldMapping('type_code', 'type_code', $object->field('type_code')),
+            new FieldMapping(
+                'filter_id',
+                null,
+                $object->field('filter_id'),
+                transforms: [new TransformSetting('filter', ['condition' => '@ != null'])],
+            ),
+        ],
+    ], ['status' => ReplicaStatus::Pause]);
+
+    $config = new SourceFactory()->source($upstream, config('phpinnacle-ferry.origins.kafka'));
+
+    expect($config['uuid.columns'])
+        ->toBe('warehouse.records.record_id,warehouse.records.filter_id')
+        ->and($config['integer.columns'])
+        ->toBe('warehouse.records.type_code')
+        ->and($config['column.include.list'])
+        ->toBe(
+            'warehouse.records.record_id,warehouse.records.type_code,warehouse.records.plain_rref,warehouse.records.filter_id',
+        )
+        ->and($config)
+        ->not->toHaveKey('mchar.columns');
+});
+
+it('registers the configured converter classes even without per-column selections', function () {
+    config(['phpinnacle-ferry.kafka.converters' => ['text' => 'example.TextConverter']]);
+    $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
+
+    $config = new SourceFactory()->source($upstream, config('phpinnacle-ferry.origins.kafka'));
+
+    expect($config)
+        ->toMatchArray(['converters' => 'text', 'text.type' => 'example.TextConverter'])
+        ->not->toHaveKeys(['text.columns', 'uuid.type', 'integer.type', 'mchar.type']);
+
+    config(['phpinnacle-ferry.kafka.converters' => []]);
+    expect(new SourceFactory()->source($upstream, config('phpinnacle-ferry.origins.kafka')))
+        ->not
+        ->toHaveKey('converters');
 });
 
 it('unions tables and columns across the tracked replicas of one upstream', function () {
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
     $first = TestCase::makeItem($upstream, [
         'sources' => ['_fld1' => ['type' => 'string', 'maxLength' => 100, 'title' => 'Title']],
+        'fields' => ['_idrref' => JsonSchema::fromArray(['type' => 'string', 'x-ferry-converter' => 'uuid'])],
     ]);
     $second = TestCase::makeItem($upstream, [
         'external_id' => 'object-1',
         'name' => '_reference1',
         'sources' => ['_fld2' => ['type' => 'string', 'maxLength' => 100, 'title' => 'Name']],
+        'fields' => ['_idrref' => JsonSchema::fromArray(['type' => 'string', 'x-ferry-converter' => 'uuid'])],
     ]);
 
     TestCase::makeReplica([
@@ -115,7 +192,9 @@ it('unions tables and columns across the tracked replicas of one upstream', func
     expect(explode(',', $config['table.include.list']))
         ->toBe(['public._reference0', 'public._reference1'])
         ->and(explode(';', $config['message.key.columns']))
-        ->toBe(['public._reference0:_idrref', 'public._reference1:_idrref']);
+        ->toBe(['public._reference0:_idrref', 'public._reference1:_idrref'])
+        ->and($config['uuid.columns'])
+        ->toBe('public._reference0._idrref,public._reference1._idrref');
 });
 
 it('never lets an unscoped source connector capture the whole database', function () {

@@ -489,6 +489,35 @@ it('creates connectors with an idempotent configuration PUT and does not persist
         ->toBe($before);
 });
 
+it('sends generated source converters to Kafka Connect without adding them to the sink', function () {
+    $replica = ferry_replica();
+    $object = $replica->sourceObject();
+    $object->update(['schema' => JsonSchema::fromArray([
+        'type' => 'object',
+        'properties' => ['_idrref' => [...$object->field('_idrref')->toArray(), 'x-ferry-converter' => 'uuid']],
+    ])]);
+    $http = new RecordingConnectClient(connector_response());
+    $origin = ferry_kafka_origin($http);
+    $connector = $origin->make($replica->upstream);
+
+    $origin->create($connector);
+
+    expect(ferry_sent_config($http, 0))
+        ->toMatchArray([
+            'converters' => 'uuid,integer,mchar',
+            'uuid.type' => 'org.alpaka.kafka.UuidConverter',
+            'uuid.columns' => 'public._reference0._idrref',
+            'integer.type' => 'org.alpaka.kafka.IntegerConverter',
+            'mchar.type' => 'org.alpaka.kafka.MCharConverter',
+            'include.unknown.datatypes' => 'true',
+        ]);
+
+    $replica->schema = [new FieldMapping('_idrref', 'external_id', $object->field('_idrref'))];
+    expect($origin->make($replica)->config)
+        ->not
+        ->toHaveKeys(['converters', 'uuid.type', 'uuid.columns', 'integer.type', 'mchar.type']);
+});
+
 it('requests snapshots for newly captured columns using the last applied configuration', function (
     string $previousColumns,
     array $tables,

@@ -73,7 +73,7 @@ Built-in field schemas store a full translation key in `x-ferry-trans`. The inte
 
 The Rosetta adapter converts properties into independently mappable physical source columns before persistence. Single references use `_fld…rref`; system fields already contain their physical names. Composite properties expand into separate source cards for the discriminator (`_type`), any boolean (`_l`), number (`_n`), date/time (`_t`), string (`_s`), and reference identifier (`_rrref`) columns. A reference type code (`_rtref`) is included when the composite permits multiple reference targets. A composite with one reference target uses `_rrref` without `_rtref`. Nested type definitions are expanded before resolving columns.
 
-Each card has its own type, transforms, and optional destination. Bind any subset of non-key fields: choosing an identifier does not automatically select its discriminator or reference type code. Both destination types require every source primary-key component to be bound; static mappings must target destination primary-key components. Debezium exposes the binary discriminator and type code as fixed-length hexadecimal strings of 2 and 8 characters. Reference identifiers use UUID string schemas annotated with `x-ferry-reference`. Persisted source identifiers are physical column names, such as `_fld17_rrref`. A renamed source column requires updating its bindings. `StructureItem::mappableFields()` returns JSON Schema definitions keyed by physical column name, with localized titles and preserved descriptions.
+Each card has its own type, transforms, and optional destination. Bind any subset of non-key fields: choosing an identifier does not automatically select its discriminator or reference type code. Both destination types require every source primary-key component to be bound; static mappings must target destination primary-key components. Debezium exposes the one-byte `_type` discriminator as a hexadecimal string of 2 characters. The source converters expose `_rtref`, `_recordertref` and `_keyfield` as integers, and reference identifiers as UUID strings annotated with `x-ferry-reference`. Rosetta prepares these converted types in JSON Schema so mapping checks and destination columns match the captured values. Persisted source identifiers are physical column names, such as `_fld17_rrref`. A renamed source column requires updating its bindings. `StructureItem::mappableFields()` returns JSON Schema definitions keyed by physical column name, with localized titles and preserved descriptions.
 
 `Structure::publishedItems()` returns the root objects of the published revision; `publishedItem($source)` finds one of them by its external id and returns `null` when absent. Use `$upstream->structure->items()` to reach every stored revision. `$upstream->is_active` states whether the upstream may be used, while `$upstream->structure->status` reports whether its local structure is ready.
 
@@ -173,12 +173,13 @@ Jason preserves these annotations, and Eidos leaves their meaning to Ferry.
 | `x-primary-key` | Ordered list of strings | Object-level physical primary-key columns. Rosetta reads the declared primary index, including composite keys, for roots and children, and also saves the columns in `StructureItem.primary_key`. An empty list means the source table has no declared primary key. Key properties are also listed in JSON Schema `required`; the editor adds these markers when projecting existing or custom adapter objects and preserves other required annotations. Connector key selection reads the model attribute. |
 | `x-ferry-trans` | String | Full Laravel translation key for a source property label. Resolved in the current interface locale and takes priority over `title`. Used for built-in fields. |
 | `x-ferry-reference` | Boolean `true` | Marks native reference strings, including nullable strings. Rosetta references and identifiers use UUID strings with `format: "uuid"` and length 36. Dynamic SQL tables store annotated references as text, and native text transforms reject them. Mapping compatibility uses the UUID schema independently of this marker. The annotation does not convert values. |
+| `x-ferry-converter` | String | Source converter key from `phpinnacle-ferry.kafka.converters`. Rosetta infers `uuid` for physical names ending in `rref`, and `integer` for `_keyfield`, `_recordertref` and names ending in `_rtref`, including expanded composite columns and tabular sections. It prepares UUID reference string schemas or integer schemas respectively. Other columns omit it, including `_type` discriminators and ordinary UUID fields such as `_predefinedid`. The Kafka source groups captured columns by this annotation to generate `<key>.columns`; it does not infer converters from column names. |
 | `x-ferry-precision` | Integer | Optional total number of digits in a source number. Retains the exact storage dimension alongside standard JSON Schema numeric constraints. Dynamic decimal columns use it as their precision, defaulting to 15 when absent. |
 | `x-ferry-scale` | Integer | Optional number of fractional digits in a source number, including zero. Dynamic decimal columns use it as their scale, defaulting to 2 when absent. An unknown source scale is omitted. |
 
 `StructureItem::field($source)` removes `x-ferry-trans`, `title` and
 `description` before producing the logical
-schema saved in `FieldMapping.field`. Reference and numeric annotations remain.
+schema saved in `FieldMapping.field`. Reference, converter and numeric annotations remain.
 Dynamic decimal creation reads precision and scale from the saved output schema (`result` when present, otherwise the untransformed source schema), defaulting to 15 and 2 when absent.
 
 Example of a stored `StructureItem.schema`:
@@ -193,7 +194,8 @@ Example of a stored `StructureItem.schema`:
       "format": "uuid",
       "minLength": 36,
       "maxLength": 36,
-      "x-ferry-reference": true
+      "x-ferry-reference": true,
+      "x-ferry-converter": "uuid"
     },
     "_code": {
       "type": "string",
@@ -206,7 +208,8 @@ Example of a stored `StructureItem.schema`:
       "minLength": 36,
       "maxLength": 36,
       "title": "Owner",
-      "x-ferry-reference": true
+      "x-ferry-reference": true,
+      "x-ferry-converter": "uuid"
     },
     "_fld18_n": {
       "type": "number",
@@ -479,23 +482,33 @@ Ferry applies Debezium's `ExtractNewRecordState` at the source, storing flat row
 
 When replacing an existing connector that stores full Debezium envelopes, coordinate the source and all of its sinks and account for records already stored in the previous format before resuming consumption. Existing topic history is not rewritten.
 
-Each origin declares `source` and `sink` as arrays of native Kafka Connect property names and string values. The corresponding map is merged after Ferry builds a connector's configuration, so supplied values override generated values. Empty maps add no properties; for converters, this inherits the worker defaults. Keep the source's serializers and the sink's deserializers compatible, including their schema settings and Schema Registry URLs. Settings that change topic names, capture scope, keys, or transforms must preserve the contracts used by Ferry's generated pipeline and snapshot handling.
+Each origin declares `source` and `sink` as arrays of native Kafka Connect property names and string values. The corresponding map is merged after Ferry builds a connector's configuration, so supplied values override generated values, including custom converter declarations and column lists. Empty maps add no properties; key/value serialization then inherits the worker defaults. Keep the source's serializers and the sink's deserializers compatible, including their schema settings and Schema Registry URLs. Settings that change topic names, capture scope, keys, or transforms must preserve the contracts used by Ferry's generated pipeline and snapshot handling.
 
-Source-only Debezium custom converters can be configured in `source`, independently of the key/value serializers:
+Ferry registers the source-only Debezium custom converters from `phpinnacle-ferry.kafka.converters`, independently of the key/value serializers:
 
 ```php
-'source' => [
-    'converters' => 'mvarchar,uuid,byteint',
-    'mvarchar.type' => 'org.alpaka.kafka.MCharConverter',
-    'uuid.type' => 'org.alpaka.kafka.UuidConverter',
-    'uuid.columns' => 'public._reference259._idrref,public._reference259._fld5830rref',
-    'byteint.type' => 'org.alpaka.kafka.IntegerConverter',
-    'byteint.columns' => 'public._accumrg37272._recordertref',
-    'include.unknown.datatypes' => 'true',
+'converters' => [
+    'uuid' => 'org.alpaka.kafka.UuidConverter',
+    'integer' => 'org.alpaka.kafka.IntegerConverter',
+    'mchar' => 'org.alpaka.kafka.MCharConverter',
 ],
 ```
 
-The example inherits worker key/value converters. Custom converter classes must be installed on the Connect worker. Column lists are supplied by the application; Ferry does not generate them from structure metadata.
+Every configured class becomes `<key>.type`, and `converters` lists the keys in configuration order. Captured fields with `x-ferry-converter` supply deduplicated `<key>.columns` lists in `schema.table.column` form. The source combines fields across every tracked replica of the upstream, including paused replicas, source primary keys and unbound fields with transforms. Unused fields do not enter converter lists. Converter declarations also remain present when no fields select them; an empty map emits no declarations. Custom converter classes must be installed on the Connect worker.
+
+For example, the generated source configuration can contain:
+
+```php
+'converters' => 'uuid,integer,mchar',
+'uuid.type' => 'org.alpaka.kafka.UuidConverter',
+'uuid.columns' => 'public._reference259._idrref,public._reference259._fld5830rref',
+'integer.type' => 'org.alpaka.kafka.IntegerConverter',
+'integer.columns' => 'public._accumrg37272._recordertref',
+'mchar.type' => 'org.alpaka.kafka.MCharConverter',
+'include.unknown.datatypes' => 'true',
+```
+
+`MCharConverter` selects PostgreSQL `mchar` and `mvarchar` types itself and needs no per-column annotation or generated `mchar.columns`. Ferry enables `include.unknown.datatypes=true` at the source for these custom SQL types. Sink configurations do not receive the custom converter declarations. Refresh existing Rosetta structures and update affected mappings to use the converted field schemas. Changing converter settings does not rewrite records already stored in Kafka topics or trigger a new snapshot for existing captured columns.
 
 The shipped `kafka` origin reads the `FERRY_KAFKA_*` environment variables, including `FERRY_KAFKA_SIGNAL_GROUP_ID`. Kafka-specific runtime transformation handlers are configured separately under `phpinnacle-ferry.kafka.transforms`.
 

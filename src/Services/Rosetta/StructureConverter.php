@@ -37,6 +37,26 @@ class StructureConverter
             }
         }
 
+        foreach (array_keys($properties) as $name) {
+            $converter = match (true) {
+                str_ends_with($name, 'rref') => 'uuid',
+                $name === '_keyfield', $name === '_recordertref', str_ends_with($name, '_rtref') => 'integer',
+                default => null,
+            };
+            if ($converter !== null) {
+                if ($converter === 'integer') {
+                    unset($properties[$name]['minLength'], $properties[$name]['maxLength']);
+                    $properties[$name]['type'] = 'integer';
+                } else {
+                    $properties[$name] = [
+                        ...$properties[$name],
+                        ...$this->field(new ScalarField(FieldType::Id))->toArray(),
+                    ];
+                }
+                $properties[$name]['x-ferry-converter'] = $converter;
+            }
+        }
+
         $item = new StructureItem([
             'external_id' => $definition->id,
             'reference_id' => $definition->referenceId,
