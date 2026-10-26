@@ -28,6 +28,13 @@ it('requires at least one mapped column', function () use ($validate) {
     expect($validate([]))->toBe(__('phpinnacle-ferry::validation.replica_schema.empty'));
 });
 
+it('requires non-empty string column names', function (mixed $column) use ($validate) {
+    expect($validate([$column]))->toBe(__('phpinnacle-ferry::validation.replica_schema.column_required'));
+})->with([
+    'empty' => [''],
+    'integer' => [42],
+]);
+
 it('forbids reusing a column name', function () use ($validate) {
     expect($validate(['title', 'title']))
         ->toBe(__('phpinnacle-ferry::validation.replica_schema.column_duplicate', ['column' => 'title']));

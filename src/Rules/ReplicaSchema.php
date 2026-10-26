@@ -32,36 +32,22 @@ readonly class ReplicaSchema
 
                 return;
             }
-            if (!self::validateColumn($column, $used, $fail)) {
+            if (array_key_exists($column, $used)) {
+                $fail('phpinnacle-ferry::validation.replica_schema.column_duplicate')->translate([
+                    'column' => $column,
+                ]);
+
+                return;
+            }
+            if (preg_match('/^[a-z][a-z0-9_]*$/', $column) !== 1) {
+                $fail('phpinnacle-ferry::validation.replica_schema.column_format')->translate([
+                    'column' => $column,
+                ]);
+
                 return;
             }
             $used[$column] = true;
         }
-    }
-
-    /**
-     * @param array<string, true> $used
-     * @param Closure(string): PotentiallyTranslatedString $fail
-     */
-    private static function validateColumn(string $column, array $used, Closure $fail): bool
-    {
-        if (array_key_exists($column, $used)) {
-            $fail('phpinnacle-ferry::validation.replica_schema.column_duplicate')->translate([
-                'column' => $column,
-            ]);
-
-            return false;
-        }
-
-        if (preg_match('/^[a-z][a-z0-9_]*$/', $column) !== 1) {
-            $fail('phpinnacle-ferry::validation.replica_schema.column_format')->translate([
-                'column' => $column,
-            ]);
-
-            return false;
-        }
-
-        return true;
     }
 
     /**

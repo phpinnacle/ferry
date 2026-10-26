@@ -33,13 +33,6 @@ it('orders source transforms and static values around the renames of a sink', fu
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
     $object = TestCase::makeItem($upstream, [
         'fields' => [
-            '_idrref' => JsonSchema::fromArray([
-                'type' => 'string',
-                'format' => 'uuid',
-                'x-ferry-reference' => true,
-                'minLength' => 36,
-                'maxLength' => 36,
-            ]),
             '_folder' => JsonSchema::fromArray(['type' => 'boolean']),
         ],
         'sources' => [
@@ -100,13 +93,6 @@ it('captures an unbound field filter without writing it or capturing unused fiel
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
     $object = TestCase::makeItem($upstream, [
         'fields' => [
-            '_idrref' => JsonSchema::fromArray([
-                'type' => 'string',
-                'format' => 'uuid',
-                'x-ferry-reference' => true,
-                'minLength' => 36,
-                'maxLength' => 36,
-            ]),
             '_marked' => JsonSchema::fromArray(['type' => 'boolean']),
             '_unused' => JsonSchema::fromArray(['type' => 'string', 'maxLength' => 10]),
         ],
@@ -202,13 +188,6 @@ it('builds installed string transforms before renames and guards masking against
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
     $object = TestCase::makeItem($upstream, [
         'fields' => [
-            '_idrref' => JsonSchema::fromArray([
-                'type' => 'string',
-                'format' => 'uuid',
-                'x-ferry-reference' => true,
-                'minLength' => 36,
-                'maxLength' => 36,
-            ]),
             '_description' => JsonSchema::fromArray(['type' => 'string', 'maxLength' => 100]),
         ],
     ]);

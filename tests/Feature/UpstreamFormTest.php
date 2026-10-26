@@ -74,15 +74,10 @@ it('rejects missing or unconfigured origins', function (?string $selection) {
     $schema = ferry_upstream_form();
     $schema->getComponentByStatePath('origin')->state($selection);
 
-    try {
-        $schema->getState();
-    } catch (ValidationException $exception) {
-        expect($exception->errors())->toHaveKey('data.origin');
-
-        return;
-    }
-
-    $this->fail('The origin must be validated.');
+    expect($schema->getState(...))
+        ->toThrow(
+            fn (ValidationException $exception) => expect($exception->errors())->toHaveKey('data.origin'),
+        );
 })->with([null, 'missing']);
 
 it('keeps the saved driver and origin while updating connection settings', function () {
@@ -137,15 +132,10 @@ it('validates the selected driver configuration', function (mixed $port) {
     $schema->getComponentByStatePath('origin')->state('kafka');
     $schema->getComponentByStatePath('config.port')->state($port);
 
-    try {
-        $schema->getState();
-    } catch (ValidationException $exception) {
-        expect($exception->errors())->toHaveKey('data.config.port');
-
-        return;
-    }
-
-    $this->fail('The driver configuration must be validated.');
+    expect($schema->getState(...))
+        ->toThrow(
+            fn (ValidationException $exception) => expect($exception->errors())->toHaveKey('data.config.port'),
+        );
 })->with([0, 65_536, 'invalid']);
 
 it('saves PostgreSQL SSL modes as native connection values', function (?string $mode) {

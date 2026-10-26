@@ -315,13 +315,6 @@ it('selects and renames only source key fields mapped to the static primary key'
     $object = TestCase::makeItem($upstream, [
         'primary_key' => $sourceKey,
         'fields' => [
-            '_idrref' => JsonSchema::fromArray([
-                'type' => 'string',
-                'format' => 'uuid',
-                'x-ferry-reference' => true,
-                'minLength' => 36,
-                'maxLength' => 36,
-            ]),
             '_owner' => JsonSchema::fromArray([
                 'type' => 'string',
                 'format' => 'uuid',

@@ -25,6 +25,7 @@ class PrepareStructureAction
         $staleAfter = Config::integer('phpinnacle-ferry.structure.stale_after');
 
         return Action::make('prepare_structure')
+            ->authorize('update')
             ->label(fn (?Upstream $record) => __(
                 'phpinnacle-ferry::resources.upstream.actions.structure.'
                 . ($record->structure->status ?? StructureStatus::Pending)->value,

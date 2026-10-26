@@ -50,7 +50,7 @@ class UpstreamErrorFormatter
                 $exception->getMessage(),
             ) ?? self::CONNECTION_STATES[$state] ?? 'unknown';
 
-        return self::message($reason, $state);
+        return __('phpinnacle-ferry::resources.upstream.errors.' . $reason, ['state' => $state]);
     }
 
     private static function code(Throwable $exception): int
@@ -60,11 +60,6 @@ class UpstreamErrorFormatter
         }
 
         return ($exception->errorInfo[1] ?? null) !== null ? (int) $exception->errorInfo[1] : 0;
-    }
-
-    private static function message(string $reason, string $state = ''): string
-    {
-        return __('phpinnacle-ferry::resources.upstream.errors.' . $reason, ['state' => $state]);
     }
 
     private static function pattern(string $message): ?string

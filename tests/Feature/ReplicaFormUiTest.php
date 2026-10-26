@@ -1023,12 +1023,10 @@ it('validates the combined destination selection', function (?string $destinatio
     ]);
     $form->getComponent('destination')->state($destination)->callAfterStateUpdated();
 
-    try {
-        $form->getState();
-        test()->fail('A destination from the available options must be selected.');
-    } catch (ValidationException $exception) {
-        expect($exception->errors())->toHaveKey('data.destination');
-    }
+    expect($form->getState(...))
+        ->toThrow(
+            fn (ValidationException $exception) => expect($exception->errors())->toHaveKey('data.destination'),
+        );
 })->with([null, 'static:missing', 'unknown']);
 
 it('resets the shared schema when switching destinations', function (string $from, string $to) {

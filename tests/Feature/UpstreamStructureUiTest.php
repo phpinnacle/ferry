@@ -3,6 +3,7 @@
 use Carbon\CarbonImmutable;
 use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\Queue;
+use PHPinnacle\Cerber\Models\User;
 use PHPinnacle\Ferry\Enums\StructureStatus;
 use PHPinnacle\Ferry\Jobs\Structure\PrepareStructureJob;
 use PHPinnacle\Ferry\Resources\Upstreams\Actions\PrepareStructureAction;
@@ -14,6 +15,13 @@ uses(TestCase::class);
 
 beforeEach(function () {
     Queue::fake();
+
+    $this->actingAs(new class extends User {
+        public function able(string $ability, $tenant = null): bool
+        {
+            return $ability === 'update_upstream';
+        }
+    });
 });
 
 it('hides the preparation action while a live preparation is running', function () {
