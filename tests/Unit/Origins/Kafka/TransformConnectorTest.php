@@ -75,7 +75,7 @@ it('orders source transforms and static values around the renames of a sink', fu
     );
 
     expect($config['transforms'])
-        ->toBe('unwrap,field_0_0,rename_keys,rename_values,field_1_0,field_1_0_cast')
+        ->toBe('field_0_0,rename_keys,rename_values,field_1_0,field_1_0_cast')
         ->and($config['transforms.field_0_0.spec'])
         ->toBe('_fld1:int64')
         ->and($config['transforms.rename_values.renames'])
@@ -143,7 +143,7 @@ it('captures an unbound field filter without writing it or capturing unused fiel
     expect($source['column.include.list'])
         ->toBe('public._reference0._idrref,public._reference0._marked')
         ->and($config['transforms'])
-        ->toBe('unwrap,field_0_0,rename_keys,rename_values')
+        ->toBe('field_0_0,rename_keys,rename_values')
         ->and($config['transforms.field_0_0.filter.condition'])
         ->toBe("$[?(@['_marked'] == true)]")
         ->and($config['transforms.field_0_0.predicate'])
@@ -227,7 +227,7 @@ it('builds installed string transforms before renames and guards masking against
     );
 
     expect($config['transforms'])
-        ->toBe('unwrap,field_0_0,field_0_1,field_0_2,field_0_3,rename_keys,rename_values')
+        ->toBe('field_0_0,field_0_1,field_0_2,field_0_3,rename_keys,rename_values')
         ->and($config['transforms.field_0_0.type'])
         ->toBe('org.phpinnacle.toblerone.TrimTransform$Value')
         ->and($config['transforms.field_0_0.fields'])

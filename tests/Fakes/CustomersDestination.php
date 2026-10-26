@@ -11,7 +11,7 @@ function customers_destination(?string $connectionName = null): StaticDestinatio
         key: 'customers',
         label: 'Customers',
         table: 'customers',
-        primaryKey: 'customer_id',
+        primaryKey: ['customer_id'],
         schema: Schema::object([
             'name' => Schema::string()->title('Name'),
             'tax_number' => Schema::string()->title('Tax Number'),

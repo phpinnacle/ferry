@@ -9,6 +9,7 @@ final readonly class JdbcConnectorConfig
     /**
      * @param list<string> $columns
      * @param array<string, string> $transforms
+     * @param non-empty-list<string>|null $primaryKey
      */
     public function __construct(
         private string $table,
@@ -17,7 +18,7 @@ final readonly class JdbcConnectorConfig
         private array $transforms,
         private ?string $connection = null,
         private bool $deletes = false,
-        private ?string $primaryKey = null,
+        private ?array $primaryKey = null,
         private ?string $targetHost = null,
     ) {}
 
@@ -35,7 +36,7 @@ final readonly class JdbcConnectorConfig
             'connection.user' => $target['username'],
             'connection.password' => $target['password'],
             'pk.mode' => $this->primaryKey !== null ? 'record_value' : 'record_key',
-            ...($this->primaryKey !== null ? ['pk.fields' => $this->primaryKey] : []),
+            ...($this->primaryKey !== null ? ['pk.fields' => implode(',', $this->primaryKey)] : []),
             'insert.mode' => 'upsert',
             'delete.enabled' => $this->deletes ? 'true' : 'false',
             'auto.create' => 'false',

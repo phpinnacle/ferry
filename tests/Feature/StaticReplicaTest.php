@@ -577,7 +577,7 @@ it('resolves the destination table from the registered static destination', func
         key: 'customer_directory',
         label: 'Customer directory',
         table: 'customers',
-        primaryKey: 'customer_id',
+        primaryKey: ['customer_id'],
         schema: customers_destination()->getSchema(),
     ));
     $replica = TestCase::makeReplica([

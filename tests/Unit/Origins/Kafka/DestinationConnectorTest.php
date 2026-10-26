@@ -98,8 +98,6 @@ it('builds a confluent jdbc sink connector config with field renames', function 
         ->toBe('upsert')
         ->and($config['delete.enabled'])
         ->toBe('true')
-        ->and($config['transforms.unwrap.delete.tombstone.handling.mode'])
-        ->toBe('tombstone')
         ->and($config['auto.create'])
         ->toBe('false')
         ->and($config['connection.url'])
@@ -109,9 +107,9 @@ it('builds a confluent jdbc sink connector config with field renames', function 
         ->and($config['transforms.rename_values.renames'])
         ->toBe('_idrref:idrref,_fld1:title')
         ->and($config['transforms'])
-        ->toBe('unwrap,rename_keys,rename_values')
-        ->and($config['transforms.unwrap.type'])
-        ->toBe('io.debezium.transforms.ExtractNewRecordState');
+        ->toBe('rename_keys,rename_values')
+        ->and($config)
+        ->not->toHaveKey('transforms.unwrap.type');
 });
 
 it('keeps each sink limited to the fields of its own mapping when several replicas share a source table', function () {
@@ -205,7 +203,7 @@ it('builds a static sink with fixed fields and its target upstream', function (
         ->and($config['transforms.rename_values.renames'])
         ->toBe('_idrref:customer_id,_fld1:name')
         ->and($config['transforms'])
-        ->toBe('unwrap,rename_values,insert_type,insert_profile_id')
+        ->toBe('drop_tombstones,rename_values,insert_type,insert_profile_id')
         ->and($config['transforms.insert_type.type'])
         ->toBe('org.apache.kafka.connect.transforms.InsertField$Value')
         ->and($config['transforms.insert_type.static.field'])
@@ -219,7 +217,8 @@ it('builds a static sink with fixed fields and its target upstream', function (
         ->and($config)
         ->toMatchArray([
             'delete.enabled' => 'false',
-            'transforms.unwrap.delete.tombstone.handling.mode' => 'drop',
+            'transforms.drop_tombstones.type' => 'org.apache.kafka.connect.transforms.Filter',
+            'transforms.drop_tombstones.predicate' => 'tombstone',
             ...$target,
         ]);
 })->with([
@@ -298,12 +297,14 @@ it('uses the explicitly mapped record value as the static primary key', function
     array $bindings,
     string $renames,
     string $whitelist,
+    array $primaryKey,
+    string $keyFields,
 ) {
     $destination = new StaticDestination(
         key: 'explicit_keys',
         label: 'Explicit keys',
         table: 'explicit_keys',
-        primaryKey: 'id',
+        primaryKey: $primaryKey,
         schema: Schema::object([
             'id' => Schema::string()->format('uuid')->with('x-ferry-reference', true),
             'source_id' => Schema::string()->format('uuid')->with('x-ferry-reference', true),
@@ -341,17 +342,26 @@ it('uses the explicitly mapped record value as the static primary key', function
 
     expect($config)->toMatchArray([
         'pk.mode' => 'record_value',
-        'pk.fields' => 'id',
+        'pk.fields' => $keyFields,
         'fields.whitelist' => $whitelist,
         'transforms.rename_values.renames' => $renames,
         'delete.enabled' => 'false',
     ]);
     expect($config)->not->toHaveKey('transforms.rename_keys.type');
 })->with([
-    'source identifier' => [['_idrref' => 'id'], '_idrref:id', 'id'],
+    'source identifier' => [['_idrref' => 'id'], '_idrref:id', 'id', ['id'], 'id'],
     'another reference, with the source identifier mapped separately' => [
         ['_owner' => 'id', '_idrref' => 'source_id'],
         '_owner:id,_idrref:source_id',
         'id,source_id',
+        ['id'],
+        'id',
+    ],
+    'composite key' => [
+        ['_idrref' => 'id', '_owner' => 'source_id'],
+        '_idrref:id,_owner:source_id',
+        'id,source_id',
+        ['source_id', 'id'],
+        'source_id,id',
     ],
 ]);

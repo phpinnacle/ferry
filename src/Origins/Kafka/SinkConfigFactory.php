@@ -14,15 +14,17 @@ class SinkConfigFactory
     ) {}
 
     /** @return array<string, string> */
+    // @mago-expect lint:excessive-parameter-list
     public function make(
         Destination $destination,
         Replica $replica,
         StructureItem $object,
         string $topic,
         ?string $targetHost = null,
+        bool $unwrap = false,
     ): array {
         $dynamic = $replica->type === DestinationType::Dynamic;
-        $keyColumn = $dynamic ? $destination->getPrimaryKey() : null;
+        $keyColumn = $dynamic ? $destination->getPrimaryKey()[0] : null;
         $fixedValues = $destination->getFixedValues();
 
         return new JdbcConnectorConfig(
@@ -33,7 +35,7 @@ class SinkConfigFactory
                 ...$replica->constantColumns(),
                 ...array_keys($fixedValues),
             ],
-            transforms: $this->transforms->pipeline($replica, $object, $keyColumn, $dynamic, $fixedValues),
+            transforms: $this->transforms->pipeline($replica, $object, $keyColumn, $dynamic, $fixedValues, $unwrap),
             connection: $destination->getConnectionName(),
             targetHost: $targetHost,
             deletes: $dynamic,

@@ -343,6 +343,7 @@ it('imports repeated chunks once and refuses to restore a superseded draft', fun
     $upstream = Upstream::query()->findOrFail($staleUpstream->id);
     $source = app(UpstreamFactory::class)->make(['driver' => 'sqlite', 'database' => ':memory:']);
     $pdo = $source->getPdo();
+    $source->statement('CREATE TABLE _reference1 (_idrref TEXT PRIMARY KEY)');
     $source->statement('CREATE TABLE Config (filename TEXT, binarydata BLOB)');
     $source->insert('INSERT INTO Config VALUES (?, ?)', [
         'stale-object',
@@ -359,6 +360,7 @@ it('imports repeated chunks once and refuses to restore a superseded draft', fun
 
     expect($upstream->structure->items()->sole()->id)->toBe($first->id);
     expect($first->name)->toBe('_reference1');
+    expect($first->schema->annotation('x-primary-key'))->toBe(['_idrref']);
     expect($first->displayTitle())->toBe('Stale object');
 
     $upstream->update(['config' => [...$upstream->config, 'host' => 'replica']]);

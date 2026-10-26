@@ -2,6 +2,7 @@
 
 namespace PHPinnacle\Ferry\Services;
 
+use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Contracts\StructureAdapter;
 use PHPinnacle\Ferry\Data\StructurePlan;
 use PHPinnacle\Ferry\Models\StructureItem;
@@ -62,7 +63,23 @@ class RosettaStructureAdapter implements StructureAdapter
                 $limit,
             );
 
-            return array_map(new StructureConverter()->item(...), $objects);
+            $items = array_map(new StructureConverter()->item(...), $objects);
+            $schema = $source->getSchemaBuilder();
+
+            foreach ($items as $item) {
+                foreach ([$item, ...$item->children] as $object) {
+                    $primaryKey = array_find(
+                        $schema->getIndexes($object->name),
+                        fn (array $index) => $index['primary'],
+                    );
+                    $object->schema = JsonSchema::fromArray([
+                        ...$object->schema->toArray(),
+                        'x-primary-key' => $primaryKey['columns'] ?? [],
+                    ]);
+                }
+            }
+
+            return $items;
         } finally {
             $source->disconnect();
         }

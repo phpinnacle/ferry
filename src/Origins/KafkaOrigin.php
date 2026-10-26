@@ -22,9 +22,10 @@ class KafkaOrigin implements Origin
     /**
      * @param array{
      *     target_host: ?string,
+     *     extract_state: 'source'|'sink',
      *     source: array<string, string>,
      *     sink: array<string, string>,
-     *     signal: array{topic: string, ...},
+     *     signal: array{topic: string, bootstrap_servers: string, group_id: string, ...},
      *     ...
      * } $config
      */
@@ -57,6 +58,7 @@ class KafkaOrigin implements Origin
                 $object,
                 $this->sources->topic($upstream, $object),
                 $this->config['target_host'],
+                unwrap: $this->config['extract_state'] === 'sink',
             );
         }
 

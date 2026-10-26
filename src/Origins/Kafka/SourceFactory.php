@@ -13,7 +13,11 @@ class SourceFactory
     private const int IDENTIFIER_LENGTH = 63;
 
     /**
-     * @param array<string, mixed> $config
+     * @param array{
+     *     extract_state: 'source'|'sink',
+     *     signal: array{topic: string, bootstrap_servers: string, group_id: string, ...},
+     *     ...
+     * } $config
      *
      * @return array<string, string>
      */
@@ -65,7 +69,6 @@ class SourceFactory
         /** @var array{host: string, port: int, username: string, password: string, database: string} $credentials */
         $credentials = $upstream->config;
 
-        /** @var array{topic: string, bootstrap_servers: string, group_id: string} $signal */
         $signal = $config['signal'];
 
         return [
@@ -88,6 +91,14 @@ class SourceFactory
             'signal.kafka.bootstrap.servers' => $signal['bootstrap_servers'],
             'signal.kafka.groupId' => $signal['group_id'],
             ...$scope,
+            ...(
+                $config['extract_state'] === 'source'
+                    ? [
+                        'transforms' => 'unwrap',
+                        'transforms.unwrap.type' => 'io.debezium.transforms.ExtractNewRecordState',
+                        'transforms.unwrap.delete.tombstone.handling.mode' => 'tombstone',
+                    ] : []
+            ),
         ];
     }
 

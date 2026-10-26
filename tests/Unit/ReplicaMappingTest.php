@@ -96,7 +96,7 @@ it('uses JSON Schema compatibility when saving and reviewing static replicas', f
         'totals',
         'Totals',
         'totals',
-        'id',
+        ['id'],
         Schema::object([
             'amount' => Schema::fromArray($target)->title('Amount'),
         ])->required(['amount']),
@@ -163,7 +163,7 @@ it('compares native static values with destination enums and lengths', function 
     array $target,
     bool $allowed,
 ) {
-    $destination = new StaticDestination('labels', 'Labels', 'labels', 'id', Schema::object([
+    $destination = new StaticDestination('labels', 'Labels', 'labels', ['id'], Schema::object([
         'label' => Schema::fromArray($target),
     ]));
     $mapping = new FieldMapping(null, 'label', null, static: $value, kind: FieldKind::Static);
@@ -199,6 +199,8 @@ it('exposes default presentation for resolved destinations', function (
     ]));
 
     expect($destination->getLabel())->toBe($label);
+    expect($destination->getPrimaryKey())
+        ->toBe($type === DestinationType::Static ? ['customer_id'] : [Replica::ID_COLUMN]);
     expect($destination->getIcon())->toBeNull();
     expect($destination->getColor())->toBeNull();
 })->with([
@@ -213,7 +215,7 @@ it('preserves configured static destination presentation', function () {
         key: 'customers',
         label: $label,
         table: 'customers',
-        primaryKey: 'id',
+        primaryKey: ['id'],
         schema: Schema::object(),
         icon: Heroicon::UserGroup,
         color: $color,
@@ -229,7 +231,7 @@ it('resolves label and schema callbacks in the current request locale', function
         key: 'localized',
         label: fn () => app()->getLocale(),
         table: 'localized',
-        primaryKey: 'id',
+        primaryKey: ['id'],
         schema: fn () => Schema::object(['name' => Schema::string()->title(app()->getLocale())]),
     );
     app()->setLocale('ru');

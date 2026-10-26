@@ -12,7 +12,8 @@ interface Destination extends HasLabel, HasIcon, HasColor
 
     public function getConnectionName(): ?string;
 
-    public function getPrimaryKey(): string;
+    /** @return non-empty-list<string> */
+    public function getPrimaryKey(): array;
 
     /** @return array<string, string> */
     public function getFixedValues(): array;

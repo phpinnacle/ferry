@@ -36,9 +36,10 @@ final readonly class DynamicDestination implements Destination
         return null;
     }
 
-    public function getPrimaryKey(): string
+    /** @return non-empty-list<string> */
+    public function getPrimaryKey(): array
     {
-        return Replica::ID_COLUMN;
+        return [Replica::ID_COLUMN];
     }
 
     /** @return array<string, string> */

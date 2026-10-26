@@ -50,7 +50,7 @@ it('accepts UUID transform outputs for reference destinations', function () {
         key: 'owners',
         label: 'Owners',
         table: 'owners',
-        primaryKey: 'id',
+        primaryKey: ['id'],
         schema: Schema::object([
             'owner' => Schema::string()->format('uuid')->with('x-ferry-reference', true)->title('Owner'),
         ])->required(['owner']),
@@ -635,7 +635,7 @@ it('offers dynamic and every registered static destination in one select', funct
         key: 'dynamic',
         label: 'Static destination named dynamic',
         table: 'other_customers',
-        primaryKey: 'id',
+        primaryKey: ['id'],
         schema: customers_destination()->getSchema(),
     ));
 
@@ -678,7 +678,7 @@ it('resets the shared schema when switching destinations', function (string $fro
         key: 'other_customers',
         label: 'Other customers',
         table: 'other_customers',
-        primaryKey: 'id',
+        primaryKey: ['id'],
         schema: customers_destination()->getSchema(),
     ));
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
@@ -861,7 +861,7 @@ it('shows each composite column as a separate source card and saves only its sel
         key: 'owners',
         label: 'Owners',
         table: 'owners',
-        primaryKey: 'id',
+        primaryKey: ['id'],
         schema: Schema::object([
             'owner' => Schema::string()->format('uuid')->with('x-ferry-reference', true)->title('Owner'),
         ])->required(['owner']),
@@ -946,7 +946,7 @@ it('uses destination JSON Schema titles, constraints and required mappings in th
         key: 'schema_customers',
         label: 'Customers',
         table: 'customers',
-        primaryKey: 'id',
+        primaryKey: ['id'],
         schema: $schema,
     ));
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
@@ -982,7 +982,7 @@ it('omits empty optional forms and validates static values against destination b
         key: 'bounded',
         label: 'Bounded',
         table: 'bounded',
-        primaryKey: 'id',
+        primaryKey: ['id'],
         schema: Schema::object([
             'name' => Schema::string()->max(3),
             'description' => Schema::string()->nullable(),
@@ -1022,7 +1022,7 @@ it('maps UUID references into bounded strings while respecting target length and
         key: 'references',
         label: 'References',
         table: 'references',
-        primaryKey: 'external_id',
+        primaryKey: ['external_id'],
         schema: Schema::object([
             'external_id' => Schema::string()->max(255),
             'exact_id' => Schema::string()->max(36)->nullable(),

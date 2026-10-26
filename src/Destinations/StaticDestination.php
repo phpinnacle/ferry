@@ -13,6 +13,7 @@ final readonly class StaticDestination implements Destination
     /**
      * @param string|Htmlable|Closure(): (string|Htmlable|null)|null $label
      * @param Schema|Closure(): Schema $schema
+     * @param non-empty-list<string> $primaryKey
      * @param array<string, string> $fixedValues
      * @param string|array<string>|null $color
      */
@@ -20,7 +21,7 @@ final readonly class StaticDestination implements Destination
         public string $key,
         private string|Htmlable|Closure|null $label,
         public string $table,
-        private string $primaryKey,
+        private array $primaryKey,
         private Schema|Closure $schema,
         private ?string $connection = null,
         private array $fixedValues = [],
@@ -59,7 +60,8 @@ final readonly class StaticDestination implements Destination
         return $this->connection;
     }
 
-    public function getPrimaryKey(): string
+    /** @return non-empty-list<string> */
+    public function getPrimaryKey(): array
     {
         return $this->primaryKey;
     }

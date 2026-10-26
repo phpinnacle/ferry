@@ -254,6 +254,74 @@ it('uses each named origin target host only for its sink', function () {
     }
 });
 
+it('extracts new record state at the configured stage of each named origin', function (bool $static) {
+    $replica = ferry_replica();
+    app(DestinationFactory::class)->register(customers_destination());
+    if ($static) {
+        $replica->forceFill([
+            'type' => DestinationType::Static,
+            'destination' => 'customers',
+            'schema' => [
+                FieldMapping::fromArray(['kind' => 'static', 'target' => 'name', 'static' => 'Customer']),
+                FieldMapping::fromArray(['kind' => 'static', 'target' => 'tax_number', 'static' => '123']),
+            ],
+        ])->saveQuietly();
+    }
+    $settings = config('phpinnacle-ferry.origins.kafka');
+    expect($settings['extract_state'])->toBe('source');
+    $origins = new OriginFactory(app(), [
+        'kafka' => $settings,
+        'analytics' => [...$settings, 'extract_state' => 'sink'],
+    ]);
+
+    foreach (['kafka' => 'source', 'analytics' => 'sink'] as $name => $stage) {
+        $origin = $origins->create($name);
+        $source = $origin->make($replica->upstream)->config;
+        $sink = $origin->make($replica)->config;
+
+        if ($stage === 'source') {
+            expect($source)->toMatchArray([
+                'transforms' => 'unwrap',
+                'transforms.unwrap.type' => 'io.debezium.transforms.ExtractNewRecordState',
+                'transforms.unwrap.delete.tombstone.handling.mode' => 'tombstone',
+            ]);
+            expect($sink)->not->toHaveKeys([
+                'transforms.unwrap.type',
+                'transforms.unwrap.delete.tombstone.handling.mode',
+            ]);
+            expect($sink['transforms'])
+                ->toBe(
+                    $static
+                        ? 'drop_tombstones,rename_values,field_0_0,field_1_0,insert_type,insert_profile_id'
+                        : 'rename_keys,rename_values',
+                );
+            if ($static) {
+                expect($sink)->toMatchArray([
+                    'transforms.drop_tombstones.type' => 'org.apache.kafka.connect.transforms.Filter',
+                    'transforms.drop_tombstones.predicate' => 'tombstone',
+                    'predicates' => 'tombstone',
+                    'predicates.tombstone.type' => 'org.apache.kafka.connect.transforms.predicates.RecordIsTombstone',
+                ]);
+            }
+        } else {
+            expect($source)->not->toHaveKeys(['transforms', 'transforms.unwrap.type']);
+            expect($sink)->toMatchArray([
+                'transforms.unwrap.type' => 'io.debezium.transforms.ExtractNewRecordState',
+                'transforms.unwrap.delete.tombstone.handling.mode' => $static ? 'drop' : 'tombstone',
+            ]);
+            expect($sink['transforms'])
+                ->toBe(
+                    $static
+                        ? 'unwrap,rename_values,field_0_0,field_1_0,insert_type,insert_profile_id'
+                        : 'unwrap,rename_keys,rename_values',
+                );
+        }
+
+        expect($sink['delete.enabled'])->toBe($static ? 'false' : 'true');
+        expect($sink['pk.mode'])->toBe($static ? 'record_value' : 'record_key');
+    }
+})->with(['dynamic' => [false], 'static' => [true]]);
+
 it('builds sink configuration through the destination registry', function (?string $destination) {
     $replica = ferry_replica();
     $destinations = app(DestinationFactory::class);
