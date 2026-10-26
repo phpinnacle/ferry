@@ -7,7 +7,7 @@ use PHPinnacle\Ferry\Data\StructurePlan;
 use PHPinnacle\Ferry\Models\StructureItem;
 use PHPinnacle\Ferry\Models\Upstream;
 
-interface StructureAdapter extends HasLabel
+interface Adapter extends HasLabel
 {
     public function getKey(): string;
 

@@ -115,6 +115,7 @@ return new class extends Migration {
             $table->string('type')->default(DestinationType::Dynamic->value);
             $table->string('source');
             $table->string('destination');
+            $table->json('mapping');
             $table->json('schema');
             $table->json('transforms')->default('[]');
             $table->timestamps();

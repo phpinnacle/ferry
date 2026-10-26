@@ -51,9 +51,9 @@ class SourceFactory
                 $keys[$table] = sprintf('%s:%s', $table, implode(',', $object->primary_key));
             }
 
-            $sourceColumns = [...$object->primary_key, ...array_keys($replica->columnMap($object))];
+            $sourceColumns = $object->primary_key;
 
-            foreach ($replica->schema as $mapping) {
+            foreach ($replica->mapping as $mapping) {
                 if ($mapping->source !== null && $mapping->isUsed()) {
                     if ($object->field($mapping->source) !== null) {
                         $sourceColumns[] = $mapping->source;

@@ -6,7 +6,6 @@ use Illuminate\Support\Facades\DB;
 use Mockery;
 use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Data\FieldMapping;
-use PHPinnacle\Ferry\FerryPlugin;
 use PHPinnacle\Ferry\Models\Connector;
 use PHPinnacle\Ferry\Models\Replica;
 use PHPinnacle\Ferry\Models\StructureItem;
@@ -35,7 +34,10 @@ abstract class TestCase extends ApplicationTestCase
     {
         $attributes = ReplicaForm::forCreate($data, $destinations);
 
-        return [...$attributes, ...ReplicaForm::forUpdate($data, new Replica($attributes), $destinations)];
+        $record = new Replica($attributes);
+        $data['schema'] ??= $record->sourceObject()->schema->toArray();
+
+        return [...$attributes, ...ReplicaForm::forUpdate($data, $record, $destinations)];
     }
 
     /**
@@ -86,7 +88,7 @@ abstract class TestCase extends ApplicationTestCase
                 'revision' => $upstream->structure->generation,
                 ...$attributes,
                 'fields' => [
-                    '_idrref' => self::keyMapping()->field,
+                    '_idrref' => self::keySchema(),
                     ...($attributes['fields'] ?? []),
                 ],
             ]),
@@ -110,7 +112,7 @@ abstract class TestCase extends ApplicationTestCase
             'name' => 'Test replica',
             'code' => 'test-replica',
             'source' => 'object-0',
-            'schema' => [self::keyMapping()],
+            'mapping' => [self::keyMapping()],
             ...$attributes,
         ]);
 
@@ -123,13 +125,18 @@ abstract class TestCase extends ApplicationTestCase
 
     public static function keyMapping(): FieldMapping
     {
-        return new FieldMapping('_idrref', 'external_id', JsonSchema::fromArray([
+        return new FieldMapping('_idrref', 'external_id');
+    }
+
+    public static function keySchema(): JsonSchema
+    {
+        return JsonSchema::fromArray([
             'type' => 'string',
             'format' => 'uuid',
             'x-ferry-reference' => true,
             'minLength' => 36,
             'maxLength' => 36,
-        ]));
+        ]);
     }
 
     /** @param array<string, mixed> $attributes */
@@ -150,8 +157,6 @@ abstract class TestCase extends ApplicationTestCase
     protected function setUp(): void
     {
         parent::setUp();
-
-        FerryPlugin::make();
 
         config([
             'phpinnacle-ferry.connection' => null,

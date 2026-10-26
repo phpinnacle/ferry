@@ -25,7 +25,7 @@ class Origin implements OriginContract
             : [
                 'source' => $source->source,
                 'destination' => $source->destination,
-                'schema' => $source->attributesToArray()['schema'],
+                'mapping' => $source->attributesToArray()['mapping'],
                 'transforms' => $source->attributesToArray()['transforms'],
             ];
 

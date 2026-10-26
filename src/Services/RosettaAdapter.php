@@ -3,7 +3,7 @@
 namespace PHPinnacle\Ferry\Services;
 
 use PHPinnacle\Eidos\Forms\JsonSchema;
-use PHPinnacle\Ferry\Contracts\StructureAdapter;
+use PHPinnacle\Ferry\Contracts\Adapter;
 use PHPinnacle\Ferry\Data\StructurePlan;
 use PHPinnacle\Ferry\Models\StructureItem;
 use PHPinnacle\Ferry\Models\Upstream;
@@ -13,7 +13,7 @@ use PHPinnacle\Rosetta\MetadataLoader;
 use PHPinnacle\Rosetta\StorageMap;
 use PHPinnacle\Rosetta\TypeMap;
 
-class RosettaStructureAdapter implements StructureAdapter
+class RosettaAdapter implements Adapter
 {
     public function __construct(
         private readonly UpstreamFactory $factory,

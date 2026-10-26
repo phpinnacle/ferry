@@ -5,14 +5,48 @@ namespace PHPinnacle\Ferry\Transformations;
 use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Components\Group;
 use Filament\Support\Icons\Heroicon;
+use PHPinnacle\Common\Forms\InlineBuilder\Block;
 use PHPinnacle\Eidos\Forms\JsonSchema;
-use PHPinnacle\Ferry\Transformation;
+use PHPinnacle\Ferry\Contracts\Transform;
+use PHPinnacle\Ferry\Enums\TransformTarget;
 
-final class Substring
+final class Substring implements Transform
 {
-    public static function make(): Transformation
+    public static function make(): self
     {
-        return Transformation::make('substring')
+        return new self;
+    }
+
+    public function getKey(): string
+    {
+        return 'substring';
+    }
+
+    public function getTarget(): TransformTarget
+    {
+        return TransformTarget::Value;
+    }
+
+    public function accepts(JsonSchema $input): bool
+    {
+        return (
+            $input->singleType() === 'string'
+            && $input->format() !== 'date-time'
+            && $input->annotation('x-ferry-reference') !== true
+        );
+    }
+
+    public function output(JsonSchema $input, array $params): JsonSchema
+    {
+        return JsonSchema::fromArray([
+            'type' => in_array('null', $input->types(), true) ? ['string', 'null'] : 'string',
+        ]);
+    }
+
+    public function block(): Block
+    {
+        return Block::make($this->getKey())
+            ->color('info')
             ->label(fn () => __('phpinnacle-ferry::resources.transform.substring'))
             ->icon(Heroicon::Scissors)
             ->schema(fn () => [
@@ -38,16 +72,15 @@ final class Substring
                             ->dehydrateStateUsing(fn (int|string $state) => (string) $state),
                     ])
                     ->columnSpanFull(),
-            ])
-            ->inputSchema(
-                fn (JsonSchema $input) => (
-                    $input->singleType() === 'string'
-                    && $input->annotation('format') !== 'date-time'
-                    && $input->annotation('x-ferry-reference') !== true
-                ),
-            )
-            ->outputSchema(fn (JsonSchema $input) => [
-                'type' => in_array('null', $input->types(), true) ? ['string', 'null'] : 'string',
             ]);
+    }
+
+    public function connector(string $field, array $params): array
+    {
+        return [
+            'type' => 'org.phpinnacle.toblerone.SubstringTransform$Value',
+            'fields' =>
+                $field . ':' . $params['start'] . (array_key_exists('end', $params) ? ':' . $params['end'] : ''),
+        ];
     }
 }

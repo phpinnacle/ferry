@@ -69,9 +69,9 @@ it('builds a confluent jdbc sink connector config with field renames', function 
     $replica = TestCase::makeReplica([
         'upstream_id' => $upstream->id,
         'source' => 'object-0',
-        'schema' => [
+        'mapping' => [
             TestCase::keyMapping(),
-            new FieldMapping('_fld1', 'title', $object->field('_fld1')),
+            new FieldMapping(source: '_fld1', target: 'title'),
         ],
     ]);
 
@@ -126,9 +126,9 @@ it('keeps each sink limited to the fields of its own mapping when several replic
         'upstream_id' => $upstream->id,
         'code' => 'replica-a',
         'source' => 'object-0',
-        'schema' => [
+        'mapping' => [
             TestCase::keyMapping(),
-            new FieldMapping('_fld1', 'title', $object->field('_fld1')),
+            new FieldMapping(source: '_fld1', target: 'title'),
         ],
     ]);
 
@@ -136,9 +136,9 @@ it('keeps each sink limited to the fields of its own mapping when several replic
         'upstream_id' => $upstream->id,
         'code' => 'replica-b',
         'source' => 'object-0',
-        'schema' => [
+        'mapping' => [
             TestCase::keyMapping(),
-            new FieldMapping('_fld2', 'tax_number', $object->field('_fld2')),
+            new FieldMapping(source: '_fld2', target: 'tax_number'),
         ],
     ]);
 
@@ -180,9 +180,9 @@ it('builds a static sink with fixed fields and its target upstream', function (
         'type' => DestinationType::Static,
         'destination' => 'customers',
         'source' => 'object-0',
-        'schema' => [
-            new FieldMapping('_idrref', 'customer_id', $object->field('_idrref')),
-            new FieldMapping('_fld1', 'name', $object->field('_fld1')),
+        'mapping' => [
+            new FieldMapping(source: '_idrref', target: 'customer_id'),
+            new FieldMapping(source: '_fld1', target: 'name'),
         ],
     ]);
 
@@ -328,8 +328,8 @@ it('selects and renames only source key fields mapped to the static primary key'
         'upstream_id' => $upstream->id,
         'type' => DestinationType::Static,
         'destination' => 'explicit_keys',
-        'schema' => array_map(
-            fn (string $source, string $target) => new FieldMapping($source, $target, $object->field($source)),
+        'mapping' => array_map(
+            fn (string $source, string $target) => new FieldMapping(source: $source, target: $target),
             array_keys($bindings),
             $bindings,
         ),

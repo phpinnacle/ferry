@@ -5,27 +5,33 @@ use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Schema;
 use Illuminate\Validation\ValidationException;
+use PHPinnacle\Common\Forms\InlineBuilder\Block;
 use PHPinnacle\Common\Forms\InlineBuilder\BuilderAction;
 use PHPinnacle\Eidos\Forms\JsonSchema;
-use PHPinnacle\Ferry\FerryPlugin;
+use PHPinnacle\Ferry\Contracts\Transform;
+use PHPinnacle\Ferry\Data\FieldMapping;
+use PHPinnacle\Ferry\Enums\TransformTarget;
 use PHPinnacle\Ferry\Forms\FieldTransforms;
+use PHPinnacle\Ferry\Models\Replica;
+use PHPinnacle\Ferry\Models\StructureItem;
+use PHPinnacle\Ferry\Origins\Kafka\TransformFactory;
 use PHPinnacle\Ferry\Services\TransformRegistry;
+use PHPinnacle\Ferry\Tests\Fakes\Transform as FakeTransform;
 use PHPinnacle\Ferry\Tests\Fixtures\SchemaHost;
-use PHPinnacle\Ferry\Transformation;
 use PHPinnacle\Ferry\Transformations\MaskField;
 use PHPinnacle\Ferry\Transformations\Substring;
 use PHPinnacle\Ferry\Transformations\Trim;
 use Tests\TestCase;
+
+require_once __DIR__ . '/../Fakes/Transform.php';
 
 require_once __DIR__ . '/../Fixtures/SchemaHost.php';
 
 uses(TestCase::class);
 
 beforeEach(function () {
-    FerryPlugin::make();
-    config(['phpinnacle-ferry.kafka.transforms' => []]);
     $transforms = app(TransformRegistry::class);
-    $transforms->register(Trim::make()->color('success'), MaskField::make()->color('warning'));
+    $transforms->register(Trim::make(), MaskField::make());
     $this->field = FieldTransforms::make('transforms')->label('Name')->inputSchema(['type' => 'string']);
     Schema::make(SchemaHost::make())->statePath('data')->components([$this->field])->fill();
     $this->action = $this->field->getAction('fieldTransforms');
@@ -33,17 +39,28 @@ beforeEach(function () {
 
 it('builds parameter forms when opening a transform rather than rendering its menu', function () {
     $builds = 0;
-    app(TransformRegistry::class)->register(Transformation::make('custom')->schema(function () use (&$builds) {
-        $builds++;
+    app(TransformRegistry::class)->register(
+        new FakeTransform('custom', block: Block::make('custom')->schema(function () use (&$builds) {
+            $builds++;
 
-        return [TextInput::make('value')->required()];
-    }));
+            return [TextInput::make('value')->required()];
+        })),
+    );
 
     $action = BuilderAction::make($this->field)->schemaComponent($this->field);
     expect($action->toHtml())->toContain('custom');
     expect($builds)->toBe(0);
     expect($action(['block' => 'custom'])->shouldOpenModal())->toBeTrue();
     expect($builds)->toBe(1);
+});
+
+it('preserves the registered block availability condition', function () {
+    $registry = app(TransformRegistry::class);
+    $registry->register(new FakeTransform('custom', block: Block::make('custom')->addable(false)));
+
+    expect($this->field->getAvailableTransforms($registry))->toHaveKey('custom');
+    expect($this->field->getAvailableBlocks())->not->toHaveKey('custom');
+    expect($this->field->getBlocks())->toHaveKey('custom');
 });
 
 it('validates repeated numeric casts and offers transforms for the final type', function () {
@@ -67,7 +84,7 @@ it('validates repeated numeric casts and offers transforms for the final type', 
         ->toBe(['cast', 'filter', 'trim', 'mask']);
 });
 
-it('uses description colors for configurable and settings-free badges', function () {
+it('uses block colors for configurable and settings-free badges', function () {
     $this->field->state([
         ['type' => 'trim', 'data' => []],
         ['type' => 'mask', 'data' => ['replacement' => 'hidden']],
@@ -324,10 +341,12 @@ it('accepts nullable string inputs and rejects invalid parameters', function () 
 
 it('identifies the failing transform when its input or output schema is unavailable', function (bool $accepts) {
     app(TransformRegistry::class)->register(
-        Transformation::make('unavailable')
-            ->label('Unavailable transform')
-            ->inputSchema(fn (JsonSchema $input) => $accepts)
-            ->outputSchema(fn (JsonSchema $input, array $params) => null),
+        new FakeTransform(
+            'unavailable',
+            accepts: fn () => $accepts,
+            output: fn () => null,
+            block: Block::make('unavailable')->label('Unavailable transform'),
+        ),
     );
     $this->field->state([
         ['type' => 'trim', 'data' => []],
@@ -373,9 +392,16 @@ it('casts a union of scalar types without losing nullability', function () {
 
 it('lets a custom array transform participate in the same schema chain', function () {
     $registry = app(TransformRegistry::class);
-    $registry->register(Transformation::make('join')
-        ->inputSchema(['type' => 'array', 'items' => ['type' => 'string']])
-        ->outputSchema(['type' => 'string', 'maxLength' => 20]));
+    $registry->register(
+        new FakeTransform(
+            'join',
+            accepts: fn (JsonSchema $input) => $input->compatible(JsonSchema::fromArray([
+                'type' => 'array',
+                'items' => ['type' => 'string'],
+            ])),
+            output: fn () => JsonSchema::fromArray(['type' => 'string', 'maxLength' => 20]),
+        ),
+    );
     $field = FieldTransforms::make('transforms')->inputSchema(['type' => 'array', 'items' => ['type' => 'string']]);
     Schema::make(SchemaHost::make())->statePath('data')->components([$field])->fill();
     $action = $field->getAction('fieldTransforms');
@@ -460,12 +486,16 @@ it('calculates allowed moves using the complete type chain and refreshes them af
 it('uses transformation schema callbacks when deciding whether a move is allowed', function () {
     $registry = app(TransformRegistry::class);
     $registry->register(
-        Transformation::make('make_object')
-            ->inputSchema(['type' => 'string'])
-            ->outputSchema(['type' => 'object']),
-        Transformation::make('read_object')
-            ->inputSchema(fn (JsonSchema $schema) => $schema->singleType() === 'object')
-            ->outputSchema(fn (JsonSchema $schema, array $params) => ['type' => $params['type']]),
+        new FakeTransform(
+            'make_object',
+            accepts: fn (JsonSchema $input) => $input->singleType() === 'string',
+            output: fn () => JsonSchema::fromArray(['type' => 'object']),
+        ),
+        new FakeTransform(
+            'read_object',
+            accepts: fn (JsonSchema $schema) => $schema->singleType() === 'object',
+            output: fn (JsonSchema $schema, array $params) => JsonSchema::fromArray(['type' => $params['type']]),
+        ),
     );
     $this->field->state([
         ['type' => 'make_object', 'data' => []],
@@ -486,4 +516,87 @@ it('checks the current input type again before applying a reordered chain', func
     $this->field->inputSchema(['type' => 'boolean']);
     expect(fn () => ($this->action)(['order' => ['1', '0']])->call())->toThrow(ValidationException::class);
     expect($this->field->getSettings())->toBe($settings);
+});
+
+it('registers independent transform implementations and uses their native blocks', function () {
+    $transform = new class implements Transform {
+        public function getKey(): string
+        {
+            return 'custom';
+        }
+
+        public function getTarget(): TransformTarget
+        {
+            return TransformTarget::Value;
+        }
+
+        public function accepts(JsonSchema $input): bool
+        {
+            return $input->singleType() === 'string';
+        }
+
+        public function output(JsonSchema $input, array $params): ?JsonSchema
+        {
+            return JsonSchema::fromArray(['type' => 'string', 'maxLength' => strlen($params['value'])]);
+        }
+
+        public function connector(string $field, array $params): array
+        {
+            return ['type' => 'example.Custom', 'field' => $field, 'value' => $params['value']];
+        }
+
+        public function block(): Block
+        {
+            return Block::make($this->getKey())
+                ->label('Custom')
+                ->schema([
+                    TextInput::make('value')->required(),
+                ]);
+        }
+    };
+    $registry = app(TransformRegistry::class);
+    $registry->register($transform);
+
+    expect($registry->getOrFail('custom'))->toBe($transform);
+    expect($this->field->getAvailableTransforms($registry)['custom'])->toBe($transform);
+    expect(array_keys($this->field->getAvailableBlocks()))->toContain('custom');
+    $action = BuilderAction::make($this->field)->schemaComponent($this->field);
+    $action(['block' => 'custom'])->data(['data' => ['value' => 'hello']])->call();
+
+    expect($this->field->getContainer()->getState()['transforms'])
+        ->toBe([['type' => 'custom', 'data' => ['value' => 'hello']]]);
+    expect($this->field->getInputSchema()->maxLength())->toBe(5);
+    $replica = new Replica(['mapping' => [
+        new FieldMapping(source: 'name', target: 'name', options: [
+            'transforms' => $this->field->getSettings(),
+        ]),
+    ]]);
+    $config = app(TransformFactory::class)->pipeline($replica, new StructureItem);
+    expect($config['transforms.field_0_0.type'])->toBe('example.Custom');
+    expect($config['transforms.field_0_0.field'])->toBe('name');
+    expect($config['transforms.field_0_0.value'])->toBe('hello');
+});
+
+it('passes the selected object and preceding schema to each settings form', function () {
+    $object = new StructureItem;
+    $context = [];
+    $this->field->object($object);
+    app(TransformRegistry::class)->register(
+        new FakeTransform('custom', block: Block::make('custom')->schema(
+            function (FieldTransforms $component, ?int $index) use (&$context) {
+                $context = [$component->getObject(), $component->getInputSchema($index)->singleType()];
+
+                return [TextInput::make('value')];
+            },
+        )),
+    );
+    $this->field->state([
+        ['type' => 'cast', 'data' => ['type' => 'boolean']],
+        ['type' => 'custom', 'data' => []],
+        ['type' => 'cast', 'data' => ['type' => 'string']],
+    ]);
+
+    $action = BuilderAction::make($this->field)->schemaComponent($this->field);
+    expect($action(['block' => 'custom', 'index' => 1])->shouldOpenModal())->toBeTrue();
+    expect($context)->toBe([$object, 'boolean']);
 });

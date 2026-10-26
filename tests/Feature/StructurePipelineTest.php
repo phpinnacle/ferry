@@ -4,7 +4,7 @@ use Illuminate\Database\SQLiteConnection;
 use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Queue;
 use PHPinnacle\Eidos\Forms\JsonSchema;
-use PHPinnacle\Ferry\Contracts\StructureAdapter;
+use PHPinnacle\Ferry\Contracts\Adapter;
 use PHPinnacle\Ferry\Data\StructurePlan;
 use PHPinnacle\Ferry\Enums\StructureStatus;
 use PHPinnacle\Ferry\Jobs\Structure\FetchStructureChunkJob;
@@ -13,7 +13,7 @@ use PHPinnacle\Ferry\Jobs\Structure\PrepareStructureJob;
 use PHPinnacle\Ferry\Models\Structure;
 use PHPinnacle\Ferry\Models\StructureItem;
 use PHPinnacle\Ferry\Models\Upstream;
-use PHPinnacle\Ferry\Services\RosettaStructureAdapter;
+use PHPinnacle\Ferry\Services\RosettaAdapter;
 use PHPinnacle\Ferry\Services\StructureAdapterRegistry;
 use PHPinnacle\Ferry\Services\UpstreamFactory;
 use PHPinnacle\Ferry\Tests\TestCase;
@@ -33,7 +33,7 @@ beforeEach(function () {
 });
 
 $makeAdapter = function (int $estimated, string $key = 'rosetta') {
-    $adapter = new class($estimated, $key) implements StructureAdapter {
+    $adapter = new class($estimated, $key) implements Adapter {
         public int $prepared = 0;
 
         /** @var list<int> */
@@ -351,7 +351,7 @@ it('imports repeated chunks once and refuses to restore a superseded draft', fun
     ]);
     $factory = Mockery::mock(UpstreamFactory::class);
     $factory->shouldReceive('make')->andReturnUsing(fn () => new SQLiteConnection($pdo));
-    $adapter = new RosettaStructureAdapter($factory, app(MetadataLoader::class));
+    $adapter = new RosettaAdapter($factory, app(MetadataLoader::class));
     $plan = new StructurePlan(1, ['storage_map' => ['stale-object' => ['Reference' => 1]], 'type_map' => []]);
 
     $staleUpstream->structure->importItems($adapter->read($staleUpstream, $plan, 0, 1), 0);
@@ -549,7 +549,7 @@ it('resumes queued preparation from persisted state', function () {
         ->and($structure->updated_at->equalTo($updatedAt))
         ->toBeTrue();
 
-    $adapter = Mockery::mock(StructureAdapter::class);
+    $adapter = Mockery::mock(Adapter::class);
     $adapter->shouldReceive('getKey')->andReturn('rosetta');
     $adapter->shouldNotReceive('prepare');
     app(StructureAdapterRegistry::class)->register($adapter);
@@ -669,7 +669,7 @@ it('invalidates the old run and context when the adapter changes', function (?st
 
 it('does not save a plan or schedule chunks after the adapter is cleared during preparation', function () {
     Queue::fake();
-    $adapter = Mockery::mock(StructureAdapter::class);
+    $adapter = Mockery::mock(Adapter::class);
     $adapter->shouldReceive('getKey')->andReturn('selected');
     $adapter
         ->shouldReceive('prepare')

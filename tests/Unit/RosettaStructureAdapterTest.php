@@ -4,7 +4,7 @@ use Illuminate\Database\Connection;
 use Illuminate\Database\SQLiteConnection;
 use PHPinnacle\Ferry\Data\StructurePlan;
 use PHPinnacle\Ferry\Models\Upstream;
-use PHPinnacle\Ferry\Services\RosettaStructureAdapter;
+use PHPinnacle\Ferry\Services\RosettaAdapter;
 use PHPinnacle\Ferry\Services\StructureAdapterRegistry;
 use PHPinnacle\Ferry\Services\UpstreamFactory;
 use PHPinnacle\Rosetta\MetadataLoader;
@@ -20,7 +20,7 @@ it('binds the structure adapter without opening a source connection', function (
     expect(app(StructureAdapterRegistry::class)->options())
         ->toBe(['rosetta' => '1C Rosetta'])
         ->and(app(StructureAdapterRegistry::class)->getOrFail('rosetta'))
-        ->toBeInstanceOf(RosettaStructureAdapter::class);
+        ->toBeInstanceOf(RosettaAdapter::class);
 });
 
 it('prepares serializable context and reads physical primary keys for roots and children', function (
@@ -54,7 +54,7 @@ it('prepares serializable context and reads physical primary keys for roots and 
     $source->shouldReceive('disconnect')->twice();
     $factory = Mockery::mock(UpstreamFactory::class);
     $factory->shouldReceive('make')->twice()->with($upstream->credentials())->andReturn($source);
-    $adapter = new RosettaStructureAdapter($factory, app(MetadataLoader::class));
+    $adapter = new RosettaAdapter($factory, app(MetadataLoader::class));
 
     $plan = $adapter->prepare($upstream);
     $objects = $adapter->read($upstream, $plan, 0, 1);
@@ -113,7 +113,7 @@ it('disconnects and propagates a failed source read', function (string $operatio
     $source->shouldReceive('disconnect')->once();
     $factory = Mockery::mock(UpstreamFactory::class);
     $factory->shouldReceive('make')->once()->andReturn($source);
-    $adapter = new RosettaStructureAdapter($factory, app(MetadataLoader::class));
+    $adapter = new RosettaAdapter($factory, app(MetadataLoader::class));
     $upstream = new Upstream(['driver' => 'pgsql', 'config' => []]);
 
     expect(fn () => (

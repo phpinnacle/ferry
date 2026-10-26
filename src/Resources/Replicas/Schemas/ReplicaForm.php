@@ -22,10 +22,12 @@ use PHPinnacle\Ferry\Data\FieldMapping as SchemaMapping;
 use PHPinnacle\Ferry\Destinations\StaticDestination;
 use PHPinnacle\Ferry\Enums\DestinationType;
 use PHPinnacle\Ferry\Enums\FieldKind;
+use PHPinnacle\Ferry\Enums\TransformTarget;
 use PHPinnacle\Ferry\Forms\FieldTransforms;
 use PHPinnacle\Ferry\Models\Replica;
 use PHPinnacle\Ferry\Models\StructureItem;
 use PHPinnacle\Ferry\Models\Upstream;
+use PHPinnacle\Ferry\Resources\Replicas\Actions\InsertUuidAction;
 use PHPinnacle\Ferry\Rules\ReplicaSchema;
 use PHPinnacle\Ferry\Services\DestinationFactory;
 use PHPinnacle\Ferry\Services\TransformRegistry;
@@ -39,8 +41,8 @@ use PHPinnacle\Ferry\Services\TransformRegistry;
  * @phpstan-type SchemaState list<MappingData>
  * @phpstan-type FormState list<MappingData|array{kind: 'static', target: string, static: null}>
  * @phpstan-type CreateState array{name: string, upstream_id: string, code: string, source: string, destination: string}
- * @phpstan-type EditState array{name: string, schema: FormState}
- * @phpstan-type FillState array{upstream_id: string, source: string, type: value-of<DestinationType>, destination: string, schema: SchemaState}
+ * @phpstan-type EditState array{name: string, mapping: FormState, schema: Definition}
+ * @phpstan-type FillState array{upstream_id: string, source: string, type: value-of<DestinationType>, destination: string, mapping: SchemaState, schema: Definition}
  */
 class ReplicaForm
 {
@@ -58,7 +60,7 @@ class ReplicaForm
 
     /**
      * @param CreateState $data
-     * @return array{upstream_id: string, name: string, code: string, source: string, type: DestinationType, destination: string|null, schema: SchemaState}
+     * @return array{upstream_id: string, name: string, code: string, source: string, type: DestinationType, destination: string|null, mapping: SchemaState}
      */
     public static function forCreate(
         array $data,
@@ -75,47 +77,53 @@ class ReplicaForm
             'source' => $data['source'],
             'type' => $destination === null ? DestinationType::Dynamic : DestinationType::Static,
             'destination' => $destination?->key,
-            'schema' => [],
+            'mapping' => [],
         ];
     }
 
     /**
      * @param EditState $data
-     * @return array{name: string, schema: SchemaState}
+     * @return array{name: string, mapping: SchemaState, schema: JsonSchema}
      */
     public static function forUpdate(
         array $data,
         Replica $record,
         DestinationFactory $destinations,
     ): array {
-        $object = self::object($record->upstream, $record->source, 'data.schema');
+        $object = self::object($record->upstream, $record->source, 'data.mapping');
         $destination = $record->type === DestinationType::Static ? $destinations->get($record->destination) : null;
 
         if ($record->type === DestinationType::Static && $destination === null) {
             throw ValidationException::withMessages([
-                'data.schema' => __('phpinnacle-ferry::resources.replica.errors.static_destination_missing', [
+                'data.mapping' => __('phpinnacle-ferry::resources.replica.errors.static_destination_missing', [
                     'destination' => $record->destination,
                 ]),
             ]);
         }
 
         $mappings = [];
-        foreach ($data['schema'] as $mapping) {
+        foreach ($data['mapping'] as $mapping) {
             if ($mapping['kind'] === 'source') {
                 $mappings[] = $mapping;
-            } elseif ($mapping['static'] !== null) {
+            } elseif ($mapping['target'] !== null && $mapping['static'] !== null) {
                 $mappings[] = $mapping;
             }
         }
+        $schema = JsonSchema::fromArray($data['schema']);
+        /** @var list<string> $primaryKey */
+        $primaryKey = $data['schema']['x-primary-key'] ?? $object->primary_key;
         ReplicaSchema::assertValid(
             array_map(SchemaMapping::fromArray(...), $mappings),
             $destination,
+            $primaryKey,
+            $schema,
             $object->primary_key,
         );
 
         return [
             'name' => $data['name'],
-            'schema' => $mappings,
+            'mapping' => $mappings,
+            'schema' => $schema,
         ];
     }
 
@@ -139,7 +147,22 @@ class ReplicaForm
 
     public static function configure(Schema $schema): Schema
     {
-        return $schema->columns(1)->components([self::generalSection(), self::mappingSection()]);
+        return $schema
+            ->columns(1)
+            ->components([
+                self::generalSection(),
+                Hidden::make('schema')
+                    ->afterStateHydrated(function (Hidden $component, Get $get, ?array $state) {
+                        if ($state === null) {
+                            $upstream = Upstream::query()->find($get->string('upstream_id', isNullable: true));
+                            $source = $get->string('source', isNullable: true);
+                            $component->state(self::sourceSchema(
+                                $source !== null ? $upstream?->structure->publishedItem($source) : null,
+                            ));
+                        }
+                    }),
+                self::mappingSection(),
+            ]);
     }
 
     private static function generalSection(): Section
@@ -196,7 +219,7 @@ class ReplicaForm
                                 isNullable: true,
                             ))),
                         );
-                        self::resetMapping($set, $component);
+                        self::resetMapping($set, $component, $get);
                     }),
                 Select::make('source')
                     ->label(__('phpinnacle-ferry::resources.replica.fields.source'))
@@ -234,7 +257,6 @@ class ReplicaForm
                 Get $get,
                 ?Replica $record,
                 DestinationFactory $destinations,
-                TransformRegistry $registry,
             ) {
                 $upstreamId = $get->string('upstream_id', isNullable: true);
                 $source = $get->string('source', isNullable: true);
@@ -244,74 +266,70 @@ class ReplicaForm
                         ? Upstream::query()->find($upstreamId)?->structure->publishedItem($source)
                         : null;
                 $destination = $destinations->get(self::staticKey($selectedDestination));
-                $brokenColumns =
-                    $record !== null && $record->schema !== []
-                        ? $record->brokenColumns($object, $destination)
-                        : [];
-
-                $targetWarnings = [];
-                $sourceWarnings = [];
-
-                foreach ($brokenColumns as $column) {
-                    $targetWarnings[$column] = __(
-                        'phpinnacle-ferry::resources.replica.values.broken_mappings',
-                        ['columns' => $column],
-                    );
-                }
-
-                foreach ($record->schema ?? [] as $mapping) {
-                    if ($mapping->source !== null) {
-                        $warning = $mapping->target ?? $mapping->source;
-                        if (array_key_exists($warning, $targetWarnings)) {
-                            $sourceWarnings[$mapping->source] = $targetWarnings[$warning];
-                        }
+                /** @var Definition $sourceSchema */
+                $sourceSchema = $get('schema') ?? self::sourceSchema($object);
+                $input = JsonSchema::fromArray($sourceSchema);
+                foreach ($input->properties() as $name => $property) {
+                    /** @var string|null $translation */
+                    $translation = $property->annotation('x-ferry-trans');
+                    if ($translation !== null) {
+                        $sourceSchema['properties'][$name]['title'] = __($translation);
                     }
                 }
-
-                $sourceSchema = self::sourceSchema($object);
+                /** @var list<string> $primaryKey */
+                $primaryKey = $input->annotation('x-primary-key') ?? $object->primary_key ?? [];
+                $sourceSchema['required'] = array_values(array_unique([...$input->required(), ...$primaryKey]));
 
                 $mapping = match ($selectedDestination) {
-                    DestinationType::Dynamic->value => self::dynamicMapping($object, $sourceWarnings),
+                    DestinationType::Dynamic->value => self::dynamicMapping($sourceSchema),
                     null => null,
-                    default => self::staticMapping($object, $destination, $sourceWarnings, $targetWarnings, $record),
+                    default => self::staticMapping($sourceSchema, $destination, $record),
                 };
 
                 if ($mapping === null) {
                     return [];
                 }
 
-                $mapping->sourceSettings(
-                    function (string $source, ?Closure $inputSchema = null) use ($registry, $sourceSchema, $object) {
+                $mapping->headerActions([InsertUuidAction::make($object)])->sourceSettings(
+                    function (FieldMapping|FieldBinding $component, string $source, ?Closure $inputSchema = null) use (
+                        $object,
+                    ) {
+                        $sourceSchema = $component->getSourceSchema();
                         $static = $inputSchema !== null;
                         $sourceIsKey = !$static && in_array($source, $object->primary_key ?? [], true);
-                        $inputSchema ??= fn () => JsonSchema::fromArray($sourceSchema['properties'][$source]);
+                        /** @var list<string> $primaryKey */
+                        $primaryKey = $sourceSchema['x-primary-key'] ?? [];
+                        $generatedKey = !$static
+                        && !$sourceIsKey
+                        && in_array(
+                            $source,
+                            $primaryKey,
+                            true,
+                        );
+                        $inputSchema ??= fn () => JsonSchema::fromArray($sourceSchema)->properties()[$source];
+                        /** @var string $label */
+                        $label = $sourceSchema['properties'][$source]['title'] ?? $source;
 
                         /** @var Closure(): JsonSchema $inputSchema */
 
                         return [
-                            Hidden::make('field')
-                                ->dehydrated(!$static)
-                                ->dehydrateStateUsing(fn () => $object?->field($source)?->toArray()),
-                            Hidden::make('result')
-                                ->dehydrated(fn (Get $get) => !$static || filled($get('transforms')))
-                                ->dehydrateStateUsing(function (Get $get) use ($registry, $inputSchema) {
-                                    /** @var list<TransformInput> $settings */
-                                    $settings = $get('transforms');
-                                    $schema = $registry->resultSchema($inputSchema(), $settings);
-
-                                    return $schema?->toArray();
-                                }),
                             FieldTransforms::make('transforms')
                                 ->label(
                                     $static
                                         ? __('phpinnacle-ferry::resources.replica.fields.constant_value')
-                                        : $sourceSchema['properties'][$source]['title'],
+                                        : $label,
                                 )
                                 ->object($object)
-                                ->addable(!$sourceIsKey)
+                                ->target($generatedKey ? TransformTarget::Key : TransformTarget::Value)
+                                ->addable(!$sourceIsKey && !$generatedKey)
+                                ->deletable(!$generatedKey)
+                                ->reorderable(!$generatedKey)
+                                ->disabled($generatedKey)
                                 ->rule('max:0', $sourceIsKey)
+                                ->rule('size:1', $generatedKey)
                                 ->validationMessages([
                                     'max' => __('phpinnacle-ferry::validation.primary_key_transforms_prohibited'),
+                                    'size' => __('phpinnacle-ferry::validation.key_transform_required'),
                                 ])
                                 ->inputSchema(fn () => $inputSchema()->toArray())
                                 ->dehydrated(
@@ -325,15 +343,14 @@ class ReplicaForm
             });
     }
 
-    /** @param array<string, string> $warnings */
-    private static function dynamicMapping(?StructureItem $object, array $warnings): FieldBinding
+    /** @param Definition $sourceSchema */
+    private static function dynamicMapping(array $sourceSchema): FieldBinding
     {
-        return FieldBinding::make('schema')
+        return FieldBinding::make('mapping')
             ->dense()
             ->compact()
-            ->warnings($warnings)
             ->label(__('phpinnacle-ferry::resources.replica.fields.schema'))
-            ->jsonSchema(self::sourceSchema($object))
+            ->jsonSchema($sourceSchema)
             ->labels(
                 source: __('phpinnacle-ferry::resources.replica.fields.source_title'),
                 dest: __('phpinnacle-ferry::resources.replica.fields.target_column'),
@@ -347,7 +364,6 @@ class ReplicaForm
             ->staticValues()
             ->rule(fn (FieldBinding $component) => function (string $attribute, mixed $value, Closure $fail) use (
                 $component,
-                $object,
             ) {
                 /** @var list<array{kind: 'source'|'static', source?: string, target: string|null}> $bindings */
                 $bindings = $component->getBindingValues();
@@ -355,8 +371,10 @@ class ReplicaForm
                     array_filter($bindings, static fn (array $entry) => $entry['target'] !== null),
                     'target',
                 ), $fail);
+                /** @var list<string> $primaryKey */
+                $primaryKey = $component->getSourceSchema()['x-primary-key'] ?? [];
                 ReplicaSchema::validatePrimaryKey(
-                    $object->primary_key ?? [],
+                    $primaryKey,
                     array_column(
                         array_filter(
                             $bindings,
@@ -370,18 +388,15 @@ class ReplicaForm
             ->columnSpanFull();
     }
 
-    /**
-     * @param array<string, string> $sourceWarnings
-     * @param array<string, string> $targetWarnings
-     */
+    /** @param Definition $sourceSchema */
     private static function staticMapping(
-        ?StructureItem $object,
+        array $sourceSchema,
         ?StaticDestination $destination,
-        array $sourceWarnings,
-        array $targetWarnings,
         ?Replica $record,
     ): FieldMapping {
-        return FieldMapping::make('schema')
+        $mapping = FieldMapping::make('mapping');
+
+        return $mapping
             ->dense()
             ->compact()
             ->staticForms(fn (FieldMapping $component, string $target, JsonSchema $property) => in_array(
@@ -392,37 +407,45 @@ class ReplicaForm
                     ? null
                     : BuiltinStaticForms::make($property, in_array($target, $component->getRequiredTargets(), true)))
             ->staticValues(array_any(
-                $record->schema ?? [],
+                $record->mapping ?? [],
                 static fn (SchemaMapping $mapping) => (
                     $mapping->kind === FieldKind::Static
-                    && $mapping->transforms !== []
+                    && $mapping->transforms() !== []
                 ),
             ))
-            ->warnings(source: $sourceWarnings, dest: $targetWarnings)
             ->label(__('phpinnacle-ferry::resources.replica.fields.schema'))
             ->required()
             ->jsonSchema(
-                source: self::sourceSchema($object),
+                source: $sourceSchema,
                 dest: $destination !== null
                     ? JsonSchema::fromArray($destination->getSchema()->keywords())->toArray()
                     : [],
             )
-            ->canConnectUsing(
-                fn (JsonSchema $source, JsonSchema $target, string $sourceName, string $targetName) => (
+            ->canConnectUsing(function (
+                JsonSchema $source,
+                JsonSchema $target,
+                string $sourceName,
+                string $targetName,
+            ) use ($mapping, $destination) {
+                /** @var list<string> $primaryKey */
+                $primaryKey = $mapping->getSourceSchema()['x-primary-key'] ?? [];
+
+                return (
                     in_array($targetName, $destination?->getPrimaryKey() ?? [], true) === in_array(
                         $sourceName,
-                        $object->primary_key ?? [],
+                        $primaryKey,
                         true,
                     )
-                ),
-            )
+                );
+            })
             ->rule(fn (FieldMapping $component) => function (string $attribute, mixed $value, Closure $fail) use (
                 $component,
-                $object,
             ) {
+                /** @var list<string> $primaryKey */
+                $primaryKey = $component->getSourceSchema()['x-primary-key'] ?? [];
                 ReplicaSchema::validatePrimaryKey(
-                    $object->primary_key ?? [],
-                    array_values(array_filter($object->primary_key ?? [], $component->isSourceUsed(...))),
+                    $primaryKey,
+                    array_values(array_filter($primaryKey, $component->isSourceUsed(...))),
                     $fail,
                 );
             })
@@ -433,12 +456,17 @@ class ReplicaForm
                     $component->getSourceSettings(),
                 );
                 $schema = $component->getSourceSchema();
+                /** @var list<string> $primaryKey */
+                $primaryKey = $schema['x-primary-key'] ?? [];
                 $properties = $schema['properties'] ?? [];
                 foreach ($properties as $source => $property) {
                     $properties[$source] = $registry
                         ->resultSchema(
                             JsonSchema::fromArray($property),
                             $fieldTransforms[$source] ?? [],
+                            in_array($source, $primaryKey, true)
+                                ? TransformTarget::Key
+                                : TransformTarget::Value,
                         )
                         ?->toArray() ?? [];
                 }
@@ -469,21 +497,24 @@ class ReplicaForm
             : substr($destination, strlen('static:'));
     }
 
-    private static function resetMapping(Set $set, Select $component): void
+    private static function resetMapping(Set $set, Select $component, Get $get): void
     {
-        $set('schema', []);
+        $upstream = Upstream::query()->find($get->string('upstream_id', isNullable: true));
+        $source = $get->string('source', isNullable: true);
+        $set('schema', self::sourceSchema($source !== null ? $upstream?->structure->publishedItem($source) : null));
+        $set('mapping', []);
         $container = $component->getRootContainer();
         $container->clearCachedChildSchemas();
         $defaultState = null;
-        $container->getComponentByStatePath('schema')?->hydrateState($defaultState);
+        $container->getComponentByStatePath('mapping')?->hydrateState($defaultState);
     }
 
-    /** @return array{type: 'object', properties: array<string, Definition&array{title: string}>, required: list<string>} */
+    /** @return Definition */
     private static function sourceSchema(?StructureItem $object): array
     {
         return [
-            'type' => 'object',
-            'properties' => $object?->mappableFields() ?? [],
+            ...($object?->schema->toArray() ?? ['type' => 'object', 'properties' => []]),
+            'x-primary-key' => $object->primary_key ?? [],
             'required' => array_values(array_unique([
                 ...($object?->schema->required() ?? []),
                 ...($object->primary_key ?? []),

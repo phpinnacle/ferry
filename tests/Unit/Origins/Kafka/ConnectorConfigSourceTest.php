@@ -3,7 +3,6 @@
 use Illuminate\Support\Facades\Queue;
 use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Data\FieldMapping;
-use PHPinnacle\Ferry\Data\TransformSetting;
 use PHPinnacle\Ferry\Destinations\StaticDestination;
 use PHPinnacle\Ferry\Enums\DestinationType;
 use PHPinnacle\Ferry\Enums\ReplicaStatus;
@@ -30,9 +29,9 @@ it('builds a debezium postgres connector config scoped to the tracked replicas',
     $replica = TestCase::makeReplica([
         'upstream_id' => $upstream->id,
         'source' => 'object-0',
-        'schema' => [
+        'mapping' => [
             TestCase::keyMapping(),
-            new FieldMapping('_fld1', 'title', $object->field('_fld1')),
+            new FieldMapping(source: '_fld1', target: 'title'),
         ],
     ], ['status' => ReplicaStatus::Active]);
 
@@ -98,25 +97,22 @@ it('groups captured column annotations across replicas without inferring convert
     TestCase::makeReplica([
         'upstream_id' => $upstream->id,
         'code' => 'first',
-        'schema' => [
-            new FieldMapping('record_id', 'id', $object->field('record_id')),
-            new FieldMapping('type_code', 'type_code', $object->field('type_code')),
-            new FieldMapping('plain_rref', 'plain', $object->field('plain_rref')),
-            new FieldMapping('unused_id', null, $object->field('unused_id')),
+        'mapping' => [
+            new FieldMapping(source: 'record_id', target: 'id'),
+            new FieldMapping(source: 'type_code', target: 'type_code'),
+            new FieldMapping(source: 'plain_rref', target: 'plain'),
+            new FieldMapping(source: 'unused_id', target: null),
         ],
     ], ['status' => ReplicaStatus::Active]);
     TestCase::makeReplica([
         'upstream_id' => $upstream->id,
         'code' => 'second',
-        'schema' => [
-            new FieldMapping('record_id', 'id', $object->field('record_id')),
-            new FieldMapping('type_code', 'type_code', $object->field('type_code')),
-            new FieldMapping(
-                'filter_id',
-                null,
-                $object->field('filter_id'),
-                transforms: [new TransformSetting('filter', ['condition' => '@ != null'])],
-            ),
+        'mapping' => [
+            new FieldMapping(source: 'record_id', target: 'id'),
+            new FieldMapping(source: 'type_code', target: 'type_code'),
+            new FieldMapping(source: 'filter_id', target: null, options: [
+                'transforms' => [['type' => 'filter', 'data' => ['condition' => '@ != null']]],
+            ]),
         ],
     ], ['status' => ReplicaStatus::Pause]);
 
@@ -167,9 +163,9 @@ it('unions tables and columns across the tracked replicas of one upstream', func
         'upstream_id' => $upstream->id,
         'code' => 'replica-a',
         'source' => 'object-0',
-        'schema' => [
+        'mapping' => [
             TestCase::keyMapping(),
-            new FieldMapping('_fld1', 'title', $first->field('_fld1')),
+            new FieldMapping(source: '_fld1', target: 'title'),
         ],
     ], ['status' => ReplicaStatus::Active]);
 
@@ -177,9 +173,9 @@ it('unions tables and columns across the tracked replicas of one upstream', func
         'upstream_id' => $upstream->id,
         'code' => 'replica-b',
         'source' => 'object-1',
-        'schema' => [
+        'mapping' => [
             TestCase::keyMapping(),
-            new FieldMapping('_fld2', 'name', $second->field('_fld2')),
+            new FieldMapping(source: '_fld2', target: 'name'),
         ],
     ], ['status' => ReplicaStatus::Pause]);
 
@@ -236,7 +232,7 @@ it('captures every source primary-key column independently of the static value m
         'upstream_id' => $upstream->id,
         'type' => DestinationType::Static,
         'destination' => 'names',
-        'schema' => [new FieldMapping('display_name', 'name', $object->field('display_name'))],
+        'mapping' => [new FieldMapping(source: 'display_name', target: 'name')],
     ]);
 
     $config = new SourceFactory()->source($upstream, config('phpinnacle-ferry.origins.kafka'));
@@ -273,16 +269,16 @@ it('uses the key and column names supplied by a non-Rosetta adapter', function (
     ]);
     $replica = TestCase::makeReplica([
         'upstream_id' => $upstream->id,
-        'schema' => [
-            new FieldMapping('record_id', 'id', JsonSchema::fromArray(['type' => 'string'])),
-            new FieldMapping('display_name', 'name', $object->field('display_name')),
+        'mapping' => [
+            new FieldMapping(source: 'record_id', target: 'id'),
+            new FieldMapping(source: 'display_name', target: 'name'),
         ],
     ], ['status' => ReplicaStatus::Active]);
     $config = new SourceFactory()->source(
         $upstream,
         config('phpinnacle-ferry.origins.kafka'),
     );
-    $pipeline = new \PHPinnacle\Ferry\Origins\Kafka\TransformFactory()->pipeline(
+    $pipeline = app(\PHPinnacle\Ferry\Origins\Kafka\TransformFactory::class)->pipeline(
         $replica,
         $object,
         $replica->primaryKeyMap($object),

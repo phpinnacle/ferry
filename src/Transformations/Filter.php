@@ -6,18 +6,47 @@ use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Schemas\Components\Group;
 use Filament\Support\Icons\Heroicon;
+use PHPinnacle\Common\Forms\InlineBuilder\Block;
 use PHPinnacle\Eidos\Forms\JsonSchema;
-use PHPinnacle\Ferry\Transformation;
+use PHPinnacle\Ferry\Contracts\Transform;
+use PHPinnacle\Ferry\Enums\TransformTarget;
+use PHPinnacle\Ferry\Forms\FieldTransforms;
 
-final class Filter
+final class Filter implements Transform
 {
-    public static function make(): Transformation
+    public static function make(): self
     {
-        return Transformation::make('filter')
+        return new self;
+    }
+
+    public function getKey(): string
+    {
+        return 'filter';
+    }
+
+    public function getTarget(): TransformTarget
+    {
+        return TransformTarget::Value;
+    }
+
+    public function accepts(JsonSchema $input): bool
+    {
+        return true;
+    }
+
+    public function output(JsonSchema $input, array $params): JsonSchema
+    {
+        return $input;
+    }
+
+    public function block(): Block
+    {
+        return Block::make($this->getKey())
             ->label(fn () => __('phpinnacle-ferry::resources.transform.filter'))
             ->icon(Heroicon::Funnel)
             ->description(fn () => __('phpinnacle-ferry::resources.transform.filter_description'))
-            ->schema(function (?JsonSchema $input) {
+            ->schema(function (FieldTransforms $component, ?int $index) {
+                $input = $component->getInputSchema($index);
                 $example = match ($input?->singleType()) {
                     'string' => "@ == 'value'",
                     'integer' => '@ >= 100',
@@ -62,5 +91,47 @@ final class Filter
                         ->required(),
                 ];
             });
+    }
+
+    public function connector(string $field, array $params): array
+    {
+        return [
+            'type' => 'io.confluent.connect.transforms.Filter$Value',
+            'filter.condition' => $this->condition($field, $params['condition']),
+            'filter.type' => $params['mode'],
+            'missing.or.null.behavior' => $params['missing_or_null_behavior'],
+            'predicate' => 'tombstone',
+            'negate' => 'true',
+        ];
+    }
+
+    private function condition(string $field, string $predicate): string
+    {
+        $path = "['" . addcslashes($field, "\\'") . "']";
+        // Bind references without rewriting quoted values, regexes, or nested filter item references.
+        preg_match_all(<<<'REGEX'
+            ~'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|/(?:\\.|[^/\\])*/[a-z]*|\[\s*\?\s*\(|\[|\]|(?<reference>(?<![\pL\pN_.-])[@$])|.~us
+            REGEX, $predicate, $matches, PREG_SET_ORDER | PREG_UNMATCHED_AS_NULL);
+        $brackets = [];
+        $filters = 0;
+        $condition = '';
+        foreach ($matches as $match) {
+            $fragment = $match[0];
+            if ($fragment === '[') {
+                $brackets[] = false;
+            } elseif (str_starts_with($fragment, '[')) {
+                $brackets[] = true;
+                $filters++;
+            } elseif ($fragment === ']') {
+                if (array_pop($brackets)) {
+                    $filters--;
+                }
+            } elseif ($match['reference'] !== null && ($fragment === '$' || $filters === 0)) {
+                $fragment .= $path;
+            }
+            $condition .= $fragment;
+        }
+
+        return '$[?(' . $condition . ')]';
     }
 }

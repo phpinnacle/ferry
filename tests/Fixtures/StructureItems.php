@@ -31,7 +31,11 @@ class StructureItems
         return new StructureItem([
             'primary_key' => ['_idrref'],
             'priority' => 0,
-            'schema' => JsonSchema::fromArray(['type' => 'object', 'properties' => $properties]),
+            'schema' => JsonSchema::fromArray([
+                'type' => 'object',
+                'properties' => $properties,
+                'x-primary-key' => $attributes['primary_key'] ?? ['_idrref'],
+            ]),
             ...array_diff_key($attributes, array_flip(['fields', 'sources'])),
         ]);
     }

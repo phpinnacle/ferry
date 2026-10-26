@@ -22,13 +22,16 @@ class ConnectorManager
 
     public function save(Replica $replica): void
     {
-        if ($replica->connector === null && $replica->schema === []) {
+        if ($replica->connector === null && $replica->mapping === []) {
             return;
         }
 
         $upstream = $replica->upstream;
 
-        if ($replica->isDirty('status') && !$replica->isDirty(['source', 'schema', 'transforms', 'destination'])) {
+        if (
+            $replica->isDirty('status')
+            && !$replica->isDirty(['source', 'schema', 'mapping', 'transforms', 'destination'])
+        ) {
             if ($replica->connector !== null) {
                 SynchronizeConnectorsJob::dispatch($upstream->id);
             }

@@ -1,10 +1,10 @@
 <?php
 
-use PHPinnacle\Ferry\Contracts\StructureAdapter;
+use PHPinnacle\Ferry\Contracts\Adapter;
 use PHPinnacle\Ferry\Services\StructureAdapterRegistry;
 
 it('registers and resolves adapters by their declared keys', function () {
-    $adapter = Mockery::mock(StructureAdapter::class);
+    $adapter = Mockery::mock(Adapter::class);
     $adapter->shouldReceive('getKey')->andReturn('custom-key');
     $adapter->shouldReceive('getLabel')->andReturn('Custom adapter');
     $registry = new StructureAdapterRegistry;

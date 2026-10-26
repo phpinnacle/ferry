@@ -3,7 +3,6 @@
 namespace PHPinnacle\Ferry\Models;
 
 use Carbon\CarbonImmutable;
-use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -11,7 +10,6 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use PHPinnacle\Ferry\Data\StructurePlan;
 use PHPinnacle\Ferry\Enums\StructureStatus;
 use PHPinnacle\Ferry\Jobs\Structure\PrepareStructureJob;
-use PHPinnacle\Ferry\Observers\StructureObserver;
 
 /**
  * @property string $upstream_id
@@ -25,7 +23,6 @@ use PHPinnacle\Ferry\Observers\StructureObserver;
  * @property CarbonImmutable $updated_at
  * @property-read Upstream $upstream
  */
-#[ObservedBy(StructureObserver::class)]
 class Structure extends Model
 {
     use HasUuids;

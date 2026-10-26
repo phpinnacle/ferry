@@ -30,18 +30,23 @@ final class MappingState
         foreach ($targets as $target => $mapped) {
             foreach (array_is_list($mapped) ? $mapped : [$mapped] as $entry) {
                 if ($entry['kind'] === 'value') {
-                    $rows[] = ['kind' => 'static', 'target' => (string) $target, 'static' => $entry['value']];
+                    $rows[] = [
+                        'kind' => 'static',
+                        'target' => (string) $target,
+                        'static' => $entry['value'],
+                        'options' => [],
+                    ];
                 } else {
-                    $rows[] =
-                        ['kind' => 'source', 'source' => $entry['source'], 'target' => (string) $target]
-                        + ($sources[$entry['source']] ?? []);
+                    $rows[] = ['kind' => 'source', 'source' => $entry['source'], 'target' => (string) $target]
+                    + ['options' => ['transforms' => [], ...($sources[$entry['source']] ?? [])]];
                     $used[$entry['source']] = true;
                 }
             }
         }
         foreach ($sources as $source => $settings) {
             if (!array_key_exists($source, $used)) {
-                $rows[] = ['kind' => 'source', 'source' => (string) $source, 'target' => null] + $settings;
+                $rows[] = ['kind' => 'source', 'source' => (string) $source, 'target' => null]
+                + ['options' => ['transforms' => [], ...$settings]];
             }
         }
 
@@ -57,12 +62,17 @@ final class MappingState
             if (is_array($value) && array_key_exists('value', $value)) {
                 continue;
             }
-            $rows[] =
-                ['kind' => 'source', 'source' => (string) $source, 'target' => $value] + ($sources[$source] ?? []);
+            $rows[] = ['kind' => 'source', 'source' => (string) $source, 'target' => $value]
+            + ['options' => ['transforms' => [], ...($sources[$source] ?? [])]];
         }
         foreach ($bindings as $target => $value) {
             if (is_array($value) && array_key_exists('value', $value)) {
-                $rows[] = ['kind' => 'static', 'target' => (string) $target, 'static' => $value['value']];
+                $rows[] = [
+                    'kind' => 'static',
+                    'target' => (string) $target,
+                    'static' => $value['value'],
+                    'options' => [],
+                ];
             }
         }
 

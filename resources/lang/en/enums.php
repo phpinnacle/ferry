@@ -1,6 +1,16 @@
 <?php
 
 return [
+    'kafka_type' => [
+        'string' => 'String',
+        'int8' => '8-bit integer',
+        'int16' => '16-bit integer',
+        'int32' => '32-bit integer',
+        'int64' => '64-bit integer',
+        'float32' => '32-bit floating-point number',
+        'float64' => '64-bit floating-point number',
+        'boolean' => 'Boolean',
+    ],
     'driver' => [
         'pgsql' => 'PostgreSQL',
         'sqlsrv' => 'MS SQL Server',

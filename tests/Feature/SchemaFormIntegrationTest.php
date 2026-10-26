@@ -9,7 +9,6 @@ use PHPinnacle\Eidos\Forms\FieldMapping;
 use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Forms\FieldTransforms;
 use PHPinnacle\Ferry\Services\TransformRegistry;
-use PHPinnacle\Ferry\Tests\Fixtures\MappingState;
 use PHPinnacle\Ferry\Tests\Fixtures\SchemaHost;
 use PHPinnacle\Ferry\Transformations\Cast;
 use PHPinnacle\Ferry\Transformations\MaskField;
@@ -47,8 +46,8 @@ it('keeps schema form translations independent of replica labels', function (
     $schema = Schema::make(SchemaHost::make())->statePath('data')->components([$field]);
     $schema->fill([
         'mapping' => [
-            ['kind' => 'source', 'source' => 'name', 'target' => 'name'],
-            ['kind' => 'static', 'target' => 'constant', 'static' => 'draft'],
+            ['kind' => 'source', 'source' => 'name', 'target' => 'name', 'options' => []],
+            ['kind' => 'static', 'target' => 'constant', 'static' => 'draft', 'options' => []],
         ],
     ]);
     view()->share('errors', new ViewErrorBag);
@@ -77,8 +76,8 @@ it('validates transform settings on unconnected sources', function (
     $field->sourceSettings([FieldTransforms::make('transforms')->inputSchema(['type' => $type])]);
     $schema = Schema::make(SchemaHost::make())->statePath('data')->components([$field]);
     $schema->fill(['widget' => []]);
-    $settingsKey = $field->getSourceStateKeys()['input'];
-    $schema->getComponentByStatePath('widget.sources.' . $settingsKey . '.transforms')->state($transforms);
+    $settingsKey = $field->getSourceRowIndexes()['input'];
+    $schema->getComponentByStatePath('widget.' . $settingsKey . '.options.transforms')->state($transforms);
 
     expect($schema->getState(...))->toThrow(ValidationException::class);
 
@@ -86,7 +85,7 @@ it('validates transform settings on unconnected sources', function (
         $field->getAction('bind')(['source' => 'input'])->call();
     } else {
         $state = $field->getRawState();
-        $state['targets'][$field->getStateKeys()['output']] = MappingState::source('input');
+        $state[$field->getSourceRowIndex('input')]['target'] = 'output';
         $field->rawState($state);
     }
 
@@ -122,15 +121,15 @@ it('checks static source compatibility after transforms and validates connected 
     $field->getAction('addConstant')->call();
     $source = array_key_first($field->getConstants());
     expect($field->getConnectionModes())->toBe([]);
-    $key = $field->getSourceStateKeys()[$source];
+    $key = $field->getSourceRowIndexes()[$source];
     $schema
-        ->getComponentByStatePath('mapping.sources.' . $key . '.transforms')
+        ->getComponentByStatePath('mapping.' . $key . '.options.transforms')
         ->state([
             ['type' => 'cast', 'data' => ['type' => 'int64']],
         ]);
     expect($field->getConnectionModes()[$source]['count'])->toBe('whole');
     $state = $field->getRawState();
-    $state['targets'][$field->getStateKeys()['count']] = MappingState::source($source);
+    $state[$field->getSourceRowIndex($source)]['target'] = 'count';
     $field->rawState($state);
     expect($schema->getState(...))->toThrow(ValidationException::class);
     $field->getConstantValueSchema($source)->getComponent('static')->state('10');
@@ -138,7 +137,7 @@ it('checks static source compatibility after transforms and validates connected 
         'kind' => 'static',
         'target' => 'count',
         'static' => '10',
-        'transforms' => [['type' => 'cast', 'data' => ['type' => 'int64']]],
+        'options' => ['transforms' => [['type' => 'cast', 'data' => ['type' => 'int64']]]],
     ]]);
 });
 

@@ -3,36 +3,18 @@
 namespace PHPinnacle\Ferry\Origins\Kafka;
 
 use Illuminate\Container\Attributes\Singleton;
-use Illuminate\Support\Facades\Config;
-use LogicException;
 use PHPinnacle\Ferry\Data\FieldMapping;
 use PHPinnacle\Ferry\Enums\FieldKind;
 use PHPinnacle\Ferry\Models\Replica;
 use PHPinnacle\Ferry\Models\StructureItem;
-use PHPinnacle\Ferry\Origins\Kafka\Contracts\TransformHandler;
+use PHPinnacle\Ferry\Services\TransformRegistry;
 
 #[Singleton]
 class TransformFactory
 {
-    public function handler(string $key): ?TransformHandler
-    {
-        /** @var array<string, class-string<TransformHandler>> $handlers */
-        $handlers = Config::array('phpinnacle-ferry.kafka.transforms');
-        $handler = $handlers[$key] ?? null;
-
-        /** @var TransformHandler|null */
-        return $handler === null ? null : app($handler);
-    }
-
-    public function handlerOrFail(string $key): TransformHandler
-    {
-        return (
-            $this->handler($key) ?? throw new LogicException(__(
-                'phpinnacle-ferry::resources.replica.errors.transform_missing',
-                ['transform' => $key],
-            ))
-        );
-    }
+    public function __construct(
+        private readonly TransformRegistry $transforms,
+    ) {}
 
     /**
      * @param array<string, string> $keyMap
@@ -48,14 +30,17 @@ class TransformFactory
         $pipeline = [];
         $after = [];
 
-        foreach ($replica->schema as $index => $mapping) {
+        foreach ($replica->mapping as $index => $mapping) {
             if ($mapping->kind === FieldKind::Static) {
+                if ($mapping->target === null) {
+                    continue;
+                }
                 $after += self::constant('field_' . $index . '_0', $mapping);
                 /** @var string $target */
                 $target = $mapping->target;
-                foreach ($mapping->transforms as $position => $setting) {
+                foreach ($mapping->transforms() as $position => $setting) {
                     $name = sprintf('field_%d_%d', $index, $position + 1);
-                    $after += $this->handlerOrFail($setting->type)->connector($name, $target, $setting->data);
+                    $after[$name] = $this->transforms->getOrFail($setting->type)->connector($target, $setting->data);
                 }
 
                 continue;
@@ -64,10 +49,10 @@ class TransformFactory
             /** @var string $source */
             $source = $mapping->source;
 
-            foreach ($mapping->transforms as $position => $setting) {
+            foreach ($mapping->transforms() as $position => $setting) {
                 $name = sprintf('field_%d_%d', $index, $position);
 
-                $pipeline += $this->handlerOrFail($setting->type)->connector($name, $source, $setting->data);
+                $pipeline[$name] = $this->transforms->getOrFail($setting->type)->connector($source, $setting->data);
             }
         }
 

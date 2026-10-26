@@ -2,11 +2,13 @@
 
 namespace PHPinnacle\Ferry;
 
-use Illuminate\Contracts\Container\Container;
+use Illuminate\Container\Container;
 use Illuminate\Support\Facades\Config;
+use PHPinnacle\Ferry\Contracts\Transform;
 use PHPinnacle\Ferry\Services\OriginFactory;
-use PHPinnacle\Ferry\Services\RosettaStructureAdapter;
+use PHPinnacle\Ferry\Services\RosettaAdapter;
 use PHPinnacle\Ferry\Services\StructureAdapterRegistry;
+use PHPinnacle\Ferry\Services\TransformRegistry;
 use Spatie\LaravelPackageTools\Commands\InstallCommand;
 use Spatie\LaravelPackageTools\Package;
 use Spatie\LaravelPackageTools\PackageServiceProvider;
@@ -19,9 +21,20 @@ class FerryServiceProvider extends PackageServiceProvider
 
     public function packageRegistered(): void
     {
+        $this->app->singleton(TransformRegistry::class, function (Container $app) {
+            $registry = new TransformRegistry;
+            /** @var list<class-string<Transform>> $transforms */
+            $transforms = Config::array('phpinnacle-ferry.kafka.transforms');
+            foreach ($transforms as $transform) {
+                $registry->register($app->get($transform));
+            }
+
+            return $registry;
+        });
+
         $this->app->singleton(StructureAdapterRegistry::class, function (Container $app) {
             $registry = new StructureAdapterRegistry;
-            $registry->register($app->make(RosettaStructureAdapter::class));
+            $registry->register($app->make(RosettaAdapter::class));
 
             return $registry;
         });

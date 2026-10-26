@@ -10,6 +10,7 @@ use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Data\FieldMapping;
 use PHPinnacle\Ferry\Destinations\StaticDestination;
 use PHPinnacle\Ferry\Services\ReplicaTableManager;
+use PHPinnacle\Ferry\Services\TransformRegistry;
 
 readonly class ReplicaSchema
 {
@@ -73,16 +74,22 @@ readonly class ReplicaSchema
     /**
      * @param list<FieldMapping> $mappings
      * @param list<string> $sourcePrimaryKey
+     * @param list<string> $physicalPrimaryKey
      */
-    public static function assertValid(array $mappings, ?StaticDestination $destination, array $sourcePrimaryKey): void
-    {
+    public static function assertValid(
+        array $mappings,
+        ?StaticDestination $destination,
+        array $sourcePrimaryKey,
+        JsonSchema $sourceSchema,
+        array $physicalPrimaryKey,
+    ): void {
         $sources = [];
         foreach ($mappings as $mapping) {
             if ($mapping->source !== null && $mapping->target !== null) {
                 $sources[] = $mapping->source;
             }
         }
-        Validator::validate(['data' => ['schema' => $sources]], ['data.schema' => [
+        Validator::validate(['data' => ['mapping' => $sources]], ['data.mapping' => [
             fn (string $attribute, mixed $value, Closure $fail) => self::validatePrimaryKey(
                 $sourcePrimaryKey,
                 $sources,
@@ -93,28 +100,38 @@ readonly class ReplicaSchema
         $fields = $destinationSchema->properties();
         foreach ($mappings as $mapping) {
             $sourceIsKey = in_array($mapping->source, $sourcePrimaryKey, true);
-            if ($sourceIsKey && $mapping->transforms !== []) {
+            if (in_array($mapping->source, $physicalPrimaryKey, true) && $mapping->transforms() !== []) {
                 throw ValidationException::withMessages([
-                    'data.schema' => __('phpinnacle-ferry::validation.primary_key_transforms_prohibited'),
+                    'data.mapping' => __('phpinnacle-ferry::validation.primary_key_transforms_prohibited'),
+                ]);
+            }
+            if (
+                $sourceIsKey
+                && !in_array($mapping->source, $physicalPrimaryKey, true)
+                && count($mapping->transforms()) !== 1
+            ) {
+                throw ValidationException::withMessages([
+                    'data.mapping' => __('phpinnacle-ferry::validation.key_transform_required'),
                 ]);
             }
             if ($mapping->target === null) {
                 continue;
             }
-            if (ReplicaTableManager::columnType($mapping->outputSchema()) === null) {
+            $output = app(TransformRegistry::class)->mappingSchema($mapping, $sourceSchema);
+            if ($output === null || ReplicaTableManager::columnType($output) === null) {
                 throw ValidationException::withMessages([
-                    'data.schema' => __('phpinnacle-ferry::resources.replica.errors.unsupported_field_type', [
+                    'data.mapping' => __('phpinnacle-ferry::resources.replica.errors.unsupported_field_type', [
                         'column' => $mapping->target,
                     ]),
                 ]);
             }
             if ($destination !== null) {
-                self::assertCompatibleWithDestination($fields, $mapping->target, $mapping);
+                self::assertCompatibleWithDestination($fields, $mapping->target, $mapping, $output);
                 if (
                     in_array($mapping->target, $destination->getPrimaryKey(), true) !== $sourceIsKey
                 ) {
                     throw ValidationException::withMessages([
-                        'data.schema' => __(
+                        'data.mapping' => __(
                             $sourceIsKey
                                 ? 'phpinnacle-ferry::resources.replica.errors.source_primary_key_destination'
                                 : 'phpinnacle-ferry::resources.replica.errors.destination_primary_key_source',
@@ -136,20 +153,21 @@ readonly class ReplicaSchema
         array $fields,
         string $column,
         FieldMapping $mapping,
+        JsonSchema $output,
     ): void {
         $field = $fields[$column] ?? null;
 
         if ($field === null) {
             throw ValidationException::withMessages([
-                'data.schema' => __('phpinnacle-ferry::resources.replica.errors.unknown_destination_field', [
+                'data.mapping' => __('phpinnacle-ferry::resources.replica.errors.unknown_destination_field', [
                     'field' => $column,
                 ]),
             ]);
         }
 
-        if (!$mapping->canMapTo($field)) {
+        if (!$mapping->canMapTo($output, $field)) {
             throw ValidationException::withMessages([
-                'data.schema' => __('phpinnacle-ferry::resources.replica.errors.incompatible_destination_field', [
+                'data.mapping' => __('phpinnacle-ferry::resources.replica.errors.incompatible_destination_field', [
                     'field' => $field->annotation('title') ?? $column,
                 ]),
             ]);
@@ -165,7 +183,7 @@ readonly class ReplicaSchema
         foreach ($schema->required() as $column) {
             if (!in_array($column, $mapped, true)) {
                 throw ValidationException::withMessages([
-                    'data.schema' => __(
+                    'data.mapping' => __(
                         'phpinnacle-ferry::resources.replica.errors.required_destination_field_missing',
                         ['field' => $fields[$column]->annotation('title') ?? $column],
                     ),

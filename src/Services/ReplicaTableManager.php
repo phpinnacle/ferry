@@ -7,6 +7,7 @@ use Illuminate\Database\Schema\ColumnDefinition;
 use LogicException;
 use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Data\FieldMapping;
+use PHPinnacle\Ferry\Enums\FieldKind;
 use PHPinnacle\Ferry\Models\Replica;
 
 class ReplicaTableManager
@@ -18,9 +19,13 @@ class ReplicaTableManager
             ->getConnection()
             ->getSchemaBuilder()
             ->create($replica->destination, function (Blueprint $table) use ($replica, $primaryKey) {
-                foreach ($replica->schema as $mapping) {
+                foreach ($replica->mapping as $mapping) {
                     if ($mapping->target !== null) {
-                        $this->column($table, $mapping)->nullable(!in_array($mapping->target, $primaryKey, true));
+                        $this->column($table, $mapping, $replica->outputSchema($mapping))->nullable(!in_array(
+                            $mapping->target,
+                            $primaryKey,
+                            true,
+                        ));
                     }
                 }
                 $table->primary($primaryKey);
@@ -34,19 +39,23 @@ class ReplicaTableManager
 
     public function update(Replica $replica): void
     {
-        $changes = $replica->schemaChanges();
+        $changes = $replica->mappingChanges();
 
         $replica
             ->getConnection()
             ->getSchemaBuilder()
-            ->table($replica->destination, function (Blueprint $table) use ($changes) {
+            ->table($replica->destination, function (Blueprint $table) use ($changes, $replica) {
                 foreach ($changes['drop'] as $column) {
                     $table->dropColumn($column);
                 }
 
                 foreach ($changes['columns'] as $change) {
                     if ($change['from'] === null) {
-                        $this->column($table, $change['mapping'])->nullable();
+                        $this->column(
+                            $table,
+                            $change['mapping'],
+                            $replica->outputSchema($change['mapping']),
+                        )->nullable();
                     } else {
                         /** @var string $target */
                         $target = $change['mapping']->target;
@@ -55,7 +64,7 @@ class ReplicaTableManager
                 }
 
                 foreach ($changes['alter'] as $mapping) {
-                    $this->column($table, $mapping)->nullable()->change();
+                    $this->column($table, $mapping, $replica->outputSchema($mapping))->nullable()->change();
                 }
             });
     }
@@ -69,18 +78,18 @@ class ReplicaTableManager
             'number' => 'decimal',
             'string' => match (true) {
                 $schema->annotation('x-ferry-reference') === true => 'text',
-                $schema->annotation('format') === 'date-time' => 'dateTime',
+                $schema->format() === 'date-time' => 'dateTime',
                 default => 'string',
             },
             default => null,
         };
     }
 
-    private function column(Blueprint $table, FieldMapping $mapping): ColumnDefinition
+    private function column(Blueprint $table, FieldMapping $mapping, ?JsonSchema $field): ColumnDefinition
     {
         /** @var string $target */
         $target = $mapping->target;
-        $type = self::columnType($mapping->outputSchema());
+        $type = self::columnType($field);
 
         if ($type === null) {
             throw new LogicException(__('phpinnacle-ferry::resources.replica.errors.unsupported_field_type', [
@@ -88,11 +97,11 @@ class ReplicaTableManager
             ]));
         }
 
-        $field = $mapping->outputSchema();
         /** @var int $precision */
         $precision = $field?->annotation('x-ferry-precision') ?? 15;
         /** @var int $scale */
         $scale = $field?->annotation('x-ferry-scale') ?? 2;
+        $length = $mapping->kind === FieldKind::Static && $mapping->transforms() === [] ? null : $field?->maxLength();
 
         return match ($type) {
             'boolean' => $table->boolean($target),
@@ -103,7 +112,7 @@ class ReplicaTableManager
                 $precision,
                 $scale,
             ),
-            'string' => $table->addColumn('string', $target, ['length' => $mapping->stringLength()]),
+            'string' => $table->addColumn('string', $target, ['length' => $length > 0 ? $length : null]),
             'text' => $table->text($target),
         };
     }

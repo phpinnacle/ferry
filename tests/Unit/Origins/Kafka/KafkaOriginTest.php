@@ -3,9 +3,9 @@
 use GuzzleHttp\Psr7\HttpFactory;
 use GuzzleHttp\Psr7\Response;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Validation\ValidationException;
 use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Data\FieldMapping;
-use PHPinnacle\Ferry\Data\TransformSetting;
 use PHPinnacle\Ferry\Destinations\StaticDestination;
 use PHPinnacle\Ferry\Enums\ConnectorStatus;
 use PHPinnacle\Ferry\Enums\DestinationType;
@@ -274,10 +274,20 @@ it('extracts new record state at the source and preserves deletes for every dest
         $replica->forceFill([
             'type' => DestinationType::Static,
             'destination' => 'customers',
-            'schema' => [
-                new FieldMapping('_idrref', 'customer_id', $replica->sourceObject()->field('_idrref')),
-                FieldMapping::fromArray(['kind' => 'static', 'target' => 'name', 'static' => 'Customer']),
-                FieldMapping::fromArray(['kind' => 'static', 'target' => 'tax_number', 'static' => '123']),
+            'mapping' => [
+                new FieldMapping(source: '_idrref', target: 'customer_id'),
+                FieldMapping::fromArray([
+                    'kind' => 'static',
+                    'target' => 'name',
+                    'static' => 'Customer',
+                    'options' => [],
+                ]),
+                FieldMapping::fromArray([
+                    'kind' => 'static',
+                    'target' => 'tax_number',
+                    'static' => '123',
+                    'options' => [],
+                ]),
             ],
         ])->saveQuietly();
     }
@@ -324,10 +334,20 @@ it('builds sink configuration through the destination registry', function (?stri
         $replica->forceFill([
             'type' => DestinationType::Static,
             'destination' => $destination,
-            'schema' => [
-                new FieldMapping('_idrref', 'customer_id', TestCase::keyMapping()->field),
-                FieldMapping::fromArray(['kind' => 'static', 'target' => 'name', 'static' => 'Customer']),
-                FieldMapping::fromArray(['kind' => 'static', 'target' => 'tax_number', 'static' => '123']),
+            'mapping' => [
+                new FieldMapping(source: '_idrref', target: 'customer_id'),
+                FieldMapping::fromArray([
+                    'kind' => 'static',
+                    'target' => 'name',
+                    'static' => 'Customer',
+                    'options' => [],
+                ]),
+                FieldMapping::fromArray([
+                    'kind' => 'static',
+                    'target' => 'tax_number',
+                    'static' => '123',
+                    'options' => [],
+                ]),
             ],
         ])->saveQuietly();
     }
@@ -360,17 +380,11 @@ it('rejects missing source objects and incompatible mappings during assembly', f
     if ($missing) {
         $replica->upstream->structure->publishedItem($replica->source)->delete();
     } else {
-        $replica->schema = [new FieldMapping('missing', 'external_id', JsonSchema::fromArray([
-            'type' => 'string',
-            'format' => 'uuid',
-            'x-ferry-reference' => true,
-            'minLength' => 36,
-            'maxLength' => 36,
-        ]))];
+        $replica->mapping = [new FieldMapping(source: 'missing', target: 'external_id')];
     }
     $http = new RecordingConnectClient;
     expect(fn () => ferry_kafka_origin($http)->make($replica))
-        ->toThrow(LogicException::class)
+        ->toThrow($missing ? LogicException::class : ValidationException::class)
         ->and($http->requests)
         ->toBe([]);
 })->with([true, false]);
@@ -394,15 +408,12 @@ it('rejects all saved primary-key transforms during assembly', function (
     $destinations->register($destination);
     $replica->type = $type;
     $replica->destination = $type === DestinationType::Static ? 'keyed' : $replica->destination;
-    $replica->schema = [new FieldMapping(
-        '_idrref',
-        'id',
-        TestCase::keyMapping()->field,
-        transforms: [new TransformSetting($transform, $parameters)],
-    )];
+    $replica->mapping = [new FieldMapping(source: '_idrref', target: 'id', options: [
+        'transforms' => [['type' => $transform, 'data' => $parameters]],
+    ])];
     $http = new RecordingConnectClient;
     expect(fn () => ferry_kafka_origin($http, destinations: $destinations)->make($replica))
-        ->toThrow(LogicException::class)
+        ->toThrow(ValidationException::class)
         ->and($http->requests)
         ->toBe([]);
 })->with([DestinationType::Dynamic, DestinationType::Static])->with([
@@ -411,57 +422,22 @@ it('rejects all saved primary-key transforms during assembly', function (
     'cast' => ['cast', ['type' => 'int64']],
 ]);
 
-it('blocks static connector assembly after the source key gains an unmapped component', function () {
-    $replica = ferry_replica();
-    $destination = new StaticDestination(
-        'keyed',
-        'Keyed',
-        'keyed',
-        ['external_id'],
-        Schema::object([
-            'external_id' => Schema::string(),
-        ])->required(['external_id']),
-    );
-    $destinations = new DestinationFactory;
-    $destinations->register($destination);
-    $replica->type = DestinationType::Static;
-    $replica->destination = 'keyed';
-    $http = new RecordingConnectClient;
-    $origin = ferry_kafka_origin($http, destinations: $destinations);
-    expect($origin->make($replica)->config['pk.fields'])->toBe('external_id');
-    $replica->sourceObject()->update(['primary_key' => ['_idrref', '_description']]);
-
-    expect(fn () => $origin->make($replica))
-        ->toThrow(LogicException::class)
-        ->and($http->requests)
-        ->toBe([]);
-});
-
 it('compiles both configurations before saving either connector', function () {
     $replica = ferry_replica();
     $source = $replica->upstream->connector;
     $sink = $replica->connector;
     $previousSource = $source->config;
     $previousSink = $sink->config;
-    $replica->forceFill(['schema' => [new FieldMapping(
-        '_idrref',
-        'external_id',
-        JsonSchema::fromArray([
-            'type' => 'string',
-            'format' => 'uuid',
-            'x-ferry-reference' => true,
-            'minLength' => 36,
-            'maxLength' => 36,
-        ]),
-        transforms: [new TransformSetting('missing')],
-    )]])->saveQuietly();
+    $replica->forceFill(['mapping' => [new FieldMapping(source: '_idrref', target: 'external_id', options: [
+        'transforms' => [['type' => 'missing', 'data' => []]],
+    ])]])->saveQuietly();
     $http = new RecordingConnectClient;
     $origin = ferry_kafka_origin($http);
     $origins = Mockery::mock(OriginFactory::class);
     $origins->shouldReceive('for')->andReturn($origin);
     app()->instance(OriginFactory::class, $origins);
     expect(fn () => $replica->update(['name' => 'Changed']))
-        ->toThrow(LogicException::class)
+        ->toThrow(ValidationException::class)
         ->and($source->fresh()->config)
         ->toBe($previousSource)
         ->and($sink->fresh()->config)
@@ -512,7 +488,7 @@ it('sends generated source converters to Kafka Connect without adding them to th
             'include.unknown.datatypes' => 'true',
         ]);
 
-    $replica->schema = [new FieldMapping('_idrref', 'external_id', $object->field('_idrref'))];
+    $replica->mapping = [new FieldMapping(source: '_idrref', target: 'external_id')];
     expect($origin->make($replica)->config)
         ->not
         ->toHaveKeys(['converters', 'uuid.type', 'uuid.columns', 'integer.type', 'mchar.type']);

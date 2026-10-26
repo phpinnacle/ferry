@@ -9,17 +9,15 @@ return [
     //        'default' => 'App\\Models\\Tenant::DEFAULT'
     //    ],
     'kafka' => [
+        'transforms' => [
+            \PHPinnacle\Ferry\Transformations\Cast::class,
+            \PHPinnacle\Ferry\Transformations\Filter::class,
+            \PHPinnacle\Ferry\Transformations\InsertUuid::class,
+        ],
         'converters' => [
             'uuid' => 'org.alpaka.kafka.UuidConverter',
             'integer' => 'org.alpaka.kafka.IntegerConverter',
             'mchar' => 'org.alpaka.kafka.MCharConverter',
-        ],
-        'transforms' => [
-            'cast' => \PHPinnacle\Ferry\Origins\Kafka\Transforms\CastTransform::class,
-            'filter' => \PHPinnacle\Ferry\Origins\Kafka\Transforms\FilterTransform::class,
-            'trim' => \PHPinnacle\Ferry\Origins\Kafka\Transforms\TrimTransform::class,
-            'substring' => \PHPinnacle\Ferry\Origins\Kafka\Transforms\SubstringTransform::class,
-            'mask' => \PHPinnacle\Ferry\Origins\Kafka\Transforms\MaskFieldTransform::class,
         ],
     ],
     'timeout' => 5,

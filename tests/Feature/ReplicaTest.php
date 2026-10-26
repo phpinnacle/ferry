@@ -7,18 +7,19 @@ use Illuminate\Support\Facades\Schema;
 use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Data\FieldMapping;
 use PHPinnacle\Ferry\Data\TransformSetting;
-use PHPinnacle\Ferry\Destinations\StaticDestination;
-use PHPinnacle\Ferry\Enums\DestinationType;
 use PHPinnacle\Ferry\Enums\FieldKind;
 use PHPinnacle\Ferry\Enums\ReplicaStatus;
 use PHPinnacle\Ferry\Enums\StructureStatus;
 use PHPinnacle\Ferry\Models\Replica;
 use PHPinnacle\Ferry\Origins\Kafka\TransformFactory;
-use PHPinnacle\Ferry\Services\DestinationFactory;
 use PHPinnacle\Ferry\Services\ReplicaTableManager;
 use PHPinnacle\Ferry\Services\TransformRegistry;
+use PHPinnacle\Ferry\Tests\Fakes\Transform as FakeTransform;
 use PHPinnacle\Ferry\Tests\Fixtures\StructureItems;
 use PHPinnacle\Ferry\Tests\TestCase;
+use PHPinnacle\Ferry\Transformations\MaskField;
+
+require_once __DIR__ . '/../Fakes/Transform.php';
 
 require_once __DIR__ . '/../TestCase.php';
 
@@ -28,95 +29,8 @@ beforeEach(function () {
     Queue::fake();
 });
 
-it('pauses saved primary-key transforms during structure review without resolving transform registries', function (
-    DestinationType $type,
-) {
-    app(DestinationFactory::class)->register(new StaticDestination(
-        'keyed',
-        'Keyed',
-        'keyed',
-        ['id'],
-        \PHPinnacle\Jason\Schema::object([
-            'id' => \PHPinnacle\Jason\Schema::string(),
-        ])->required(['id']),
-    ));
-    $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
-    $attributes = ['primary_key' => ['record_id'], 'sources' => ['record_id' => ['type' => 'string']]];
-    $object = TestCase::makeItem($upstream, $attributes);
-    $replicas = [];
-    foreach ([
-        'trim' => [],
-        'filter' => [
-            'mode' => 'exclude',
-            'condition' => "@ == 'blocked'",
-            'missing_or_null_behavior' => 'include',
-        ],
-        'cast' => ['type' => 'int64'],
-    ] as $transform => $parameters) {
-        $replicas[$transform] = TestCase::makeReplica([
-            'upstream_id' => $upstream->id,
-            'code' => $transform,
-            'type' => $type,
-            'destination' => $type === DestinationType::Static ? 'keyed' : null,
-            'schema' => [new FieldMapping(
-                'record_id',
-                'id',
-                $object->field('record_id'),
-                result: $object->field('record_id'),
-                transforms: [
-                    new TransformSetting($transform, $parameters),
-                ],
-            )],
-        ], ['status' => ReplicaStatus::Active]);
-    }
-    app()->bind(
-        TransformRegistry::class,
-        fn () => throw new LogicException('Workers must not resolve UI descriptions.'),
-    );
-    app()->bind(TransformFactory::class, fn () => throw new LogicException('Workers must not resolve handlers.'));
-    TestCase::makeItem($upstream, [...$attributes, 'revision' => $upstream->structure->draftRevision()]);
-    $upstream->structure->publish();
-
-    foreach ($replicas as $transform => $replica) {
-        expect($replica->fresh()->status)
-            ->toBe(ReplicaStatus::Pause)
-            ->and($replica->fresh()->schema[0]->transforms[0]->type)
-            ->toBe($transform);
-    }
-})->with([DestinationType::Dynamic, DestinationType::Static]);
-
-it('pauses static replicas without removing mappings when the source key gains a component', function () {
-    app(DestinationFactory::class)->register(new StaticDestination(
-        'keyed',
-        'Keyed',
-        'keyed',
-        ['id'],
-        \PHPinnacle\Jason\Schema::object(['id' => \PHPinnacle\Jason\Schema::string()])->required(['id']),
-    ));
-    $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
-    $object = TestCase::makeItem($upstream, [
-        'primary_key' => ['record_id'],
-        'sources' => ['record_id' => ['type' => 'string'], 'tenant_id' => ['type' => 'string']],
-    ]);
-    $replica = TestCase::makeReplica([
-        'upstream_id' => $upstream->id,
-        'type' => DestinationType::Static,
-        'destination' => 'keyed',
-        'schema' => [new FieldMapping('record_id', 'id', $object->field('record_id'))],
-    ], ['status' => ReplicaStatus::Active]);
-    $original = $replica->schema;
-    TestCase::makeItem($upstream, [
-        'primary_key' => ['record_id', 'tenant_id'],
-        'sources' => ['record_id' => ['type' => 'string'], 'tenant_id' => ['type' => 'string']],
-        'revision' => $upstream->structure->draftRevision(),
-    ]);
-    $upstream->structure->publish();
-
-    expect($replica->fresh()->status)->toBe(ReplicaStatus::Pause)->and($replica->fresh()->schema)->toEqual($original);
-});
-
 it('stores ordered record transforms without applying them', function () {
-    $replica = TestCase::makeReplica(['schema' => []]);
+    $replica = TestCase::makeReplica(['mapping' => []]);
     expect($replica->fresh()->transforms)->toBe([]);
 
     $settings = [
@@ -207,11 +121,11 @@ it('owns the persisted schema and destination table throughout its lifecycle', f
 
     $replica = TestCase::makeReplica([
         'upstream_id' => $upstream->id,
-        'schema' => [
-            new FieldMapping('_idrref', 'external_id', $object->field('_idrref')),
-            new FieldMapping('title', 'title', $object->field('title')),
-            new FieldMapping('price', 'price', $object->field('price')),
-            new FieldMapping('posted', 'posted', $object->field('posted')),
+        'mapping' => [
+            new FieldMapping(source: '_idrref', target: 'external_id'),
+            new FieldMapping(source: 'title', target: 'title'),
+            new FieldMapping(source: 'price', target: 'price'),
+            new FieldMapping(source: 'posted', target: 'posted'),
         ],
     ]);
 
@@ -219,8 +133,8 @@ it('owns the persisted schema and destination table throughout its lifecycle', f
         ->toBe(ReplicaStatus::Pending)
         ->and($replica->destination)
         ->toBe('ferry_replica_test-replica')
-        ->and($replica->fresh()->schema)
-        ->toEqual($replica->schema)
+        ->and($replica->fresh()->mapping)
+        ->toEqual($replica->mapping)
         ->and($upstream->isInUse())
         ->toBeTrue()
         ->and(Schema::getColumnListing($replica->destination))
@@ -258,9 +172,9 @@ it('adds, renames and drops columns when the mapping changes', function () {
 
     $replica = TestCase::makeReplica([
         'upstream_id' => $upstream->id,
-        'schema' => [
-            new FieldMapping('_idrref', 'external_id', $object->field('_idrref')),
-            new FieldMapping('title', 'title', $object->field('title')),
+        'mapping' => [
+            new FieldMapping(source: '_idrref', target: 'external_id'),
+            new FieldMapping(source: 'title', target: 'title'),
         ],
     ]);
 
@@ -270,11 +184,11 @@ it('adds, renames and drops columns when the mapping changes', function () {
     ]);
 
     $updated = [
-        new FieldMapping('_idrref', 'row_id', $object->field('_idrref')),
-        new FieldMapping('price', 'price', $object->field('price')),
+        new FieldMapping(source: '_idrref', target: 'row_id'),
+        new FieldMapping(source: 'price', target: 'price'),
     ];
 
-    $replica->fill(['schema' => $updated]);
+    $replica->fill(['mapping' => $updated]);
     expect($replica->droppedColumns())->toBe(['title']);
     $replica->save();
 
@@ -288,17 +202,23 @@ it('adds, renames and drops columns when the mapping changes', function () {
 });
 
 it('preserves renamed values when a new mapping reuses the original column name', function () {
-    $field = JsonSchema::fromArray(['type' => 'string', 'maxLength' => 100]);
-    $replica = TestCase::makeReplica(['schema' => [
-        TestCase::keyMapping(),
-        new FieldMapping('name', 'name', $field),
-    ]]);
+    $field = ['type' => 'string', 'maxLength' => 100];
+    $replica = TestCase::makeReplica([
+        'schema' => JsonSchema::fromArray([
+            'properties' => ['_idrref' => TestCase::keySchema()->toArray(), 'name' => $field, 'alias' => $field],
+            'x-primary-key' => ['_idrref'],
+        ]),
+        'mapping' => [
+            TestCase::keyMapping(),
+            new FieldMapping(source: 'name', target: 'name'),
+        ],
+    ]);
     DB::table($replica->destination)->insert(['external_id' => 'row-1', 'name' => 'Original']);
 
-    $replica->fill(['schema' => [
+    $replica->fill(['mapping' => [
         TestCase::keyMapping(),
-        new FieldMapping('name', 'display_name', $field),
-        new FieldMapping('alias', 'name', $field),
+        new FieldMapping(source: 'name', target: 'display_name'),
+        new FieldMapping(source: 'alias', target: 'name'),
     ]]);
 
     expect($replica->droppedColumns())->toBe([]);
@@ -312,41 +232,38 @@ it('preserves renamed values when a new mapping reuses the original column name'
 });
 
 it('uses output schema bounds for PostgreSQL varchar columns', function () {
+    app(TransformRegistry::class)->register(MaskField::make(), new FakeTransform('bounded', output: fn () => JsonSchema::fromArray([
+        'type' => 'string',
+        'maxLength' => 30,
+    ])));
     $object = StructureItems::make([
         'fields' => [
+            '_idrref' => TestCase::keySchema(),
             'bounded' => JsonSchema::fromArray(['type' => 'string', 'maxLength' => 10]),
             'unbounded' => JsonSchema::fromArray(['type' => 'string']),
-            'zero' => JsonSchema::fromArray(['type' => 'string']),
+            'zero' => JsonSchema::fromArray(['type' => 'string', 'maxLength' => 0]),
             'masked' => JsonSchema::fromArray(['type' => 'string', 'maxLength' => 1]),
             'expanded' => JsonSchema::fromArray(['type' => 'string', 'maxLength' => 1]),
         ],
         'sources' => [],
     ]);
     $mappings = [
-        new FieldMapping('bounded', 'bounded', $object->field('bounded')),
-        new FieldMapping('unbounded', 'unbounded', $object->field('unbounded')),
-        new FieldMapping('zero', 'zero', $object->field('zero')),
-        new FieldMapping(
-            'masked',
-            'masked',
-            $object->field('masked'),
-            result: JsonSchema::fromArray(['type' => 'string']),
-            transforms: [new TransformSetting('mask', ['replacement' => '***'])],
-        ),
-        new FieldMapping(
-            'expanded',
-            'expanded',
-            $object->field('expanded'),
-            result: JsonSchema::fromArray(['type' => 'string', 'maxLength' => 30]),
-            transforms: [new TransformSetting('bounded')],
-        ),
-        new FieldMapping(null, 'constant', null, static: 'value', kind: FieldKind::Static),
+        new FieldMapping(source: 'bounded', target: 'bounded'),
+        new FieldMapping(source: 'unbounded', target: 'unbounded'),
+        new FieldMapping(source: 'zero', target: 'zero'),
+        new FieldMapping(source: 'masked', target: 'masked', options: [
+            'transforms' => [['type' => 'mask', 'data' => ['replacement' => '***']]],
+        ]),
+        new FieldMapping(source: 'expanded', target: 'expanded', options: [
+            'transforms' => [['type' => 'bounded', 'data' => []]],
+        ]),
+        new FieldMapping(source: null, target: 'constant', static: 'value', kind: FieldKind::Static),
     ];
     $replica = Mockery::mock(Replica::class)->makePartial();
-    $replica->fill(['schema' => [TestCase::keyMapping(), ...$mappings]]);
+    $replica->fill(['schema' => $object->schema, 'mapping' => [TestCase::keyMapping(), ...$mappings]]);
     $replica
         ->shouldReceive('sourceObject')
-        ->andReturn(StructureItems::make(['fields' => ['_idrref' => TestCase::keyMapping()->field]]));
+        ->andReturn(StructureItems::make(['fields' => ['_idrref' => TestCase::keySchema()]]));
     $replica->destination = 'string_outputs';
     config(['phpinnacle-ferry.connection' => 'pgsql']);
 
@@ -363,29 +280,32 @@ it('uses output schema bounds for PostgreSQL varchar columns', function () {
 });
 
 it('alters string bounds without dropping stored values, including when renaming', function () {
+    app(TransformRegistry::class)->register(MaskField::make(), new FakeTransform('bounded', output: fn () => JsonSchema::fromArray([
+        'type' => 'string',
+        'maxLength' => 30,
+    ])));
     $object = StructureItems::make([
-        'fields' => ['code' => JsonSchema::fromArray(['type' => 'string', 'maxLength' => 1])],
+        'fields' => [
+            '_idrref' => TestCase::keySchema(),
+            'code' => JsonSchema::fromArray(['type' => 'string', 'maxLength' => 1]),
+        ],
         'sources' => [],
     ]);
-    $replica = TestCase::makeReplica(['schema' => [
-        TestCase::keyMapping(),
-        new FieldMapping('code', 'code', $object->field('code')),
-    ]]);
+    $replica = TestCase::makeReplica([
+        'schema' => $object->schema,
+        'mapping' => [
+            TestCase::keyMapping(),
+            new FieldMapping(source: 'code', target: 'code'),
+        ],
+    ]);
     DB::table($replica->destination)->insert(['external_id' => 'row-1', 'code' => 'A']);
 
     foreach (['mask' => null, 'bounded' => 30] as $key => $length) {
-        $replica->fill(['schema' => [
+        $replica->fill(['mapping' => [
             TestCase::keyMapping(),
-            new FieldMapping(
-                'code',
-                'display_code',
-                $object->field('code'),
-                result: JsonSchema::fromArray([
-                    'type' => 'string',
-                    ...($length === null ? [] : ['maxLength' => $length]),
-                ]),
-                transforms: [new TransformSetting($key, $key === 'mask' ? ['replacement' => '***'] : [])],
-            ),
+            new FieldMapping(source: 'code', target: 'display_code', options: [
+                'transforms' => [['type' => $key, 'data' => $key === 'mask' ? ['replacement' => '***'] : []]],
+            ]),
         ]]);
         expect($replica->droppedColumns())->toBe([]);
         config(['phpinnacle-ferry.connection' => 'pgsql']);
@@ -409,220 +329,20 @@ it('changes the column type when a mapped field changes type', function () {
     $replica = TestCase::makeReplica([
         'upstream_id' => $upstream->id,
         'code' => 'type_change',
-        'schema' => [
-            new FieldMapping('_idrref', 'external_id', $object->field('_idrref')),
-            new FieldMapping('flag', 'flag', $object->field('flag')),
+        'mapping' => [
+            new FieldMapping(source: '_idrref', target: 'external_id'),
+            new FieldMapping(source: 'flag', target: 'flag'),
         ],
     ]);
 
-    $updated = [
-        $replica->schema[0],
-        new FieldMapping('flag', 'flag', JsonSchema::fromArray([
-            'type' => 'number',
-            'x-ferry-precision' => 15,
-            'x-ferry-scale' => 2,
-            'multipleOf' => 0.01,
-            'exclusiveMinimum' => -10_000_000_000_000,
-            'exclusiveMaximum' => 10_000_000_000_000,
-        ])),
-    ];
-
-    $replica->update(['schema' => $updated]);
+    $schema = $replica->schema->toArray();
+    $schema['properties']['flag'] = ['type' => 'number', 'x-ferry-precision' => 15, 'x-ferry-scale' => 2];
+    $replica->update(['schema' => JsonSchema::fromArray($schema)]);
 
     $column = collect(DB::select('PRAGMA table_info("' . $replica->destination . '")'))
         ->firstWhere('name', 'flag');
 
     expect($column->type)->toBe('numeric');
-});
-
-it('pauses replicas when the published structure loses a mapped field', function () {
-    $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
-    TestCase::makeItem($upstream, [
-        'sources' => ['title' => ['type' => 'string', 'maxLength' => 100, 'title' => 'Title']],
-    ]);
-
-    $replica = TestCase::makeReplica([
-        'upstream_id' => $upstream->id,
-        'schema' => [
-            new FieldMapping('_idrref', 'external_id', JsonSchema::fromArray([
-                'type' => 'string',
-                'format' => 'uuid',
-                'x-ferry-reference' => true,
-                'minLength' => 36,
-                'maxLength' => 36,
-            ])),
-            new FieldMapping('title', 'title', JsonSchema::fromArray(['type' => 'string', 'maxLength' => 100])),
-        ],
-    ], ['status' => ReplicaStatus::Active]);
-
-    TestCase::makeItem($upstream, ['revision' => $upstream->structure->draftRevision()]);
-    $upstream->structure->publish();
-
-    expect($replica->fresh()->status)
-        ->toBe(ReplicaStatus::Pause)
-        ->and(Schema::hasTable($replica->destination))
-        ->toBeTrue();
-});
-
-it('pauses replicas when a mapped field changes its type', function () {
-    $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
-    TestCase::makeItem($upstream, [
-        'sources' => ['title' => ['type' => 'string', 'maxLength' => 100, 'title' => 'Title']],
-    ]);
-
-    $replica = TestCase::makeReplica([
-        'upstream_id' => $upstream->id,
-        'schema' => [
-            new FieldMapping('_idrref', 'external_id', JsonSchema::fromArray([
-                'type' => 'string',
-                'format' => 'uuid',
-                'x-ferry-reference' => true,
-                'minLength' => 36,
-                'maxLength' => 36,
-            ])),
-            new FieldMapping('title', 'title', JsonSchema::fromArray(['type' => 'string', 'maxLength' => 100])),
-        ],
-    ], ['status' => ReplicaStatus::Active]);
-
-    TestCase::makeItem($upstream, [
-        'revision' => $upstream->structure->draftRevision(),
-        'sources' => ['title' => [
-            'type' => 'number',
-            'x-ferry-precision' => 15,
-            'x-ferry-scale' => 2,
-            'multipleOf' => 0.01,
-            'exclusiveMinimum' => -10_000_000_000_000,
-            'exclusiveMaximum' => 10_000_000_000_000,
-            'title' => 'Title',
-        ]],
-    ]);
-    $upstream->structure->publish();
-
-    expect($replica->fresh()->status)->toBe(ReplicaStatus::Pause);
-});
-
-it('reviews source structure without checking configured transform handlers', function (
-    string $key,
-    array $system,
-    ReplicaStatus $status,
-) {
-    $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
-    TestCase::makeItem($upstream, [
-        'fields' => [
-            '_idrref' => JsonSchema::fromArray([
-                'type' => 'string',
-                'format' => 'uuid',
-                'x-ferry-reference' => true,
-                'minLength' => 36,
-                'maxLength' => 36,
-            ]),
-            '_marked' => JsonSchema::fromArray(['type' => 'boolean']),
-        ],
-    ]);
-
-    $replica = TestCase::makeReplica([
-        'upstream_id' => $upstream->id,
-        'schema' => [
-            TestCase::keyMapping(),
-            new FieldMapping('_marked', null, JsonSchema::fromArray(['type' => 'boolean']), transforms: [
-                new TransformSetting($key, [
-                    'mode' => 'exclude',
-                    'condition' => '@ == true',
-                    'missing_or_null_behavior' => 'include',
-                ]),
-            ]),
-        ],
-    ], ['status' => ReplicaStatus::Active]);
-
-    TestCase::makeItem($upstream, ['revision' => $upstream->structure->draftRevision(), 'fields' => $system]);
-    $upstream->structure->publish();
-
-    expect($replica->fresh()->status)->toBe($status);
-})->with([
-    'unchanged' => [
-        'filter',
-        [
-            '_idrref' => JsonSchema::fromArray([
-                'type' => 'string',
-                'format' => 'uuid',
-                'x-ferry-reference' => true,
-                'minLength' => 36,
-                'maxLength' => 36,
-            ]),
-            '_marked' => JsonSchema::fromArray(['type' => 'boolean']),
-        ],
-        ReplicaStatus::Active,
-    ],
-    'filter column removed' => [
-        'filter',
-        ['_idrref' => JsonSchema::fromArray([
-            'type' => 'string',
-            'format' => 'uuid',
-            'x-ferry-reference' => true,
-            'minLength' => 36,
-            'maxLength' => 36,
-        ])],
-        ReplicaStatus::Pause,
-    ],
-    'filter column type changed' => [
-        'filter',
-        [
-            '_idrref' => JsonSchema::fromArray([
-                'type' => 'string',
-                'format' => 'uuid',
-                'x-ferry-reference' => true,
-                'minLength' => 36,
-                'maxLength' => 36,
-            ]),
-            '_marked' => JsonSchema::fromArray(['type' => 'string', 'maxLength' => 10]),
-        ],
-        ReplicaStatus::Pause,
-    ],
-    'transform no longer registered' => [
-        'missing',
-        [
-            '_idrref' => JsonSchema::fromArray([
-                'type' => 'string',
-                'format' => 'uuid',
-                'x-ferry-reference' => true,
-                'minLength' => 36,
-                'maxLength' => 36,
-            ]),
-            '_marked' => JsonSchema::fromArray(['type' => 'boolean']),
-        ],
-        ReplicaStatus::Active,
-    ],
-]);
-
-it('keeps replicas active when the structure is republished unchanged', function () {
-    $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
-    $properties = ['title' => ['type' => 'string', 'maxLength' => 100, 'title' => 'Title']];
-    TestCase::makeItem($upstream, ['sources' => $properties]);
-
-    $replica = TestCase::makeReplica([
-        'upstream_id' => $upstream->id,
-        'schema' => [
-            new FieldMapping('_idrref', 'external_id', JsonSchema::fromArray([
-                'type' => 'string',
-                'format' => 'uuid',
-                'x-ferry-reference' => true,
-                'minLength' => 36,
-                'maxLength' => 36,
-            ])),
-            new FieldMapping('title', 'title', JsonSchema::fromArray(['type' => 'string', 'maxLength' => 100])),
-        ],
-    ], ['status' => ReplicaStatus::Active]);
-
-    TestCase::makeItem($upstream, [
-        'revision' => $upstream->structure->draftRevision(),
-        'sources' => $properties,
-    ]);
-    $upstream->structure->publish();
-
-    expect($replica->fresh()->status)
-        ->toBe(ReplicaStatus::Active)
-        ->and(Schema::hasTable($replica->destination))
-        ->toBeTrue();
 });
 
 it('generates its dynamic table name on creation and preserves it after prefix and code changes', function () {
@@ -649,20 +369,27 @@ it('creates decimal columns from the effective output schema', function (?array 
     $replica = Mockery::mock(Replica::class)->makePartial();
     $replica
         ->shouldReceive('sourceObject')
-        ->andReturn(StructureItems::make(['fields' => ['_idrref' => TestCase::keyMapping()->field]]));
+        ->andReturn(StructureItems::make(['fields' => ['_idrref' => TestCase::keySchema()]]));
+    if ($result !== null) {
+        app(TransformRegistry::class)->register(new FakeTransform('decimal', output: fn () => JsonSchema::fromArray(
+            $result,
+        )));
+    }
     $replica->fill([
+        'schema' => JsonSchema::fromArray([
+            'properties' => [
+                '_idrref' => TestCase::keySchema()->toArray(),
+                'amount' => ['type' => 'number', 'x-ferry-precision' => 12, 'x-ferry-scale' => 4],
+            ],
+            'x-primary-key' => ['_idrref'],
+        ]),
         'destination' => 'decimal_columns',
-        'schema' => [
+        'mapping' => [
             TestCase::keyMapping(),
             new FieldMapping(
                 'amount',
                 'amount',
-                JsonSchema::fromArray([
-                    'type' => 'number',
-                    'x-ferry-precision' => 12,
-                    'x-ferry-scale' => 4,
-                ]),
-                result: $result !== null ? JsonSchema::fromArray($result) : null,
+                $result === null ? [] : ['transforms' => [['type' => 'decimal', 'data' => []]]],
             ),
         ],
     ]);
@@ -678,3 +405,33 @@ it('creates decimal columns from the effective output schema', function (?array 
     ],
     'cast without numeric bounds' => [['type' => 'number'], '"amount" decimal(15, 2) null'],
 ]);
+
+it('copies the complete input schema on creation and keeps its own snapshot after source changes', function () {
+    $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
+    $object = TestCase::makeItem($upstream, [
+        'sources' => [
+            'title' => [
+                'type' => 'string',
+                'title' => 'Title',
+                'description' => 'Original description',
+                'maxLength' => 40,
+            ],
+        ],
+    ]);
+    $replica = TestCase::makeReplica(['upstream_id' => $upstream->id, 'mapping' => []]);
+    $snapshot = $object->schema->toArray();
+    expect($replica->fresh()->schema->toArray())->toBe($snapshot);
+
+    $changed = $snapshot;
+    $changed['properties']['title']['maxLength'] = 80;
+    $object->update(['schema' => JsonSchema::fromArray($changed)]);
+    expect($replica->fresh()->schema->toArray())->toBe($snapshot);
+
+    $replica->update(['schema' => JsonSchema::fromArray($changed)]);
+    expect($replica->fresh()->schema->toArray())
+        ->toBe($changed)
+        ->and($replica->fresh()->mapping)
+        ->toBe([])
+        ->and(Schema::hasTable($replica->destination))
+        ->toBeFalse();
+});

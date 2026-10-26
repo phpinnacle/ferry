@@ -80,6 +80,7 @@ return [
             'update' => 'Редактировать',
             'delete' => 'Удалить',
             'activate' => 'Активировать',
+            'insert_uuid' => 'Сгенерировать UUID-ключ',
             'pause' => 'Приостановить',
             'restart' => 'Перезапустить',
             'check_status' => 'Проверить статус Sink Connector',
@@ -101,6 +102,8 @@ return [
             'target_column' => 'Поле назначения',
             'constant_type' => 'Тип',
             'constant_value' => 'Значение',
+            'uuid_field' => 'Имя поля',
+            'uuid_sources' => 'Поля первичного ключа источника',
             'transform' => 'Трансформация',
             'add_transform' => 'Добавить трансформацию',
             'sink_connector_status' => 'Статус Sink Connector',
@@ -160,7 +163,6 @@ return [
         ],
         'values' => [
             'no_objects' => 'Нет опубликованных объектов',
-            'broken_mappings' => 'Сопоставление устарело: колонки ":columns" больше не соответствуют структуре источника или назначению',
         ],
         'errors' => [
             'unknown_object' => 'Выбранный объект 1С больше не доступен в опубликованной структуре',
@@ -182,10 +184,7 @@ return [
         ],
     ],
     'transform' => [
-        'cast_types' => [
-            'string' => 'Строка',
-            'boolean' => 'Флаг',
-        ],
+        'insert_uuid' => 'Сгенерировать UUID-ключ',
         'trim' => 'Убрать пробелы по краям',
         'substring' => 'Извлечь подстроку',
         'substring_start' => 'Начальный индекс',

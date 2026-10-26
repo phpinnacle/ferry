@@ -1,6 +1,8 @@
 <?php
 
 return [
+    'uuid_field_exists' => 'A source field with this name already exists.',
+    'key_transform_required' => 'A generated primary-key field requires exactly one key transformation.',
     'transform_input_type' => 'The ":transform" transform does not support its input type.',
     'primary_key_transforms_prohibited' => 'Transformations are prohibited on source primary-key fields.',
     'replica_schema' => [

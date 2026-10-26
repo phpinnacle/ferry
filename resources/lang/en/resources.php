@@ -80,6 +80,7 @@ return [
             'update' => 'Edit',
             'delete' => 'Delete',
             'activate' => 'Activate',
+            'insert_uuid' => 'Generate UUID key',
             'pause' => 'Pause',
             'restart' => 'Restart',
             'check_status' => 'Check Sink Connector Status',
@@ -101,6 +102,8 @@ return [
             'target_column' => 'Target Field',
             'constant_type' => 'Type',
             'constant_value' => 'Value',
+            'uuid_field' => 'Field name',
+            'uuid_sources' => 'Source primary-key fields',
             'transform' => 'Transform',
             'add_transform' => 'Add transform',
             'sink_connector_status' => 'Sink Connector Status',
@@ -160,7 +163,6 @@ return [
         ],
         'values' => [
             'no_objects' => 'No published objects',
-            'broken_mappings' => 'The mapping is out of date: the columns ":columns" no longer match the source structure or the destination',
         ],
         'errors' => [
             'unknown_object' => 'The selected 1C object is no longer available in the published structure',
@@ -182,10 +184,7 @@ return [
         ],
     ],
     'transform' => [
-        'cast_types' => [
-            'string' => 'String',
-            'boolean' => 'Boolean',
-        ],
+        'insert_uuid' => 'Generate UUID key',
         'trim' => 'Trim whitespace',
         'substring' => 'Extract substring',
         'substring_start' => 'Start index',

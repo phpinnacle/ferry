@@ -3,7 +3,6 @@
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Schema;
-use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Contracts\Origin;
 use PHPinnacle\Ferry\Data\FieldMapping;
 use PHPinnacle\Ferry\Enums\ConnectorStatus;
@@ -132,13 +131,7 @@ it('does not enqueue updates for unchanged config or status checks', function ()
 
 it('uses current configuration when old jobs are still pending', function () {
     $replica = TestCase::makeReplica();
-    $replica->update(['schema' => [new FieldMapping('_idrref', 'latest_id', JsonSchema::fromArray([
-        'type' => 'string',
-        'format' => 'uuid',
-        'x-ferry-reference' => true,
-        'minLength' => 36,
-        'maxLength' => 36,
-    ]))]]);
+    $replica->update(['mapping' => [new FieldMapping(source: '_idrref', target: 'latest_id')]]);
     $expected = $replica->fresh()->connector->config;
     $seen = [];
     $origin = Mockery::mock(FakeOrigin::class)->makePartial();
@@ -195,13 +188,7 @@ it('preserves pause while queued updates are processed', function () {
     ferry_drain_connectors();
     $replica
         ->refresh()
-        ->update(['schema' => [new FieldMapping('_idrref', 'renamed_id', JsonSchema::fromArray([
-            'type' => 'string',
-            'format' => 'uuid',
-            'x-ferry-reference' => true,
-            'minLength' => 36,
-            'maxLength' => 36,
-        ]))]]);
+        ->update(['mapping' => [new FieldMapping(source: '_idrref', target: 'renamed_id')]]);
     ferry_drain_connectors();
     expect($replica->fresh()->status)
         ->toBe(ReplicaStatus::Pause)

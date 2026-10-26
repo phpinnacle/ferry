@@ -8,12 +8,13 @@ use Illuminate\Translation\PotentiallyTranslatedString;
 use PHPinnacle\Common\Forms\InlineBuilder;
 use PHPinnacle\Common\Forms\InlineBuilder\Block;
 use PHPinnacle\Eidos\Forms\JsonSchema;
+use PHPinnacle\Ferry\Contracts\Transform;
+use PHPinnacle\Ferry\Enums\TransformTarget;
 use PHPinnacle\Ferry\Models\StructureItem;
 use PHPinnacle\Ferry\Services\TransformRegistry;
-use PHPinnacle\Ferry\Transformation;
 
 /**
- * @phpstan-type Transform array{type: string, data?: array<string, string>}
+ * @phpstan-import-type TransformInput from TransformRegistry
  * @phpstan-import-type BuilderItem from InlineBuilder
  * @phpstan-import-type Definition from JsonSchema
  */
@@ -21,8 +22,17 @@ class FieldTransforms extends InlineBuilder
 {
     protected ?StructureItem $object = null;
 
+    protected TransformTarget $target = TransformTarget::Value;
+
     /** @var Definition|Closure(): Definition */
     protected array|Closure $inputSchema = [];
+
+    public function target(TransformTarget $target): static
+    {
+        $this->target = $target;
+
+        return $this;
+    }
 
     /** @param Definition|Closure(): Definition $schema */
     public function inputSchema(array|Closure $schema): static
@@ -37,15 +47,17 @@ class FieldTransforms extends InlineBuilder
         return app(TransformRegistry::class)->resultSchema(
             JsonSchema::fromArray($this->evaluate($this->inputSchema)),
             $index === null ? $this->getSettings() : array_slice($this->getSettings(), 0, $index),
+            $this->target,
         );
     }
 
-    /** @return array<string, Transformation> */
+    /** @return array<string, Transform> */
     public function getAvailableTransforms(TransformRegistry $transforms): array
     {
         $schema = $transforms->resultSchema(
             JsonSchema::fromArray($this->evaluate($this->inputSchema)),
             $this->getSettings(),
+            $this->target,
         );
         if ($schema === null) {
             return [];
@@ -53,7 +65,21 @@ class FieldTransforms extends InlineBuilder
 
         return array_filter(
             $transforms->all(),
-            fn (Transformation $transform) => $transform->accepts($schema),
+            fn (Transform $transform) => $transform->getTarget() === $this->target && $transform->accepts($schema),
+        );
+    }
+
+    /** @return array<string, Block> */
+    public function getAvailableBlocks(): array
+    {
+        $blocks = parent::getAvailableBlocks();
+        if ($blocks === []) {
+            return [];
+        }
+
+        return array_intersect_key(
+            $blocks,
+            $this->getAvailableTransforms(app(TransformRegistry::class)),
         );
     }
 
@@ -69,20 +95,21 @@ class FieldTransforms extends InlineBuilder
         return $this->object;
     }
 
-    /** @return list<Transform> */
+    /** @return list<TransformInput> */
     public function getSettings(): array
     {
-        /** @var list<Transform> */
+        /** @var list<TransformInput> */
         return $this->getRawState() ?? [];
     }
 
-    /** @param list<Transform> $settings */
+    /** @param list<TransformInput> $settings */
     public function hasCompatibleTypes(array $settings, TransformRegistry $transforms): bool
     {
         return (
             $transforms->resultSchema(
                 JsonSchema::fromArray($this->evaluate($this->inputSchema)),
                 $settings,
+                $this->target,
             ) !== null
         );
     }
@@ -99,35 +126,15 @@ class FieldTransforms extends InlineBuilder
         $this->hiddenLabel();
         $this->addActionLabel(__('phpinnacle-ferry::resources.replica.fields.add_transform'));
         $this->placeholder(__('phpinnacle-ferry::resources.replica.fields.transform'));
-        $this->blocks(function (self $component) {
-            $registry = app(TransformRegistry::class);
-
-            return array_map(function (Transformation $transform) use ($component, $registry) {
-                $block = Block::make($transform->key())
-                    ->label($transform->getLabel())
-                    ->description($transform->getDescription())
-                    ->icon($transform->getIcon())
-                    ->color($transform->getColor())
-                    ->addable(fn () => array_key_exists(
-                        $transform->key(),
-                        $component->getAvailableTransforms($registry),
-                    ));
-
-                if ($transform->hasSchema()) {
-                    $block->schema(fn (?int $index) => $transform->getSchema(
-                        $component->getObject(),
-                        $component->getInputSchema($index),
-                    ));
-                }
-
-                return $block;
-            }, array_values($registry->all()));
-        });
+        $this->blocks(fn (TransformRegistry $registry) => array_map(
+            fn (Transform $transform) => $transform->block(),
+            array_values($registry->all()),
+        ));
         $this->reorderableUsing(self::canReorderItems(...));
         $this->rules(fn (self $component) => [$component->validateSettings(...)]);
     }
 
-    /** @param list<Transform> $items */
+    /** @param list<TransformInput> $items */
     private static function canReorderItems(self $component, array $items): bool
     {
         return $component->hasCompatibleTypes($items, app(TransformRegistry::class));
@@ -147,14 +154,14 @@ class FieldTransforms extends InlineBuilder
 
             return;
         }
-        /** @var list<Transform> $settings */
+        /** @var list<TransformInput> $settings */
         $transforms = app(TransformRegistry::class);
         $schema = JsonSchema::fromArray($this->evaluate($this->inputSchema));
         foreach ($settings as $setting) {
-            $schema = $transforms->resultSchema($schema, [$setting]);
+            $schema = $transforms->resultSchema($schema, [$setting], $this->target);
             if ($schema === null) {
                 $fail('phpinnacle-ferry::validation.transform_input_type')->translate([
-                    'transform' => $transforms->getOrFail($setting['type'])->getLabel(),
+                    'transform' => $transforms->getOrFail($setting['type'])->block()->getLabel(),
                 ]);
 
                 return;

@@ -16,7 +16,7 @@ class ReplicaObserver
 
     public function created(Replica $replica): void
     {
-        if ($replica->type === DestinationType::Dynamic && $replica->schema !== []) {
+        if ($replica->type === DestinationType::Dynamic && $replica->mapping !== []) {
             $this->tables->create($replica);
         }
     }
@@ -32,12 +32,14 @@ class ReplicaObserver
             return;
         }
 
-        if (!$replica->isDirty('schema')) {
+        if (!$replica->isDirty(['mapping', 'schema'])) {
             return;
         }
 
-        if ($replica->getOriginal('schema') === []) {
-            $this->tables->create($replica);
+        if ($replica->getOriginal('mapping') === []) {
+            if ($replica->mapping !== []) {
+                $this->tables->create($replica);
+            }
         } else {
             $this->tables->update($replica);
         }

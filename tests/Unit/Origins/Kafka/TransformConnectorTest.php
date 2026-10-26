@@ -11,11 +11,13 @@ use PHPinnacle\Ferry\Origins\Kafka\SourceFactory;
 use PHPinnacle\Ferry\Origins\Kafka\TransformFactory;
 use PHPinnacle\Ferry\Services\DestinationFactory;
 use PHPinnacle\Ferry\Services\TransformRegistry;
-use PHPinnacle\Ferry\Tests\Fixtures\StructureItems;
+use PHPinnacle\Ferry\Tests\Fakes\Transform as FakeTransform;
 use PHPinnacle\Ferry\Tests\TestCase;
 use PHPinnacle\Ferry\Transformations\MaskField;
 use PHPinnacle\Ferry\Transformations\Substring;
 use PHPinnacle\Ferry\Transformations\Trim;
+
+require_once __DIR__ . '/../../../Fakes/Transform.php';
 
 require_once __DIR__ . '/../../../TestCase.php';
 
@@ -47,16 +49,12 @@ it('orders source transforms and static values around the renames of a sink', fu
     $replica = TestCase::makeReplica([
         'upstream_id' => $upstream->id,
         'source' => 'object-0',
-        'schema' => [
+        'mapping' => [
             TestCase::keyMapping(),
-            new FieldMapping(
-                '_fld1',
-                'size',
-                $object->field('_fld1'),
-                result: JsonSchema::fromArray(['type' => 'integer']),
-                transforms: [new TransformSetting('cast', ['type' => 'int64'])],
-            ),
-            new FieldMapping(null, 'active', null, static: true, kind: FieldKind::Static),
+            new FieldMapping(source: '_fld1', target: 'size', options: [
+                'transforms' => [['type' => 'cast', 'data' => ['type' => 'int64']]],
+            ]),
+            new FieldMapping(source: null, target: 'active', static: true, kind: FieldKind::Static),
         ],
     ]);
 
@@ -80,8 +78,6 @@ it('orders source transforms and static values around the renames of a sink', fu
         ->toBe('active:boolean')
         ->and($config['fields.whitelist'])
         ->toBe('external_id,size,active')
-        ->and($replica->hasValidSchema($object))
-        ->toBeTrue()
         ->and(array_keys($replica->columnMap($object)))
         ->toBe(['_idrref', '_fld1'])
         ->and($config)
@@ -100,19 +96,18 @@ it('captures an unbound field filter without writing it or capturing unused fiel
     $replica = TestCase::makeReplica([
         'upstream_id' => $upstream->id,
         'source' => 'object-0',
-        'schema' => [
+        'mapping' => [
             TestCase::keyMapping(),
-            new FieldMapping(
-                '_marked',
-                null,
-                $object->field('_marked'),
-                result: $object->field('_marked'),
-                transforms: [new TransformSetting('filter', [
-                    'mode' => 'exclude',
-                    'condition' => '@ == true',
-                    'missing_or_null_behavior' => 'include',
-                ])],
-            ),
+            new FieldMapping(source: '_marked', target: null, options: [
+                'transforms' => [[
+                    'type' => 'filter',
+                    'data' => [
+                        'mode' => 'exclude',
+                        'condition' => '@ == true',
+                        'missing_or_null_behavior' => 'include',
+                    ],
+                ]],
+            ]),
         ],
     ]);
 
@@ -147,39 +142,26 @@ it('captures an unbound field filter without writing it or capturing unused fiel
 });
 
 it('keeps building the shared source when a replica refers to a transform that is no longer registered', function () {
+    app(TransformRegistry::class)->register(new FakeTransform('missing'));
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
-    TestCase::makeItem($upstream);
+    TestCase::makeItem($upstream, ['sources' => ['name' => ['type' => 'string']]]);
     $replica = TestCase::makeReplica([
         'upstream_id' => $upstream->id,
         'source' => 'object-0',
-        'schema' => [
-            new \PHPinnacle\Ferry\Data\FieldMapping(
-                '_idrref',
-                'external_id',
-                JsonSchema::fromArray([
-                    'type' => 'string',
-                    'format' => 'uuid',
-                    'x-ferry-reference' => true,
-                    'minLength' => 36,
-                    'maxLength' => 36,
-                ]),
-                result: JsonSchema::fromArray([
-                    'type' => 'string',
-                    'format' => 'uuid',
-                    'x-ferry-reference' => true,
-                    'minLength' => 36,
-                    'maxLength' => 36,
-                ]),
-                transforms: [new TransformSetting('missing')],
-            ),
+        'mapping' => [
+            TestCase::keyMapping(),
+            new PHPinnacle\Ferry\Data\FieldMapping(source: 'name', target: 'name', options: [
+                'transforms' => [['type' => 'missing', 'data' => []]],
+            ]),
         ],
     ]);
 
+    app()->instance(TransformRegistry::class, new TransformRegistry);
     expect(new SourceFactory()->source(
         $upstream,
         config('phpinnacle-ferry.origins.kafka'),
     ))
-        ->toMatchArray(['column.include.list' => 'public._reference0._idrref']);
+        ->toMatchArray(['column.include.list' => 'public._reference0._idrref,public._reference0.name']);
 });
 
 it('builds installed string transforms before renames and guards masking against tombstones', function () {
@@ -194,20 +176,16 @@ it('builds installed string transforms before renames and guards masking against
     $replica = TestCase::makeReplica([
         'upstream_id' => $upstream->id,
         'source' => 'object-0',
-        'schema' => [
+        'mapping' => [
             TestCase::keyMapping(),
-            new FieldMapping(
-                '_description',
-                'contact',
-                $object->field('_description'),
-                result: JsonSchema::fromArray(['type' => 'string']),
-                transforms: [
-                    new TransformSetting('trim'),
-                    new TransformSetting('substring', ['start' => '0', 'end' => '5']),
-                    new TransformSetting('substring', ['start' => '1', 'end' => '3']),
-                    new TransformSetting('mask', ['replacement' => 'hidden']),
+            new FieldMapping(source: '_description', target: 'contact', options: [
+                'transforms' => [
+                    ['type' => 'trim', 'data' => []],
+                    ['type' => 'substring', 'data' => ['start' => '0', 'end' => '5']],
+                    ['type' => 'substring', 'data' => ['start' => '1', 'end' => '3']],
+                    ['type' => 'mask', 'data' => ['replacement' => 'hidden']],
                 ],
-            ),
+            ]),
         ],
     ]);
     $config = new SinkConfigFactory($factory)->make(
@@ -227,7 +205,7 @@ it('builds installed string transforms before renames and guards masking against
         ->toBe('org.phpinnacle.toblerone.SubstringTransform$Value')
         ->and($config['transforms.field_1_1.fields'])
         ->toBe('_description:0:5')
-        ->and($replica->fresh()->schema[1]->transforms)
+        ->and($replica->fresh()->mapping[1]->transforms())
         ->toEqual([
             new TransformSetting('trim'),
             new TransformSetting('substring', ['start' => '0', 'end' => '5']),
@@ -286,21 +264,20 @@ it('scopes and transforms independently selected reference components using thei
     ]);
     $replica = TestCase::makeReplica([
         'upstream_id' => $upstream->id,
-        'schema' => [
+        'mapping' => [
             TestCase::keyMapping(),
-            new FieldMapping('_fld16rref', 'supplier', $object->field('_fld16rref')),
-            new FieldMapping('_fld17_rrref', 'owner', $object->field('_fld17_rrref')),
-            new FieldMapping(
-                '_fld17_type',
-                null,
-                $object->field('_fld17_type'),
-                result: $object->field('_fld17_type'),
-                transforms: [new TransformSetting('filter', [
-                    'condition' => "@ == '08'",
-                    'mode' => 'include',
-                    'missing_or_null_behavior' => 'include',
-                ])],
-            ),
+            new FieldMapping(source: '_fld16rref', target: 'supplier'),
+            new FieldMapping(source: '_fld17_rrref', target: 'owner'),
+            new FieldMapping(source: '_fld17_type', target: null, options: [
+                'transforms' => [[
+                    'type' => 'filter',
+                    'data' => [
+                        'condition' => "@ == '08'",
+                        'mode' => 'include',
+                        'missing_or_null_behavior' => 'include',
+                    ],
+                ]],
+            ]),
         ],
     ]);
     $source = new SourceFactory;
@@ -328,56 +305,6 @@ it('scopes and transforms independently selected reference components using thei
         ->toBe("$[?(@['_fld17_type'] == '08')]")
         ->and($sink['fields.whitelist'])
         ->toBe('external_id,supplier,owner')
-        ->and($replica->fresh()->schema)
-        ->toEqual($replica->schema)
-        ->and($replica->hasValidSchema($object))
-        ->toBeTrue();
-
-    $renamed = StructureItems::make([
-        'fields' => array_diff_key(
-            $object->schema->properties(),
-            array_flip([
-                '_fld16rref',
-                '_fld17_type',
-                '_fld17_rtref',
-                '_fld17_rrref',
-            ]),
-        ),
-        'sources' => [
-            '_fld26rref' => [
-                'type' => 'string',
-                'format' => 'uuid',
-                'x-ferry-reference' => true,
-                'minLength' => 36,
-                'maxLength' => 36,
-                'title' => 'Supplier',
-            ],
-            '_fld27_type' => [
-                'type' => 'string',
-                'minLength' => 2,
-                'maxLength' => 2,
-                'title' => 'Owner',
-            ],
-            '_fld27_rtref' => [
-                'type' => 'string',
-                'minLength' => 8,
-                'maxLength' => 8,
-                'title' => 'Owner',
-            ],
-            '_fld27_rrref' => [
-                'type' => 'string',
-                'format' => 'uuid',
-                'x-ferry-reference' => true,
-                'minLength' => 36,
-                'maxLength' => 36,
-                'title' => 'Owner',
-            ],
-        ],
-    ]);
-    expect($replica->hasValidSchema($renamed))
-        ->toBeFalse()
-        ->and($replica->brokenColumns($renamed))
-        ->toContain('supplier', 'owner')
-        ->and($replica->columnMap($renamed))
-        ->toBe(['_idrref' => 'external_id']);
+        ->and($replica->fresh()->mapping)
+        ->toEqual($replica->mapping);
 });

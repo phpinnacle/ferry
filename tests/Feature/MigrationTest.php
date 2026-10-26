@@ -28,7 +28,7 @@ it('stores adapter-independent structures on a fresh installation and cascades o
         'schema' => $schema,
         'position' => 0,
     ])->fresh();
-    TestCase::makeReplica(['upstream_id' => $upstream->id, 'schema' => []]);
+    TestCase::makeReplica(['upstream_id' => $upstream->id, 'source' => 'records', 'mapping' => []]);
 
     expect($upstream->fresh()->adapter)
         ->toBeNull()

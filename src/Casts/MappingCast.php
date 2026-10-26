@@ -12,7 +12,7 @@ use PHPinnacle\Ferry\Data\FieldMapping;
  *
  * @implements CastsAttributes<list<FieldMapping>, list<FieldMapping>|list<MappingData>>
  */
-class SchemaCast implements CastsAttributes, SerializesCastableAttributes
+class MappingCast implements CastsAttributes, SerializesCastableAttributes
 {
     /** @return list<FieldMapping> */
     public function get(Model $model, string $key, mixed $value, array $attributes): array

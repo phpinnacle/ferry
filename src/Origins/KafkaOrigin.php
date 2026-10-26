@@ -13,6 +13,7 @@ use PHPinnacle\Ferry\Models\Upstream;
 use PHPinnacle\Ferry\Origins\Kafka\KafkaConnectFactory;
 use PHPinnacle\Ferry\Origins\Kafka\SinkConfigFactory;
 use PHPinnacle\Ferry\Origins\Kafka\SourceFactory;
+use PHPinnacle\Ferry\Rules\ReplicaSchema;
 use PHPinnacle\Ferry\Services\DestinationFactory;
 use PHPinnacle\Franz\Exception\ApiException;
 use PHPinnacle\Franz\Request\ConnectorConfigRequest;
@@ -184,11 +185,13 @@ class KafkaOrigin implements Origin
             ]));
         }
 
-        if (!$replica->hasValidSchema($object, $this->destinations->staticFor($replica))) {
-            throw new LogicException(__('phpinnacle-ferry::resources.replica.errors.invalid_mapping', [
-                'code' => $replica->code,
-            ]));
-        }
+        ReplicaSchema::assertValid(
+            $replica->mapping,
+            $this->destinations->staticFor($replica),
+            $replica->primaryKeySources($object),
+            $replica->schema,
+            $object->primary_key,
+        );
 
         return $object;
     }

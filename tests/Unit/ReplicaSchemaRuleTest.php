@@ -8,15 +8,15 @@ uses(TestCase::class);
 
 $validate = function (mixed $columns) {
     $validator = Validator::make(
-        ['schema' => $columns],
-        ['schema' => [
+        ['mapping' => $columns],
+        ['mapping' => [
             'array',
             fn (string $attribute, mixed $value, Closure $fail) => ReplicaSchema::validateColumns($value, $fail),
         ]],
     );
 
-    return $validator->errors()->first('schema') !== ''
-        ? $validator->errors()->first('schema')
+    return $validator->errors()->first('mapping') !== ''
+        ? $validator->errors()->first('mapping')
         : null;
 };
 
@@ -55,10 +55,10 @@ it('allows the former technical column name', function () use ($validate) {
 });
 
 it('requires a declared source primary key for mappings', function () {
-    $validator = Validator::make(['schema' => ['record_id']], ['schema' => [
+    $validator = Validator::make(['mapping' => ['record_id']], ['mapping' => [
         fn (string $attribute, mixed $value, Closure $fail) => ReplicaSchema::validatePrimaryKey([], $value, $fail),
     ]]);
 
-    expect($validator->errors()->first('schema'))
+    expect($validator->errors()->first('mapping'))
         ->toBe(__('phpinnacle-ferry::validation.replica_schema.primary_key_missing'));
 });
