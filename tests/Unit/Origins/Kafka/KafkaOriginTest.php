@@ -184,15 +184,15 @@ it('builds source configuration matching no tables after the last replica is rem
     expect($connector->config['table.include.list'])->toBe('(?!)');
 });
 
-it('applies the named origin converters to both source and sink connectors', function (array $converters) {
+it('applies the named origin transport settings to source and sink connectors', function (array $settings) {
     $replica = ferry_replica();
-    $settings = config('phpinnacle-ferry.origins.kafka');
+    $defaults = config('phpinnacle-ferry.origins.kafka');
     $origins = new OriginFactory(app(), [
-        'kafka' => $settings,
-        'analytics' => [...$settings, 'converters' => $converters],
+        'kafka' => $defaults,
+        'analytics' => [...$defaults, 'source' => $settings, 'sink' => $settings],
     ]);
 
-    foreach (['kafka' => $settings['converters'], 'analytics' => $converters] as $name => $expected) {
+    foreach (['kafka' => $defaults['source'], 'analytics' => $settings] as $name => $expected) {
         $origin = $origins->create($name);
 
         foreach ([$replica->upstream, $replica] as $owner) {
@@ -211,6 +211,30 @@ it('applies the named origin converters to both source and sink connectors', fun
     ]],
     'worker defaults' => [[]],
 ]);
+
+it('applies arbitrary origin settings only to their source or sink and overrides generated values', function () {
+    $replica = ferry_replica();
+    $sourceSettings = [
+        'tasks.max' => '2',
+        'converters' => 'uuid',
+        'uuid.type' => 'org.alpaka.kafka.UuidConverter',
+        'uuid.columns' => 'public._reference0._idrref',
+        'include.unknown.datatypes' => 'true',
+    ];
+    $sinkSettings = ['tasks.max' => '3', 'batch.size' => '500'];
+    $origin = new OriginFactory(app(), [
+        'analytics' => [
+            ...config('phpinnacle-ferry.origins.kafka'),
+            'source' => $sourceSettings,
+            'sink' => $sinkSettings,
+        ],
+    ])->create('analytics');
+
+    expect($origin->make($replica->upstream)->config)
+        ->toMatchArray($sourceSettings)
+        ->not->toHaveKey('batch.size')->and($origin->make($replica)->config)->toMatchArray($sinkSettings)
+        ->not->toHaveKeys(['converters', 'uuid.type', 'uuid.columns', 'include.unknown.datatypes']);
+});
 
 it('uses each named origin target host only for its sink', function () {
     $replica = ferry_replica();

@@ -394,7 +394,7 @@ Both `Upstream` and `Replica` store a nullable `connector_id`. A new upstream wi
 
 A source connector failure concerns all replicas of its upstream, while a sink connector failure concerns its replica alone. A connector that reports itself as running while one of its tasks has failed is recorded as failed together with the trace of that task, so a stalled transfer stays visible. Both states are shown as badges in the Filament tables and can be refreshed from there.
 
-Source and sink connectors use the converters declared by their named origin. The shipped origin pins JSON converters with schemas enabled; an empty `converters` array leaves converter selection to the worker defaults. The sink unwraps Debezium envelopes, applies the configured transform pipeline and renames fields. Its `fields.whitelist` includes only its own mapped columns, constants and fixed values, so replicas reading the same source table do not write each other's columns.
+Source and sink connectors apply the `source` and `sink` settings declared by their named origin. The shipped origin pins JSON converters with schemas enabled in both maps; empty maps leave converter selection to the worker defaults. The sink unwraps Debezium envelopes, applies the configured transform pipeline and renames fields. Its `fields.whitelist` includes only its own mapped columns, constants and fixed values, so replicas reading the same source table do not write each other's columns.
 
 Widening an existing connector's `table.include.list`/`column.include.list` does not back-fill existing rows. Ferry configures `read.only=true` and `signal.enabled.channels=kafka`; updates compare `applied_config` with the desired captured columns. New columns, including those of a newly captured table or an unbound field filter, trigger an `execute-snapshot` signal for each affected table, keyed by the connector's `topic.prefix`. A new source connector needs no signal because Debezium's initial snapshot covers its capture scope. A retry may repeat a snapshot signal; sinks use upserts, so repeated records update the same destination keys.
 
@@ -404,7 +404,7 @@ Widening an existing connector's `table.include.list`/`column.include.list` does
 
 `phpinnacle-ferry.structure` tunes the preparation pipeline: `chunk_size` root objects per job, the job `timeout`, the retry `backoff` delays, and `stale_after` seconds before a silent run is considered interrupted. `phpinnacle-ferry.replica.table_prefix` sets the name prefix of replica destination tables.
 
-`phpinnacle-ferry.origins` is a map of named origins. Each entry declares a `driver`; the entry key is displayed in the form. The supported `kafka` driver also declares REST `base_uri`, HTTP `headers`, a `converters` map, and Kafka `signal` settings. For example, the following fragment defines two named origins:
+`phpinnacle-ferry.origins` is a map of named origins. Each entry declares a `driver`; the entry key is displayed in the form. The supported `kafka` driver also declares REST `base_uri`, HTTP `headers`, `source` and `sink` configuration maps, and Kafka `signal` settings. For example, the following fragment defines two named origins:
 
 ```php
 'origins' => [
@@ -413,7 +413,13 @@ Widening an existing connector's `table.include.list`/`column.include.list` does
         'base_uri' => env('FERRY_KAFKA_CONNECT_URL'),
         'headers' => [],
         'target_host' => null,
-        'converters' => [
+        'source' => [
+            'key.converter' => 'org.apache.kafka.connect.json.JsonConverter',
+            'key.converter.schemas.enable' => 'true',
+            'value.converter' => 'org.apache.kafka.connect.json.JsonConverter',
+            'value.converter.schemas.enable' => 'true',
+        ],
+        'sink' => [
             'key.converter' => 'org.apache.kafka.connect.json.JsonConverter',
             'key.converter.schemas.enable' => 'true',
             'value.converter' => 'org.apache.kafka.connect.json.JsonConverter',
@@ -431,7 +437,13 @@ Widening an existing connector's `table.include.list`/`column.include.list` does
         'base_uri' => env('ANALYTICS_KAFKA_CONNECT_URL'),
         'headers' => [],
         'target_host' => null,
-        'converters' => [
+        'source' => [
+            'key.converter' => 'org.apache.kafka.connect.json.JsonConverter',
+            'key.converter.schemas.enable' => 'true',
+            'value.converter' => 'org.apache.kafka.connect.json.JsonConverter',
+            'value.converter.schemas.enable' => 'true',
+        ],
+        'sink' => [
             'key.converter' => 'org.apache.kafka.connect.json.JsonConverter',
             'key.converter.schemas.enable' => 'true',
             'value.converter' => 'org.apache.kafka.connect.json.JsonConverter',
@@ -449,7 +461,23 @@ Widening an existing connector's `table.include.list`/`column.include.list` does
 
 `target_host` is the destination database host as seen by that origin’s Kafka Connect worker. Set it to `null` to use the destination’s Laravel connection host. It does not change the source database host or destination port.
 
-Each origin must declare `converters` as an array of native Kafka Connect property names and string values. The same map is applied to its source and sink connectors, including converter-specific properties such as `key.converter.schema.registry.url` and `value.converter.schema.registry.url`. Use `converters => []` to inherit worker defaults. Custom converters must preserve the schema information required by the sink and its transforms.
+Each origin declares `source` and `sink` as arrays of native Kafka Connect property names and string values. The corresponding map is merged after Ferry builds a connector's configuration, so supplied values override generated values. Empty maps add no properties; for converters, this inherits the worker defaults. Keep the source's serializers and the sink's deserializers compatible, including their schema settings and Schema Registry URLs. Settings that change topic names, capture scope, keys, or transforms must preserve the contracts used by Ferry's generated pipeline and snapshot handling.
+
+Source-only Debezium custom converters can be configured in `source`, independently of the key/value serializers:
+
+```php
+'source' => [
+    'converters' => 'mvarchar,uuid,byteint',
+    'mvarchar.type' => 'org.alpaka.kafka.MCharConverter',
+    'uuid.type' => 'org.alpaka.kafka.UuidConverter',
+    'uuid.columns' => 'public._reference259._idrref,public._reference259._fld5830rref',
+    'byteint.type' => 'org.alpaka.kafka.IntegerConverter',
+    'byteint.columns' => 'public._accumrg37272._recordertref',
+    'include.unknown.datatypes' => 'true',
+],
+```
+
+The example inherits worker key/value converters. Custom converter classes must be installed on the Connect worker. Column lists are supplied by the application; Ferry does not generate them from structure metadata.
 
 The shipped `kafka` origin reads the `FERRY_KAFKA_*` environment variables, including `FERRY_KAFKA_SIGNAL_GROUP_ID`. Kafka-specific runtime transformation handlers are configured separately under `phpinnacle-ferry.kafka.transforms`.
 

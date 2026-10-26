@@ -22,7 +22,8 @@ class KafkaOrigin implements Origin
     /**
      * @param array{
      *     target_host: ?string,
-     *     converters: array<string, string>,
+     *     source: array<string, string>,
+     *     sink: array<string, string>,
      *     signal: array{topic: string, ...},
      *     ...
      * } $config
@@ -62,7 +63,7 @@ class KafkaOrigin implements Origin
         return ($source->connector ?? new Connector)->fill([
             'name' => $source->connector->name ?? $this->sources->name($source),
             'origin' => $this->name,
-            'config' => [...$config, ...$this->config['converters']],
+            'config' => [...$config, ...$this->config[$source instanceof Upstream ? 'source' : 'sink']],
         ]);
     }
 
