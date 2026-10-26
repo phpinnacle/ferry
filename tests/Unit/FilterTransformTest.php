@@ -6,12 +6,12 @@ use Filament\Schemas\Schema;
 use Illuminate\Support\ViewErrorBag;
 use Illuminate\Validation\ValidationException;
 use PHPinnacle\Eidos\Forms\JsonSchema;
-use PHPinnacle\Ferry\Services\TransformFactory;
+use PHPinnacle\Ferry\Origins\Kafka\TransformFactory;
+use PHPinnacle\Ferry\Origins\Kafka\Transforms\FilterTransform;
 use PHPinnacle\Ferry\Services\TransformRegistry;
 use PHPinnacle\Ferry\Tests\Fixtures\SchemaHost;
 use PHPinnacle\Ferry\Tests\TestCase as FerryTestCase;
 use PHPinnacle\Ferry\Transformations\Filter;
-use PHPinnacle\Ferry\Transforms\FilterTransform;
 
 require_once __DIR__ . '/../TestCase.php';
 require_once __DIR__ . '/../Fixtures/SchemaHost.php';

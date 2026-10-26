@@ -14,7 +14,6 @@ These rules summarize the project-wide expectations for work in this package. Pa
 
 - Treat the package as an independently releasable Composer unit. Before changing it, inspect its `README.md`, `composer.json`, service provider, Filament plugin, configuration, migrations, assets, tests, and static-analysis setup as applicable.
 - Keep changes inside the package and its declared dependency boundaries. Consume another package through its public API; do not create reverse or cyclic dependencies.
-- Preserve observable behavior and public contracts unless the task or package-specific instructions explicitly permit a breaking change.
 - Do not add dependencies or new top-level directories without approval.
 - Keep Laravel package wiring in the service provider and panel wiring in the Filament plugin. These are composition roots, not homes for runtime domain behavior.
 

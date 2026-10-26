@@ -6,7 +6,6 @@ use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Components\Group;
 use Filament\Support\Icons\Heroicon;
 use PHPinnacle\Eidos\Forms\JsonSchema;
-use PHPinnacle\Ferry\Enums\ColumnType;
 use PHPinnacle\Ferry\Transformation;
 
 final class Substring
@@ -41,8 +40,11 @@ final class Substring
                     ->columnSpanFull(),
             ])
             ->inputSchema(
-                fn (JsonSchema $input) => $input->singleType() === 'string'
-                && !in_array(ColumnType::fromJsonSchema($input), [ColumnType::DateTime, ColumnType::Reference], true),
+                fn (JsonSchema $input) => (
+                    $input->singleType() === 'string'
+                    && $input->annotation('format') !== 'date-time'
+                    && $input->annotation('x-ferry-reference') !== true
+                ),
             )
             ->outputSchema(fn (JsonSchema $input) => [
                 'type' => in_array('null', $input->types(), true) ? ['string', 'null'] : 'string',

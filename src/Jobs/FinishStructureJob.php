@@ -2,16 +2,16 @@
 
 namespace PHPinnacle\Ferry\Jobs;
 
-use PHPinnacle\Ferry\Models\Connection;
+use PHPinnacle\Ferry\Models\Structure;
 
 class FinishStructureJob extends StructureJob
 {
     public function handle(): void
     {
-        new Connection()
+        new Structure()
             ->getConnection()
             ->transaction(function () {
-                $this->lockedConnection()?->publishStructure();
+                $this->lockedStructure()?->publish();
             });
     }
 }

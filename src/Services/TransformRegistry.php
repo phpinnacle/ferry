@@ -32,7 +32,7 @@ class TransformRegistry
     {
         return (
             $this->get($key) ?? throw new LogicException(__(
-                'phpinnacle-ferry::resources.sync.errors.transform_missing',
+                'phpinnacle-ferry::resources.replica.errors.transform_missing',
                 ['transform' => $key],
             ))
         );

@@ -1,6 +1,6 @@
 {
     "name": "phpinnacle/ferry",
-    "description": "A plugin for Laravel Filament that manages data source connections.",
+    "description": "A plugin for Laravel Filament that manages upstream databases and data replicas.",
     "keywords": [
         "phpinnacle",
         "laravel",

@@ -3,10 +3,7 @@
 namespace PHPinnacle\Ferry\Destinations;
 
 use PHPinnacle\Ferry\Contracts\Destination;
-use PHPinnacle\Ferry\Models\ConnectionMetadata;
-use PHPinnacle\Ferry\Models\Sync;
-use PHPinnacle\Ferry\Services\Connectors\JdbcConnectorConfig;
-use PHPinnacle\Ferry\Services\TransformFactory;
+use PHPinnacle\Ferry\Models\Replica;
 
 final readonly class DynamicDestination implements Destination
 {
@@ -29,18 +26,24 @@ final readonly class DynamicDestination implements Destination
         return null;
     }
 
-    public function connector(
-        Sync $sync,
-        ConnectionMetadata $object,
-        string $topic,
-        TransformFactory $transforms,
-    ): array {
-        return new JdbcConnectorConfig(
-            table: $this->table,
-            topic: $topic,
-            columns: [...array_values($sync->columnMap($object)), ...$sync->constantColumns()],
-            transforms: $transforms->pipeline($sync, $object, deletes: true),
-            deletes: true,
-        )->toArray();
+    public function getTable(): string
+    {
+        return $this->table;
+    }
+
+    public function getConnectionName(): ?string
+    {
+        return null;
+    }
+
+    public function getPrimaryKey(): string
+    {
+        return Replica::ID_COLUMN;
+    }
+
+    /** @return array<string, string> */
+    public function getFixedValues(): array
+    {
+        return [];
     }
 }

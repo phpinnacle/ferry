@@ -4,16 +4,12 @@ namespace PHPinnacle\Ferry\Data;
 
 use JsonSerializable;
 use PHPinnacle\Eidos\Forms\JsonSchema;
-use PHPinnacle\Ferry\Casts\FieldDecoder;
-use PHPinnacle\Ferry\Enums\ColumnType;
+use PHPinnacle\Eidos\Forms\SchemaCompatibility;
 use PHPinnacle\Ferry\Enums\FieldKind;
-use PHPinnacle\Rosetta\Contracts\Field;
-use PHPinnacle\Rosetta\Fields\StringField;
 
 /**
- * @phpstan-import-type FieldData from FieldDecoder
  * @phpstan-import-type Definition from JsonSchema
- * @phpstan-type MappingData array{kind: 'source', source: string, target: string|null, field: FieldData, result?: Definition|null, transforms?: list<array{type: string, data: array<string, string>}>}|array{kind: 'static', target: string, static: string|int|float|bool, result?: Definition|null, transforms?: list<array{type: string, data: array<string, string>}>}
+ * @phpstan-type MappingData array{kind: 'source', source: string, target: string|null, field: Definition, result?: Definition|null, transforms?: list<array{type: string, data: array<string, string>}>}|array{kind: 'static', target: string, static: string|int|float|bool, result?: Definition|null, transforms?: list<array{type: string, data: array<string, string>}>}
  */
 final readonly class FieldMapping implements JsonSerializable
 {
@@ -21,7 +17,7 @@ final readonly class FieldMapping implements JsonSerializable
     public function __construct(
         public ?string $source,
         public ?string $target,
-        public ?Field $field,
+        public ?JsonSchema $field,
         public ?JsonSchema $result = null,
         public array $transforms = [],
         public string|int|float|bool|null $static = null,
@@ -35,7 +31,7 @@ final readonly class FieldMapping implements JsonSerializable
             'source' => new self(
                 source: $data['source'],
                 target: $data['target'],
-                field: FieldDecoder::decode($data['field']),
+                field: JsonSchema::fromArray($data['field']),
                 result: ($data['result'] ?? null) !== null ? JsonSchema::fromArray($data['result']) : null,
                 transforms: array_map(TransformSetting::fromArray(...), $data['transforms'] ?? []),
             ),
@@ -74,11 +70,10 @@ final readonly class FieldMapping implements JsonSerializable
 
         /** @var string $source */
         $source = $this->source;
-        /** @var Field $field */
+        /** @var JsonSchema $field */
         $field = $this->field;
 
-        /** @var FieldData $data */
-        $data = $field->jsonSerialize();
+        $data = $field->toArray();
 
         return [
             'kind' => 'source',
@@ -103,32 +98,51 @@ final readonly class FieldMapping implements JsonSerializable
         return $this->target !== null || $this->transforms !== [];
     }
 
-    public function sourceType(): ?ColumnType
+    public function sourceSchema(): ?JsonSchema
     {
-        if ($this->kind === FieldKind::Static) {
-            /** @var string|int|float|bool $value */
-            $value = $this->static;
-
-            return ColumnType::fromValue($value);
+        if ($this->kind !== FieldKind::Static) {
+            return $this->field;
         }
 
-        return $this->field !== null ? ColumnType::fromField($this->field) : null;
+        return JsonSchema::fromArray([
+            'type' => match (true) {
+                is_bool($this->static) => 'boolean',
+                is_int($this->static) => 'integer',
+                is_float($this->static) => 'number',
+                default => 'string',
+            },
+            'enum' => [$this->static],
+            ...(
+                is_string($this->static)
+                    ? [
+                        'minLength' => mb_strlen($this->static),
+                        'maxLength' => mb_strlen($this->static),
+                    ] : []
+            ),
+        ]);
     }
 
-    public function type(): ?ColumnType
+    public function outputSchema(): ?JsonSchema
     {
-        if ($this->result !== null) {
-            return ColumnType::fromJsonSchema($this->result);
+        return $this->result ?? ($this->transforms === [] ? $this->sourceSchema() : null);
+    }
+
+    public function canMapTo(JsonSchema $target): bool
+    {
+        $compatibility = SchemaCompatibility::make();
+        if ($this->kind === FieldKind::Static && $this->transforms === []) {
+            // Native static forms validate formats on values; raw values have no declared format.
+            $compatibility = $compatibility->formats(false);
         }
 
-        return $this->transforms === [] ? $this->sourceType() : null;
+        return $this->outputSchema()?->compatible($target, $compatibility) ?? false;
     }
 
     public function stringLength(): ?int
     {
         $length = match (true) {
             $this->result !== null => $this->result->maxLength(),
-            $this->transforms === [] && $this->field instanceof StringField => $this->field->length,
+            $this->transforms === [] => $this->field?->maxLength(),
             default => null,
         };
 

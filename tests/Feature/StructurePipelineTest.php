@@ -3,223 +3,208 @@
 use Illuminate\Database\SQLiteConnection;
 use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Queue;
+use PHPinnacle\Eidos\Forms\JsonSchema;
+use PHPinnacle\Ferry\Contracts\StructureAdapter;
+use PHPinnacle\Ferry\Data\StructurePlan;
 use PHPinnacle\Ferry\Enums\StructureStatus;
 use PHPinnacle\Ferry\Jobs\FetchStructureChunkJob;
 use PHPinnacle\Ferry\Jobs\FinishStructureJob;
 use PHPinnacle\Ferry\Jobs\PrepareStructureJob;
-use PHPinnacle\Ferry\Models\Connection;
-use PHPinnacle\Ferry\Models\ConnectionMetadata;
-use PHPinnacle\Ferry\Services\ConnectionFactory;
-use PHPinnacle\Ferry\Services\StructureImporter;
-use PHPinnacle\Ferry\Support\ConnectionErrorFormatter;
+use PHPinnacle\Ferry\Models\Structure;
+use PHPinnacle\Ferry\Models\StructureItem;
+use PHPinnacle\Ferry\Models\Upstream;
+use PHPinnacle\Ferry\Services\RosettaStructureAdapter;
+use PHPinnacle\Ferry\Services\StructureAdapterRegistry;
+use PHPinnacle\Ferry\Services\UpstreamFactory;
 use PHPinnacle\Ferry\Tests\TestCase;
-use PHPinnacle\Rosetta\Data\MetadataProperty;
-use PHPinnacle\Rosetta\Enums\MetadataKind;
-use PHPinnacle\Rosetta\Enums\PropertyKind;
-use PHPinnacle\Rosetta\Fields\StringField;
 use PHPinnacle\Rosetta\MetadataLoader;
-use PHPinnacle\Rosetta\StorageMap;
-use PHPinnacle\Rosetta\TypeMap;
 
 require_once __DIR__ . '/../TestCase.php';
 
 uses(TestCase::class);
 
 beforeEach(function () {
-    config(['phpinnacle-ferry.structure.chunk_size' => 1]);
+    config([
+        'phpinnacle-ferry.structure.chunk_size' => 1,
+        'queue.default' => 'sync',
+    ]);
 
     Exceptions::fake();
 });
 
-$makeImporter = function (int $total) {
-    $importer = new class($total) extends StructureImporter {
+$makeAdapter = function (int $estimated, string $key = 'rosetta') {
+    $adapter = new class($estimated, $key) implements StructureAdapter {
         public int $prepared = 0;
 
         /** @var list<int> */
         public array $offsets = [];
 
         public function __construct(
-            private readonly int $total,
-        ) {
-            parent::__construct(app(ConnectionFactory::class), app(MetadataLoader::class));
+            private readonly int $estimated,
+            private readonly string $key,
+        ) {}
+
+        public function getKey(): string
+        {
+            return $this->key;
         }
 
-        public function importChunk(
-            Connection $connection,
-            StorageMap $storageMap,
-            TypeMap $typeMap,
-            int $offset,
-            int $limit,
-        ): int {
+        public function getLabel(): string
+        {
+            return 'Fixture';
+        }
+
+        /** @return list<StructureItem> */
+        public function read(Upstream $upstream, StructurePlan $plan, int $offset, int $limit): array
+        {
             $this->offsets[] = $offset;
-
-            $last = min($offset + $limit, $this->total);
-
+            $objects = [];
+            $last = min($offset + $limit, $this->estimated);
             for ($position = $offset; $position < $last; $position++) {
-                ConnectionMetadata::query()->updateOrCreate([
-                    'connection_id' => $connection->id,
-                    'revision' => $connection->draftRevision(),
+                $objects[] = new StructureItem([
                     'external_id' => sprintf('object-%d', $position),
-                ], [
-                    'reference_id' => sprintf('reference-%d', $position),
-                    'name' => sprintf('_reference%d', $position),
-                    'code' => $position + 1,
-                    'kind' => MetadataKind::Reference,
-                    'label' => sprintf('Object %d', $position),
+                    'name' => sprintf('table%d', $position),
                     'title' => sprintf('Object %d', $position),
-                    'system' => [],
-                    'properties' => [],
-                    'values' => [],
-                    'position' => $position,
-                ]);
+                    'key_column' => 'record_id',
+                    'schema' => JsonSchema::fromArray([
+                        'type' => 'object',
+                        'properties' => [
+                            'record_id' => ['type' => 'integer'],
+                        ],
+                    ]),
+                ])->setRelation('children', new \Illuminate\Database\Eloquent\Collection);
             }
 
-            return max($last - $offset, 0);
+            return $objects;
         }
 
-        /** @return array{storageMap: StorageMap, typeMap: TypeMap, total: int} */
-        public function prepare(Connection $connection): array
+        public function prepare(Upstream $upstream): StructurePlan
         {
             $this->prepared++;
 
-            return [
-                'storageMap' => StorageMap::fromArray(['object-map' => ['Reference' => 1]]),
-                'typeMap' => TypeMap::empty(),
-                'total' => $this->total,
-            ];
+            return new StructurePlan($this->estimated, ['cursor' => 'adapter-owned']);
         }
     };
 
-    app()->instance(StructureImporter::class, $importer);
+    app(StructureAdapterRegistry::class)->register($adapter);
 
-    return $importer;
+    return $adapter;
 };
 
-it('walks the whole pipeline and publishes the snapshot', function () use ($makeImporter) {
-    $importer = $makeImporter(2);
+it('walks the whole pipeline and publishes the snapshot', function () use ($makeAdapter) {
+    $adapter = $makeAdapter(2);
 
-    $connection = TestCase::makeConnection()->fresh();
+    $upstream = TestCase::makeUpstream()->fresh();
 
-    expect($connection->status)
+    expect($upstream->structure->status)
         ->toBe(StructureStatus::Ready)
-        ->and($connection->generation)
+        ->and($upstream->structure->generation)
         ->toBe(1)
-        ->and($connection->processed)
+        ->and($upstream->structure->processed)
         ->toBe(2)
-        ->and($connection->total)
+        ->and($upstream->structure->estimated)
         ->toBe(2)
-        ->and($connection->run_id)
+        ->and($upstream->structure->run_id)
         ->toBeNull()
-        ->and($connection->storage_map)
+        ->and($upstream->structure->context)
         ->toBeNull()
-        ->and($connection->type_map)
-        ->toBeNull()
-        ->and($connection->last_error)
-        ->toBeNull()
-        ->and($connection->published_at)
-        ->not
-        ->toBeNull()
-        ->and($importer->prepared)
+        ->and($adapter->prepared)
         ->toBe(1)
-        ->and($importer->offsets)
+        ->and($adapter->offsets)
         ->toBe([0, 1])
-        ->and($connection->publishedMetadata()->pluck('external_id')->all())
+        ->and($upstream->structure->publishedItems()->pluck('external_id')->all())
         ->toBe(['object-0', 'object-1']);
 });
 
-it('scopes the snapshot to its own connection when eager loaded', function () use ($makeImporter) {
-    $makeImporter(1);
+it('scopes the snapshot to its own upstream when eager loaded', function () use ($makeAdapter) {
+    $makeAdapter(1);
 
-    $first = TestCase::makeConnection(['code' => 'first']);
-    $second = TestCase::makeConnection(['code' => 'second']);
+    $first = TestCase::makeUpstream(['code' => 'first']);
+    $second = TestCase::makeUpstream(['code' => 'second']);
 
-    $connections = Connection::query()->with('metadata')->get()->keyBy('code');
+    $upstreams = Upstream::query()->with('structure.items')->get()->keyBy('code');
 
-    expect($connections->get('first')?->metadata->pluck('connection_id')->all())
+    expect($upstreams->get('first')?->structure->items->pluck('upstream_id')->all())
         ->toBe([$first->id])
-        ->and($connections->get('second')?->metadata->pluck('connection_id')->all())
+        ->and($upstreams->get('second')?->structure->items->pluck('upstream_id')->all())
         ->toBe([$second->id])
-        ->and($first->fresh()->publishedMetadata()->count())
+        ->and($first->fresh()->structure->publishedItems()->count())
         ->toBe(1);
 });
 
-it('restores the stored maps as typed Rosetta values', function () use ($makeImporter) {
+it('preserves adapter-owned context between preparation and chunks', function () use ($makeAdapter) {
     Queue::fake();
 
-    $makeImporter(2);
-    $connection = TestCase::makeConnection();
+    $makeAdapter(2);
+    $upstream = TestCase::makeUpstream();
 
-    new PrepareStructureJob($connection->id, (string) $connection->run_id)->handle(app(StructureImporter::class));
+    new PrepareStructureJob(
+        $upstream->id,
+        (string) $upstream->structure->run_id,
+    )->handle(app(StructureAdapterRegistry::class));
 
-    expect($connection->fresh()->storage_map)
-        ->toBeInstanceOf(StorageMap::class)
-        ->and($connection->fresh()->type_map)
-        ->toBeInstanceOf(TypeMap::class);
+    expect($upstream->fresh()->structure->readPlan())
+        ->toEqual(new StructurePlan(2, ['cursor' => 'adapter-owned']));
 });
 
 it('preserves property comments when storing and restoring metadata', function (?string $comment) {
     Queue::fake();
-    $connection = TestCase::makeConnection();
-    $property = new MetadataProperty(
-        id: 'property-id',
-        name: '_fld1',
-        code: 1,
-        kind: PropertyKind::Field,
-        label: 'Description',
-        title: 'Description',
-        field: new StringField(100, false),
-        comment: $comment,
-    );
-    $object = TestCase::makeMetadata($connection, ['properties' => [$property]])->fresh();
+    $upstream = TestCase::makeUpstream();
+    $property = ['_fld1' => [
+        'type' => 'string',
+        'maxLength' => 100,
+        'title' => 'Description',
+        ...($comment === null ? [] : ['description' => $comment]),
+    ]];
+    $object = TestCase::makeItem($upstream, ['sources' => $property])->fresh();
 
-    expect($object->properties[0])
-        ->toEqual($property)
-        ->and($object->properties[0]->comment)
+    expect($object->schema->properties()['_fld1']->annotation('description'))
         ->toBe($comment)
-        ->and($object->toArray()['properties'][0])
-        ->toEqual(json_decode(json_encode($property), true));
+        ->and($object->toArray()['schema']['properties']['_fld1']['description'] ?? null)
+        ->toBe($comment);
 })->with([null, "Developer note\nKeep this line."]);
 
-it('publishes an empty snapshot when the source has no supported objects', function () use ($makeImporter) {
-    $importer = $makeImporter(0);
+it('publishes an empty snapshot when the source has no supported objects', function () use ($makeAdapter) {
+    $adapter = $makeAdapter(0);
 
-    $connection = TestCase::makeConnection()->fresh();
+    $upstream = TestCase::makeUpstream()->fresh();
 
-    expect($connection->status)
+    expect($upstream->structure->status)
         ->toBe(StructureStatus::Ready)
-        ->and($connection->generation)
+        ->and($upstream->structure->generation)
         ->toBe(1)
-        ->and($connection->total)
+        ->and($upstream->structure->estimated)
         ->toBe(0)
-        ->and($connection->processed)
+        ->and($upstream->structure->processed)
         ->toBe(0)
-        ->and($connection->published_at)
-        ->not
-        ->toBeNull()
-        ->and($importer->offsets)
+        ->and($adapter->offsets)
         ->toBe([])
-        ->and($connection->metadata()->count())
+        ->and($upstream->structure->items()->count())
         ->toBe(0);
 });
 
 it('resumes instead of reading the source again when the preparation job is redelivered', function () use (
-    $makeImporter,
+    $makeAdapter,
 ) {
     Queue::fake();
 
-    $importer = $makeImporter(2);
-    $connection = TestCase::makeConnection();
-    $prepare = new PrepareStructureJob($connection->id, (string) $connection->run_id);
+    $adapter = $makeAdapter(2);
+    $upstream = TestCase::makeUpstream();
+    $prepare = new PrepareStructureJob($upstream->id, (string) $upstream->structure->run_id);
 
-    $prepare->handle($importer);
-    new FetchStructureChunkJob($connection->id, (string) $connection->run_id, 0)->handle($importer);
-    $prepare->handle($importer);
+    $prepare->handle(app(StructureAdapterRegistry::class));
+    new FetchStructureChunkJob(
+        $upstream->id,
+        (string) $upstream->structure->run_id,
+        0,
+    )->handle(app(StructureAdapterRegistry::class));
+    $prepare->handle(app(StructureAdapterRegistry::class));
 
-    expect($importer->prepared)
+    expect($adapter->prepared)
         ->toBe(1)
-        ->and($importer->offsets)
+        ->and($adapter->offsets)
         ->toBe([0])
-        ->and($connection->fresh()->processed)
+        ->and($upstream->fresh()->structure->processed)
         ->toBe(1);
 
     Queue::assertPushed(
@@ -228,71 +213,123 @@ it('resumes instead of reading the source again when the preparation job is rede
     );
 });
 
-it('imports a repeated chunk without duplicating the snapshot', function () use ($makeImporter) {
+it('imports a repeated chunk without duplicating the snapshot', function () use ($makeAdapter) {
     Queue::fake();
 
-    $importer = $makeImporter(2);
-    $connection = TestCase::makeConnection();
-    $chunk = new FetchStructureChunkJob($connection->id, (string) $connection->run_id, 0);
+    $adapter = $makeAdapter(2);
+    $upstream = TestCase::makeUpstream();
+    $chunk = new FetchStructureChunkJob($upstream->id, (string) $upstream->structure->run_id, 0);
 
-    new PrepareStructureJob($connection->id, (string) $connection->run_id)->handle($importer);
-    $chunk->handle($importer);
-    $chunk->handle($importer);
+    new PrepareStructureJob(
+        $upstream->id,
+        (string) $upstream->structure->run_id,
+    )->handle(app(StructureAdapterRegistry::class));
+    $chunk->handle(app(StructureAdapterRegistry::class));
+    $chunk->handle(app(StructureAdapterRegistry::class));
 
-    expect($connection->fresh()->processed)->toBe(1)->and($connection->metadata()->count())->toBe(1);
+    expect($upstream->fresh()->structure->processed)->toBe(1)->and($upstream->structure->items()->count())->toBe(1);
 });
 
-it('starts a new generation as soon as the source credentials change', function () use ($makeImporter) {
+it('preserves root and child identities when importing a repeated metadata tree', function () {
+    Queue::fake();
+    $upstream = TestCase::makeUpstream();
+    $root = TestCase::makeItem($upstream)->replicate();
+    $child = $root->replicate()->fill([
+        'external_id' => 'child-id',
+        'name' => '_reference0_vt1',
+        'kind' => 'section',
+    ]);
+    $root->setRelation('children', new \Illuminate\Database\Eloquent\Collection([$child]));
+    $structure = $upstream->structure;
+
+    $structure->importItems([$root], 0);
+    $storedRoot = $structure->items()->where('revision', 1)->whereNull('parent_id')->sole();
+    $storedChild = $storedRoot->children()->sole();
+    $structure->importItems([$root], 0);
+
+    expect($structure->items()->where('revision', 1)->count())
+        ->toBe(2)
+        ->and($storedRoot->fresh()->children()->sole()->id)
+        ->toBe($storedChild->id)
+        ->and($storedChild->structure->is($structure))
+        ->toBeTrue();
+});
+
+it('starts a new generation as soon as the source credentials change', function () use ($makeAdapter) {
     Queue::fake();
 
-    $makeImporter(2);
-    $connection = TestCase::makeConnection();
-    $runId = (string) $connection->run_id;
+    $makeAdapter(2);
+    $upstream = TestCase::makeUpstream();
+    $runId = (string) $upstream->structure->run_id;
 
-    $connection->update(['host' => 'replica']);
-    $connection->refresh();
+    $upstream->update(['config' => [...$upstream->config, 'host' => 'replica']]);
+    $upstream->refresh();
 
-    expect($connection->status)
+    expect($upstream->structure->status)
         ->toBe(StructureStatus::Preparing)
-        ->and($connection->run_id)
-        ->not->toBeNull()->and($connection->run_id)
+        ->and($upstream->structure->run_id)
+        ->not->toBeNull()->and($upstream->structure->run_id)
         ->not->toBe($runId);
 
     Queue::assertPushed(PrepareStructureJob::class, 2);
 });
 
-it('leaves the structure untouched when an unrelated field changes', function () use ($makeImporter) {
+it('leaves the structure untouched when an unrelated field changes', function () use ($makeAdapter) {
     Queue::fake();
 
-    $makeImporter(2);
-    $connection = TestCase::makeConnection();
-    $runId = (string) $connection->run_id;
+    $makeAdapter(2);
+    $upstream = TestCase::makeUpstream();
+    $runId = (string) $upstream->structure->run_id;
 
-    $connection->update(['name' => 'Renamed']);
+    $upstream->update(['name' => 'Renamed']);
 
-    expect($connection->fresh()->run_id)->toBe($runId);
+    expect($upstream->fresh()->structure->run_id)->toBe($runId);
 
     Queue::assertPushed(PrepareStructureJob::class, 1);
 });
 
-it('ignores every job of a superseded generation', function () use ($makeImporter) {
+it('keeps the latest published revision when credentials change on an already loaded upstream', function () {
+    Queue::fake();
+    $upstream = TestCase::makeUpstream();
+    TestCase::makeItem($upstream, ['revision' => 1]);
+    $upstream->fresh()->structure->publish();
+
+    $upstream->update(['config' => [...$upstream->config, 'host' => 'replica']]);
+
+    expect($upstream->fresh()->structure->generation)
+        ->toBe(1)
+        ->and($upstream->fresh()->structure->publishedItems()->count())
+        ->toBe(1);
+});
+
+it('does not treat upstream edits as progress of a stale structure run', function () {
+    Queue::fake();
+    $staleAfter = config('phpinnacle-ferry.structure.stale_after');
+    $upstream = TestCase::makeUpstream([], ['updated_at' => now()->subSeconds($staleAfter + 1)]);
+
+    $upstream->update(['name' => 'Renamed']);
+
+    expect($upstream->fresh()->structure->canPrepare($staleAfter))->toBeTrue();
+});
+
+it('ignores every job of a superseded generation', function () use ($makeAdapter) {
     Queue::fake();
 
-    $importer = $makeImporter(2);
-    $connection = TestCase::makeConnection();
-    $runId = (string) $connection->run_id;
+    $adapter = $makeAdapter(2);
+    $upstream = TestCase::makeUpstream();
+    $runId = (string) $upstream->structure->run_id;
 
-    $connection->update(['host' => 'replica']);
+    $upstream->update(['config' => [...$upstream->config, 'host' => 'replica']]);
 
-    new PrepareStructureJob($connection->id, $runId)->handle($importer);
-    new FetchStructureChunkJob($connection->id, $runId, 0)->handle($importer);
-    new FinishStructureJob($connection->id, $runId)->handle();
+    new PrepareStructureJob($upstream->id, $runId)->handle(app(StructureAdapterRegistry::class));
+    new FetchStructureChunkJob($upstream->id, $runId, 0)->handle(app(StructureAdapterRegistry::class));
+    new FinishStructureJob($upstream->id, $runId)->handle();
 
-    expect($importer->prepared)
+    expect($adapter->prepared)
         ->toBe(0)
-        ->and($importer->offsets)
+        ->and($adapter->offsets)
         ->toBe([])
-        ->and($connection->fresh()->generation)
+        ->and($upstream->fresh()->structure->generation)
         ->toBe(0);
 
     Queue::assertNotPushed(FetchStructureChunkJob::class);
@@ -302,170 +339,377 @@ it('ignores every job of a superseded generation', function () use ($makeImporte
 it('imports repeated chunks once and refuses to restore a superseded draft', function () {
     Queue::fake();
 
-    $staleConnection = TestCase::makeConnection()->fresh();
-    $connection = Connection::query()->findOrFail($staleConnection->id);
-    $storageMap = StorageMap::fromArray(['stale-object' => ['Reference' => 1]]);
-    $typeMap = TypeMap::empty();
-    $source = app(ConnectionFactory::class)->make(['driver' => 'sqlite', 'database' => ':memory:']);
+    $staleUpstream = TestCase::makeUpstream()->fresh();
+    $upstream = Upstream::query()->findOrFail($staleUpstream->id);
+    $source = app(UpstreamFactory::class)->make(['driver' => 'sqlite', 'database' => ':memory:']);
     $pdo = $source->getPdo();
     $source->statement('CREATE TABLE Config (filename TEXT, binarydata BLOB)');
     $source->insert('INSERT INTO Config VALUES (?, ?)', [
         'stale-object',
         gzdeflate('{,{,,,,,,,,,{,{,{,,stale-object},"Stale object",{1,en,"Stale object"}}}}}'),
     ]);
-    $factory = Mockery::mock(ConnectionFactory::class);
+    $factory = Mockery::mock(UpstreamFactory::class);
     $factory->shouldReceive('make')->andReturnUsing(fn () => new SQLiteConnection($pdo));
-    $importer = new StructureImporter($factory, app(MetadataLoader::class));
+    $adapter = new RosettaStructureAdapter($factory, app(MetadataLoader::class));
+    $plan = new StructurePlan(1, ['storage_map' => ['stale-object' => ['Reference' => 1]], 'type_map' => []]);
 
-    $importer->importChunk($staleConnection, $storageMap, $typeMap, 0, 1);
-    $first = $connection->metadata()->sole();
-    $importer->importChunk($staleConnection, $storageMap, $typeMap, 0, 1);
+    $staleUpstream->structure->importItems($adapter->read($staleUpstream, $plan, 0, 1), 0);
+    $first = $upstream->structure->items()->sole();
+    $staleUpstream->structure->importItems($adapter->read($staleUpstream, $plan, 0, 1), 0);
 
-    expect($connection->metadata()->sole()->id)->toBe($first->id);
+    expect($upstream->structure->items()->sole()->id)->toBe($first->id);
     expect($first->name)->toBe('_reference1');
     expect($first->displayTitle())->toBe('Stale object');
 
-    $connection->update(['host' => 'replica']);
-    $importer->importChunk($staleConnection, $storageMap, $typeMap, 0, 1);
+    $upstream->update(['config' => [...$upstream->config, 'host' => 'replica']]);
+    $staleUpstream->structure->importItems($adapter->read($staleUpstream, $plan, 0, 1), 0);
 
-    expect($connection->metadata()->count())->toBe(0);
+    expect($upstream->structure->items()->count())->toBe(0);
 });
 
-it('is a safe no-op when the connection was deleted before the jobs run', function () use ($makeImporter) {
+it('is a safe no-op when the upstream was deleted before the jobs run', function () use ($makeAdapter) {
     Queue::fake();
 
-    $importer = $makeImporter(2);
-    $connection = TestCase::makeConnection();
-    $runId = (string) $connection->run_id;
+    $adapter = $makeAdapter(2);
+    $upstream = TestCase::makeUpstream();
+    $runId = (string) $upstream->structure->run_id;
 
-    $connection->delete();
+    $upstream->delete();
 
-    new PrepareStructureJob($connection->id, $runId)->handle($importer);
-    new FetchStructureChunkJob($connection->id, $runId, 0)->handle($importer);
-    new FinishStructureJob($connection->id, $runId)->handle();
+    new PrepareStructureJob($upstream->id, $runId)->handle(app(StructureAdapterRegistry::class));
+    new FetchStructureChunkJob($upstream->id, $runId, 0)->handle(app(StructureAdapterRegistry::class));
+    new FinishStructureJob($upstream->id, $runId)->handle();
 
-    expect($importer->prepared)->toBe(0)->and($importer->offsets)->toBe([]);
+    expect($adapter->prepared)->toBe(0)->and($adapter->offsets)->toBe([]);
 
     Queue::assertNotPushed(FetchStructureChunkJob::class);
     Queue::assertNotPushed(FinishStructureJob::class);
 });
 
-it('does not publish twice when the finishing job is redelivered', function () use ($makeImporter) {
+it('does not publish twice when the finishing job is redelivered', function () use ($makeAdapter) {
     Queue::fake();
 
-    $importer = $makeImporter(1);
-    $connection = TestCase::makeConnection();
-    $finish = new FinishStructureJob($connection->id, (string) $connection->run_id);
+    $adapter = $makeAdapter(1);
+    $upstream = TestCase::makeUpstream();
+    $finish = new FinishStructureJob($upstream->id, (string) $upstream->structure->run_id);
 
-    new PrepareStructureJob($connection->id, (string) $connection->run_id)->handle($importer);
-    new FetchStructureChunkJob($connection->id, (string) $connection->run_id, 0)->handle($importer);
+    new PrepareStructureJob(
+        $upstream->id,
+        (string) $upstream->structure->run_id,
+    )->handle(app(StructureAdapterRegistry::class));
+    new FetchStructureChunkJob(
+        $upstream->id,
+        (string) $upstream->structure->run_id,
+        0,
+    )->handle(app(StructureAdapterRegistry::class));
     $finish->handle();
 
-    $published = $connection->fresh()->published_at;
-
     $finish->handle();
 
-    expect($connection->fresh()->generation)
+    expect($upstream->fresh()->structure->generation)
         ->toBe(1)
-        ->and($connection->fresh()->published_at?->equalTo($published))
-        ->toBeTrue()
-        ->and($connection->fresh()->metadata()->count())
+        ->and($upstream->fresh()->structure->items()->count())
         ->toBe(1);
 });
 
-it('keeps the published snapshot when a later generation fails', function () use ($makeImporter) {
+it('keeps the published snapshot when a later generation fails', function () use ($makeAdapter) {
     Queue::fake();
 
-    $importer = $makeImporter(1);
-    $connection = TestCase::makeConnection();
+    $adapter = $makeAdapter(1);
+    $upstream = TestCase::makeUpstream();
 
-    new PrepareStructureJob($connection->id, (string) $connection->run_id)->handle($importer);
-    new FetchStructureChunkJob($connection->id, (string) $connection->run_id, 0)->handle($importer);
-    new FinishStructureJob($connection->id, (string) $connection->run_id)->handle();
+    new PrepareStructureJob(
+        $upstream->id,
+        (string) $upstream->structure->run_id,
+    )->handle(app(StructureAdapterRegistry::class));
+    new FetchStructureChunkJob(
+        $upstream->id,
+        (string) $upstream->structure->run_id,
+        0,
+    )->handle(app(StructureAdapterRegistry::class));
+    new FinishStructureJob($upstream->id, (string) $upstream->structure->run_id)->handle();
 
-    $connection->refresh();
-    $published = $connection->published_at;
-    $connection->prepareStructure(config('phpinnacle-ferry.structure.stale_after'));
+    $upstream->refresh();
+    $upstream->structure->prepare(config('phpinnacle-ferry.structure.stale_after'));
 
-    $chunk = new FetchStructureChunkJob($connection->id, (string) $connection->run_id, 0);
+    $chunk = new FetchStructureChunkJob($upstream->id, (string) $upstream->structure->run_id, 0);
 
-    new PrepareStructureJob($connection->id, (string) $connection->run_id)->handle($importer);
-    $chunk->handle($importer);
+    new PrepareStructureJob(
+        $upstream->id,
+        (string) $upstream->structure->run_id,
+    )->handle(app(StructureAdapterRegistry::class));
+    $chunk->handle(app(StructureAdapterRegistry::class));
     $chunk->failed(new RuntimeException('boom'));
 
-    $connection->refresh();
+    $upstream->refresh();
 
-    expect($connection->status)
+    expect($upstream->structure->status)
         ->toBe(StructureStatus::Failed)
-        ->and($connection->generation)
+        ->and($upstream->structure->generation)
         ->toBe(1)
-        ->and($connection->run_id)
+        ->and($upstream->structure->run_id)
         ->toBeNull()
-        ->and($connection->published_at?->equalTo($published))
-        ->toBeTrue()
-        ->and($connection->metadata()->where('revision', 1)->count())
+        ->and($upstream->structure->items()->where('revision', 1)->count())
         ->toBe(1)
-        ->and($connection->metadata()->where('revision', 2)->count())
+        ->and($upstream->structure->items()->where('revision', 2)->count())
         ->toBe(0);
 });
 
-it('reports the original exception and stores only a safe description', function () use ($makeImporter) {
+it('reports the original exception when preparation fails', function () use ($makeAdapter) {
     Queue::fake();
 
-    $makeImporter(1);
-    $connection = TestCase::makeConnection();
-    $job = new PrepareStructureJob($connection->id, (string) $connection->run_id);
+    $makeAdapter(1);
+    $upstream = TestCase::makeUpstream();
+    $job = new PrepareStructureJob($upstream->id, (string) $upstream->structure->run_id);
 
-    $job->failed(new PDOException('SQLSTATE[08006] host=localhost dbname=db user=user password=secret'));
+    $exception = new PDOException('SQLSTATE[08006] host=localhost dbname=db user=user password=secret');
+    $job->failed($exception);
 
-    $connection->refresh();
+    $upstream->refresh();
 
-    expect($connection->status)
+    expect($upstream->structure->status)
         ->toBe(StructureStatus::Failed)
-        ->and($connection->last_error)
-        ->toBe(ConnectionErrorFormatter::format(new PDOException))
-        ->and($connection->last_error)
-        ->not->toContain('secret')->and($connection->last_error)
-        ->not->toContain('localhost')->and($connection->last_error)
-        ->not->toContain('SQLSTATE');
+        ->and($upstream->structure->run_id)
+        ->toBeNull();
 
-    Exceptions::assertReported(PDOException::class);
+    Exceptions::assertReported(fn (PDOException $reported) => $reported === $exception);
 });
 
-it('cannot fail a newer generation from a stale job', function () use ($makeImporter) {
+it('cannot fail a newer generation from a stale job', function () use ($makeAdapter) {
     Queue::fake();
 
-    $makeImporter(1);
-    $connection = TestCase::makeConnection();
-    $stale = new PrepareStructureJob($connection->id, (string) $connection->run_id);
+    $makeAdapter(1);
+    $upstream = TestCase::makeUpstream();
+    $stale = new PrepareStructureJob($upstream->id, (string) $upstream->structure->run_id);
 
-    $connection->update(['host' => 'replica']);
+    $upstream->update(['config' => [...$upstream->config, 'host' => 'replica']]);
 
     $stale->failed(new RuntimeException('boom'));
 
-    $connection->refresh();
+    $upstream->refresh();
 
-    expect($connection->status)
+    expect($upstream->structure->status)
         ->toBe(StructureStatus::Preparing)
-        ->and($connection->run_id)
-        ->not
-        ->toBeNull()
-        ->and($connection->last_error)
-        ->toBeNull();
+        ->and($upstream->structure->run_id)
+        ->not->toBeNull();
 });
 
-it('retires a stale attempt with a safe reason before starting a new one', function () use ($makeImporter) {
+it('retires a stale attempt before starting a new one', function () use ($makeAdapter) {
     Queue::fake();
 
-    $makeImporter(1);
-    $connection = TestCase::makeConnection([], [
-        'heartbeat_at' => now()->subSeconds(config('phpinnacle-ferry.structure.stale_after') + 1),
+    $makeAdapter(1);
+    $upstream = TestCase::makeUpstream([], [
+        'updated_at' => now()->subSeconds(config('phpinnacle-ferry.structure.stale_after') + 1),
     ]);
 
-    expect($connection->prepareStructure(config('phpinnacle-ferry.structure.stale_after')))
+    $previousRun = $upstream->structure->run_id;
+
+    expect($upstream->structure->prepare(config('phpinnacle-ferry.structure.stale_after')))
         ->toBeTrue()
-        ->and($connection->fresh()->last_error)
-        ->toBe(ConnectionErrorFormatter::stale())
-        ->and($connection->fresh()->status)
+        ->and($upstream->fresh()->structure->run_id)
+        ->not
+        ->toBe($previousRun)
+        ->and($upstream->fresh()->structure->status)
         ->toBe(StructureStatus::Preparing);
 });
+
+it('uses progress updates as activity for stale run detection', function () {
+    Queue::fake();
+    $staleAfter = config('phpinnacle-ferry.structure.stale_after');
+    $upstream = TestCase::makeUpstream([], ['updated_at' => now()->subSeconds($staleAfter + 1)]);
+
+    expect($upstream->structure->canPrepare($staleAfter))->toBeTrue();
+    $upstream->structure->progressTo(1);
+
+    expect($upstream->structure->canPrepare($staleAfter))->toBeFalse();
+});
+
+it('resumes queued preparation from persisted state', function () {
+    Queue::fake();
+    $upstream = TestCase::makeUpstream([], ['generation' => 2]);
+    $structure = $upstream->structure;
+    $context = ['cursor' => 'next-page'];
+    $structure->plan(new StructurePlan(3, $context));
+    $structure->progressTo(1);
+    $structure->forceFill(['updated_at' => now()->subMinutes(5)])->save();
+    $runId = $structure->run_id;
+    $updatedAt = $structure->updated_at;
+    $job = unserialize(serialize(new PrepareStructureJob($upstream->id, $runId)));
+    $structure = $upstream->fresh()->structure;
+
+    expect($structure->generation)
+        ->toBe(2)
+        ->and($structure->processed)
+        ->toBe(1)
+        ->and($structure->context)
+        ->toBe($context)
+        ->and($structure->updated_at->equalTo($updatedAt))
+        ->toBeTrue();
+
+    $adapter = Mockery::mock(StructureAdapter::class);
+    $adapter->shouldReceive('getKey')->andReturn('rosetta');
+    $adapter->shouldNotReceive('prepare');
+    app(StructureAdapterRegistry::class)->register($adapter);
+    $job->handle(app(StructureAdapterRegistry::class));
+    Queue::assertPushed(
+        FetchStructureChunkJob::class,
+        fn (FetchStructureChunkJob $chunk) => $chunk->runId === $runId && $chunk->offset === 1,
+    );
+    Queue::assertPushed(PrepareStructureJob::class, 1);
+});
+
+it('leaves structure pending and never reads or queues work without an adapter', function () {
+    Queue::fake();
+    $registry = Mockery::mock(StructureAdapterRegistry::class);
+    $registry->shouldNotReceive('getOrFail');
+    $upstream = TestCase::makeUpstream(['adapter' => null]);
+    $structure = $upstream->structure;
+
+    expect(new Upstream()->adapter)
+        ->toBeNull()
+        ->and($structure->status)
+        ->toBe(StructureStatus::Pending)
+        ->and($structure->run_id)
+        ->toBeNull()
+        ->and($structure->readPlan())
+        ->toBeNull()
+        ->and($structure->prepare(60))
+        ->toBeFalse();
+
+    new PrepareStructureJob($upstream->id, 'old-run')->handle($registry);
+    new FetchStructureChunkJob($upstream->id, 'old-run', 0)->handle($registry);
+    new FinishStructureJob($upstream->id, 'old-run')->handle();
+    $upstream->update(['config' => [...$upstream->config, 'host' => 'changed']]);
+
+    expect($upstream->fresh()->structure->status)
+        ->toBe(StructureStatus::Pending)
+        ->and($upstream->structure->generation)
+        ->toBe(0)
+        ->and($upstream->structure->run_id)
+        ->toBeNull();
+    Queue::assertNotPushed(PrepareStructureJob::class);
+    Queue::assertNotPushed(FetchStructureChunkJob::class);
+});
+
+it('uses the selected adapter key for preparation and every chunk', function () use ($makeAdapter) {
+    $selected = $makeAdapter(2, 'selected');
+    $other = $makeAdapter(5, 'other');
+    $upstream = TestCase::makeUpstream(['adapter' => 'selected'])->fresh();
+
+    expect($upstream->adapter)
+        ->toBe('selected')
+        ->and($selected->prepared)
+        ->toBe(1)
+        ->and($selected->offsets)
+        ->toBe([0, 1])
+        ->and($other->prepared)
+        ->toBe(0)
+        ->and($other->offsets)
+        ->toBe([])
+        ->and($upstream->structure->status)
+        ->toBe(StructureStatus::Ready)
+        ->and($upstream->structure->publishedItems()->count())
+        ->toBe(2);
+});
+
+it('restarts reading when an adapter is selected for a pending upstream', function () use ($makeAdapter) {
+    $adapter = $makeAdapter(1, 'selected');
+    $upstream = TestCase::makeUpstream(['adapter' => null]);
+    expect($upstream->structure->status)->toBe(StructureStatus::Pending);
+
+    $upstream->update(['adapter' => 'selected']);
+    $upstream->refresh();
+
+    expect($adapter->prepared)
+        ->toBe(1)
+        ->and($upstream->structure->status)
+        ->toBe(StructureStatus::Ready)
+        ->and($upstream->structure->generation)
+        ->toBe(1);
+});
+
+it('invalidates the old run and context when the adapter changes', function (?string $key) use ($makeAdapter) {
+    Queue::fake();
+    $makeAdapter(1, 'selected');
+    $upstream = TestCase::makeUpstream([], ['generation' => 1]);
+    $structure = $upstream->structure;
+    $structure->plan(new StructurePlan(2, ['old' => 'context']));
+    $runId = $structure->run_id;
+    $published = TestCase::makeItem($upstream);
+    TestCase::makeItem($upstream, ['revision' => 2]);
+
+    $upstream->update(['adapter' => $key]);
+    new PrepareStructureJob($upstream->id, $runId)->handle(app(StructureAdapterRegistry::class));
+    new FetchStructureChunkJob($upstream->id, $runId, 0)->handle(app(StructureAdapterRegistry::class));
+    new FinishStructureJob($upstream->id, $runId)->handle();
+    $structure = $upstream->fresh()->structure;
+
+    expect($structure->status)
+        ->toBe($key === null ? StructureStatus::Pending : StructureStatus::Preparing)
+        ->and($structure->run_id)
+        ->not
+        ->toBe($runId)
+        ->and($structure->readPlan())
+        ->toBeNull()
+        ->and($structure->generation)
+        ->toBe(1)
+        ->and($structure->items()->where('revision', 2)->count())
+        ->toBe(0)
+        ->and($structure->publishedItems()->sole()->id)
+        ->toBe($published->id);
+    if ($key === null) {
+        expect($structure->run_id)->toBeNull();
+    }
+    Queue::assertPushed(PrepareStructureJob::class, $key === null ? 1 : 2);
+    Queue::assertNotPushed(FetchStructureChunkJob::class);
+})->with([null, 'selected']);
+
+it('does not save a plan or schedule chunks after the adapter is cleared during preparation', function () {
+    Queue::fake();
+    $adapter = Mockery::mock(StructureAdapter::class);
+    $adapter->shouldReceive('getKey')->andReturn('selected');
+    $adapter
+        ->shouldReceive('prepare')
+        ->once()
+        ->andReturnUsing(function (Upstream $upstream) {
+            $upstream->update(['adapter' => null]);
+
+            return new StructurePlan(1, ['stale' => 'plan']);
+        });
+    $adapter->shouldNotReceive('read');
+    app(StructureAdapterRegistry::class)->register($adapter);
+    $upstream = TestCase::makeUpstream(['adapter' => 'selected']);
+
+    new PrepareStructureJob($upstream->id, $upstream->structure->run_id)->handle(app(StructureAdapterRegistry::class));
+
+    expect($upstream->fresh()->structure->status)
+        ->toBe(StructureStatus::Pending)
+        ->and($upstream->structure->readPlan())
+        ->toBeNull();
+    Queue::assertNotPushed(FetchStructureChunkJob::class);
+});
+
+it('skips a phase if its adapter is cleared after the run lookup', function (string $phase) {
+    Queue::fake();
+    $upstream = TestCase::makeUpstream();
+    $structure = $upstream->structure;
+    $structure->plan(new StructurePlan(1, ['cursor' => 'old']));
+    $runId = $structure->run_id;
+    $cleared = false;
+    Structure::retrieved(function (Structure $retrieved) use ($upstream, $runId, &$cleared) {
+        if (!$cleared && $retrieved->upstream_id === $upstream->id && $retrieved->run_id === $runId) {
+            $cleared = true;
+            $upstream->update(['adapter' => null]);
+        }
+    });
+    $registry = Mockery::mock(StructureAdapterRegistry::class);
+    $registry->shouldNotReceive('getOrFail');
+    $job = $phase === 'prepare'
+        ? new PrepareStructureJob($upstream->id, $runId)
+        : new FetchStructureChunkJob($upstream->id, $runId, 0);
+
+    $job->handle($registry);
+
+    expect($cleared)->toBeTrue()->and($upstream->fresh()->structure->status)->toBe(StructureStatus::Pending);
+    Queue::assertNotPushed(FetchStructureChunkJob::class);
+})->with(['prepare', 'chunk']);

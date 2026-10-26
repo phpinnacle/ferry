@@ -12,7 +12,7 @@ use Filament\Support\Contracts\HasIcon;
 use Filament\Support\Contracts\HasLabel;
 use Illuminate\Contracts\Support\Htmlable;
 use PHPinnacle\Eidos\Forms\JsonSchema;
-use PHPinnacle\Ferry\Models\ConnectionMetadata;
+use PHPinnacle\Ferry\Models\StructureItem;
 
 /** @phpstan-import-type Definition from JsonSchema */
 final class Transformation implements HasColor, HasDescription, HasIcon, HasLabel
@@ -165,7 +165,7 @@ final class Transformation implements HasColor, HasDescription, HasIcon, HasLabe
     }
 
     /** @return array<Component> */
-    public function getSchema(?ConnectionMetadata $object, ?JsonSchema $input = null): array
+    public function getSchema(?StructureItem $object, ?JsonSchema $input = null): array
     {
         /** @var array<Component> $schema */
         $schema = $this->evaluate($this->schema, ['object' => $object, 'input' => $input]);

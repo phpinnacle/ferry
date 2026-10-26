@@ -2,18 +2,20 @@
 
 return [
     'connection' => null,
-    'target_host' => null,
     'tenancy' => null,
     //    'tenancy' => [
     //        'model' => 'App\\Models\\Tenant',
     //        'default' => 'App\\Models\\Tenant::DEFAULT'
     //    ],
-    'transforms' => [
-        'cast' => \PHPinnacle\Ferry\Transforms\CastTransform::class,
-        'filter' => \PHPinnacle\Ferry\Transforms\FilterTransform::class,
-        'trim' => \PHPinnacle\Ferry\Transforms\TrimTransform::class,
-        'substring' => \PHPinnacle\Ferry\Transforms\SubstringTransform::class,
-        'mask' => \PHPinnacle\Ferry\Transforms\MaskFieldTransform::class,
+    'kafka' => [
+        'target_host' => null,
+        'transforms' => [
+            'cast' => \PHPinnacle\Ferry\Origins\Kafka\Transforms\CastTransform::class,
+            'filter' => \PHPinnacle\Ferry\Origins\Kafka\Transforms\FilterTransform::class,
+            'trim' => \PHPinnacle\Ferry\Origins\Kafka\Transforms\TrimTransform::class,
+            'substring' => \PHPinnacle\Ferry\Origins\Kafka\Transforms\SubstringTransform::class,
+            'mask' => \PHPinnacle\Ferry\Origins\Kafka\Transforms\MaskFieldTransform::class,
+        ],
     ],
     'timeout' => 5,
     'structure' => [
@@ -22,25 +24,28 @@ return [
         'backoff' => [10, 30],
         'stale_after' => 900,
     ],
-    'sync' => [
-        'table_prefix' => 'ferry_sync_',
+    'replica' => [
+        'table_prefix' => 'ferry_replica_',
     ],
-    'kafka_connect' => [
-        'base_uri' => env('FERRY_KAFKA_CONNECT_URL'),
-        'headers' => [],
-        'signal' => [
-            'topic' => env('FERRY_KAFKA_SIGNAL_TOPIC'),
-            'bootstrap_servers' => env('FERRY_KAFKA_BOOTSTRAP_SERVERS'),
-            'group_id' => env('FERRY_KAFKA_SIGNAL_GROUP_ID', 'ferry-signal'),
-            'flush_timeout' => 5000,
+    'origins' => [
+        'kafka' => [
+            'driver' => 'kafka',
+            'base_uri' => env('FERRY_KAFKA_CONNECT_URL'),
+            'headers' => [],
+            'signal' => [
+                'topic' => env('FERRY_KAFKA_SIGNAL_TOPIC'),
+                'bootstrap_servers' => env('FERRY_KAFKA_BOOTSTRAP_SERVERS'),
+                'group_id' => env('FERRY_KAFKA_SIGNAL_GROUP_ID', 'ferry-signal'),
+                'flush_timeout' => 5000,
+            ],
         ],
     ],
     'navigation' => [
-        'connection' => [
+        'upstream' => [
             'icon' => 'phosphor-plugs-connected',
             'sort' => 90,
         ],
-        'sync' => [
+        'replica' => [
             'icon' => 'phosphor-arrows-left-right',
             'sort' => 91,
         ],

@@ -3,53 +3,62 @@
 namespace PHPinnacle\Ferry\Jobs;
 
 use Illuminate\Support\Facades\Config;
-use PHPinnacle\Ferry\Services\StructureImporter;
+use PHPinnacle\Ferry\Services\StructureAdapterRegistry;
 
 class FetchStructureChunkJob extends StructureJob
 {
     public function __construct(
-        string $connectionId,
+        string $upstreamId,
         string $runId,
         public readonly int $offset,
     ) {
-        parent::__construct($connectionId, $runId);
+        parent::__construct($upstreamId, $runId);
     }
 
-    public function handle(StructureImporter $importer): void
+    public function handle(StructureAdapterRegistry $adapters): void
     {
-        $connection = $this->connection();
+        $structure = $this->structure();
 
-        if ($connection === null) {
+        if ($structure === null) {
             return;
         }
 
-        $storageMap = $connection->storage_map;
-        $typeMap = $connection->type_map;
-
-        if ($storageMap === null || $typeMap === null) {
+        $key = $structure->upstream->adapter;
+        if ($key === null) {
             return;
         }
 
-        $count = $importer->importChunk(
-            $connection,
-            $storageMap,
-            $typeMap,
+        $plan = $structure->readPlan();
+
+        if ($plan === null) {
+            return;
+        }
+
+        $objects = $adapters->getOrFail($key)->read(
+            $structure->upstream,
+            $plan,
             $this->offset,
             Config::integer('phpinnacle-ferry.structure.chunk_size'),
         );
 
+        if (!$structure->importItems($objects, $this->offset)) {
+            return;
+        }
+
+        $count = count($objects);
+
         $processed = $this->offset + $count;
 
-        if (!$connection->progressStructureTo($processed)) {
+        if (!$structure->progressTo($processed)) {
             return;
         }
 
-        if ($count === 0 || $processed >= $connection->total) {
-            FinishStructureJob::dispatch($this->connectionId, $this->runId);
+        if ($count === 0 || $processed >= $structure->estimated) {
+            FinishStructureJob::dispatch($this->upstreamId, $this->runId);
 
             return;
         }
 
-        self::dispatch($this->connectionId, $this->runId, $processed);
+        self::dispatch($this->upstreamId, $this->runId, $processed);
     }
 }

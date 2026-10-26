@@ -1,14 +1,14 @@
 <?php
 
 return [
-    'connection' => [
-        'label' => 'Connections',
+    'upstream' => [
+        'label' => 'Upstreams',
         'group' => 'Integrations',
         'actions' => [
-            'create' => 'Create Connection',
+            'create' => 'Create Upstream',
             'update' => 'Edit',
             'delete' => 'Delete',
-            'test_connection' => 'Test Connection',
+            'test_upstream' => 'Test Upstream',
             'check_source_status' => 'Check Source Connector Status',
             'structure' => [
                 'pending' => 'Fetch Structure',
@@ -18,12 +18,14 @@ return [
             ],
         ],
         'empty' => [
-            'heading' => 'No connections',
-            'description' => 'Create your first data source connection',
+            'heading' => 'No upstreams',
+            'description' => 'Create your first upstream',
         ],
         'fields' => [
             'name' => 'Name',
             'code' => 'Code',
+            'origin' => 'Origin',
+            'adapter' => 'Structure Adapter',
             'driver' => 'Driver',
             'host' => 'Host',
             'port' => 'Port',
@@ -31,20 +33,19 @@ return [
             'username' => 'Username',
             'password' => 'Password',
             'schema' => 'Schema',
-            'ssl_mode' => 'SSL Mode',
+            'sslmode' => 'SSL Mode',
             'is_active' => 'Active',
             'structure' => 'Structure',
             'status' => 'Status',
             'objects' => 'Objects',
             'progress' => 'Progress',
-            'published_at' => 'Published',
-            'last_error' => 'Last Error',
             'source_connector_status' => 'Source Connector Status',
         ],
+        'placeholders' => ['adapter' => 'Do not read structure'],
         'pages' => [
-            'list' => 'Connections',
-            'create' => 'Create Connection',
-            'edit' => 'Edit Connection',
+            'list' => 'Upstreams',
+            'create' => 'Create Upstream',
+            'edit' => 'Edit Upstream',
         ],
         'sections' => [
             'general' => 'General Information',
@@ -57,12 +58,11 @@ return [
             ],
         ],
         'messages' => [
-            'test_success' => 'Connection established',
+            'test_success' => 'Upstream connection successful',
             'structure_queued' => 'Structure preparation has been queued',
             'structure_active' => 'Structure preparation is already running',
         ],
         'errors' => [
-            'stale' => 'Preparation was interrupted: the source did not respond in time',
             'unreachable' => 'The server is unreachable. Check the host, port and network availability (:state)',
             'denied' => 'Access denied. Check the username and password (:state)',
             'unknown_database' => 'Database not found (:state)',
@@ -72,11 +72,11 @@ return [
             'signal_failed' => 'The Kafka signal could not be published (:error)',
         ],
     ],
-    'sync' => [
-        'label' => 'Synchronizations',
+    'replica' => [
+        'label' => 'Replicas',
         'group' => 'Integrations',
         'actions' => [
-            'create' => 'Create Synchronization',
+            'create' => 'Create Replica',
             'update' => 'Edit',
             'delete' => 'Delete',
             'activate' => 'Activate',
@@ -85,13 +85,13 @@ return [
             'check_status' => 'Check Sink Connector Status',
         ],
         'empty' => [
-            'heading' => 'No synchronizations',
-            'description' => 'Create your first synchronization to map 1C fields into a local table',
+            'heading' => 'No replicas',
+            'description' => 'Create your first replica to map 1C fields into a local table',
         ],
         'fields' => [
             'name' => 'Name',
             'code' => 'Code',
-            'connection' => 'Connection',
+            'upstream' => 'Upstream',
             'source' => 'Object',
             'status' => 'Status',
             'destination' => 'Destination',
@@ -135,9 +135,9 @@ return [
             '_enumorder' => 'Order',
         ],
         'pages' => [
-            'list' => 'Synchronizations',
-            'create' => 'Create Synchronization',
-            'edit' => 'Edit Synchronization',
+            'list' => 'Replicas',
+            'create' => 'Create Replica',
+            'edit' => 'Edit Replica',
         ],
         'sections' => [
             'general' => 'General Information',
@@ -148,10 +148,10 @@ return [
                 'description' => 'Choose the source object and destination. Configure field mappings after creation.',
             ],
             'delete' => [
-                'heading' => 'Delete synchronization?',
+                'heading' => 'Delete replica?',
                 'description_dynamic' => 'The destination table and all data stored in it will be permanently deleted',
-                'description_static' => 'The synchronization will be deleted. The destination table will not be affected',
-                'description_bulk' => 'Selected synchronizations will be deleted. For dynamic synchronizations, the destination table and all data stored in it will also be permanently deleted; static destinations will not be affected',
+                'description_static' => 'The replica will be deleted. The destination table will not be affected',
+                'description_bulk' => 'Selected replicas will be deleted. For dynamic replicas, the destination table and all data stored in it will also be permanently deleted; static destinations will not be affected',
             ],
             'drop_columns' => [
                 'heading' => 'Remove mapped columns?',
@@ -164,26 +164,28 @@ return [
         ],
         'errors' => [
             'unknown_object' => 'The selected 1C object is no longer available in the published structure',
-            'unknown_field' => 'The source field ":field" is no longer available in the selected object',
-            'source_object_missing' => 'Source object for synchronization ":code" was not found',
+            'source_object_missing' => 'Source object for replica ":code" was not found',
             'unsupported_field_type' => 'Unsupported field type for column ":column"',
             'static_destination_missing' => 'Static destination ":destination" is not registered',
             'unknown_destination_field' => 'Field ":field" is not declared by the selected destination',
             'incompatible_destination_field' => 'The source field type is not compatible with the destination field ":field"',
             'transform_missing' => 'Transform ":transform" is not registered',
-            'constant_column_taken' => 'The destination field ":column" is already mapped',
-            'transform_field_unsupported' => 'Transform ":transform" cannot be applied to the source field ":field"',
             'required_destination_field_missing' => 'The required destination field ":field" is not mapped',
-            'invalid_mapping' => 'Synchronization ":code" cannot be activated: its field mapping is out of date',
-            'invalid_transforms' => 'Synchronization ":code" cannot be activated: its transforms are no longer registered or no longer match the source',
+            'invalid_mapping' => 'Replica ":code" cannot be activated: its field mapping is out of date',
         ],
         'messages' => [
-            'activated' => 'Synchronization activated',
-            'paused' => 'Synchronization paused',
-            'restarted' => 'Synchronization connectors restarted',
+            'activated' => 'Replica activation queued',
+            'paused' => 'Replica pause queued',
+            'restarted' => 'Replica connector restart queued',
         ],
     ],
     'transform' => [
+        'cast_types' => [
+            'string' => 'String',
+            'integer' => 'Integer',
+            'number' => 'Decimal',
+            'boolean' => 'Boolean',
+        ],
         'trim' => 'Trim whitespace',
         'substring' => 'Extract substring',
         'substring_start' => 'Start index',

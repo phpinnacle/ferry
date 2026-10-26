@@ -8,7 +8,7 @@ use PHPinnacle\Ferry\Contracts\Destination;
 use PHPinnacle\Ferry\Destinations\DynamicDestination;
 use PHPinnacle\Ferry\Destinations\StaticDestination;
 use PHPinnacle\Ferry\Enums\DestinationType;
-use PHPinnacle\Ferry\Models\Sync;
+use PHPinnacle\Ferry\Models\Replica;
 use PHPinnacle\Jason\Schema;
 
 #[Singleton]
@@ -33,23 +33,23 @@ class DestinationFactory
     {
         return (
             $this->get($key) ?? throw new LogicException(__(
-                'phpinnacle-ferry::resources.sync.errors.static_destination_missing',
+                'phpinnacle-ferry::resources.replica.errors.static_destination_missing',
                 ['destination' => $key],
             ))
         );
     }
 
-    public function resolve(Sync $sync): Destination
+    public function resolve(Replica $replica): Destination
     {
-        return match ($sync->type) {
-            DestinationType::Static => $this->getOrFail($sync->destination),
-            DestinationType::Dynamic => new DynamicDestination($sync->destination),
+        return match ($replica->type) {
+            DestinationType::Static => $this->getOrFail($replica->destination),
+            DestinationType::Dynamic => new DynamicDestination($replica->destination),
         };
     }
 
-    public function schemaFor(Sync $sync): ?Schema
+    public function schemaFor(Replica $replica): ?Schema
     {
-        return $sync->type === DestinationType::Static ? $this->get($sync->destination)?->getSchema() : null;
+        return $replica->type === DestinationType::Static ? $this->get($replica->destination)?->getSchema() : null;
     }
 
     /** @return array<string, StaticDestination> */

@@ -1,7 +1,7 @@
 <?php
 
 return [
-    'connection' => [
+    'upstream' => [
         'create' => 'Create',
         'update' => 'Update',
         'delete' => 'Delete',
@@ -9,7 +9,7 @@ return [
         'view' => 'View',
         'view_any' => 'View Any',
     ],
-    'sync' => [
+    'replica' => [
         'create' => 'Create',
         'update' => 'Update',
         'delete' => 'Delete',

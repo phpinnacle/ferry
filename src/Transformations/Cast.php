@@ -5,7 +5,6 @@ namespace PHPinnacle\Ferry\Transformations;
 use Filament\Forms\Components\Select;
 use Filament\Support\Icons\Heroicon;
 use PHPinnacle\Eidos\Forms\JsonSchema;
-use PHPinnacle\Ferry\Enums\ColumnType;
 use PHPinnacle\Ferry\Transformation;
 
 final class Cast
@@ -18,10 +17,19 @@ final class Cast
             ->icon(Heroicon::ArrowPath)
             ->schema(fn (?JsonSchema $input) => [
                 Select::make('type')
-                    ->label(__('phpinnacle-ferry::resources.sync.fields.constant_type'))
-                    ->options(ColumnType::castableOptions())
+                    ->label(__('phpinnacle-ferry::resources.replica.fields.constant_type'))
+                    ->options([
+                        'string' => __('phpinnacle-ferry::resources.transform.cast_types.string'),
+                        'integer' => __('phpinnacle-ferry::resources.transform.cast_types.integer'),
+                        'number' => __('phpinnacle-ferry::resources.transform.cast_types.number'),
+                        'boolean' => __('phpinnacle-ferry::resources.transform.cast_types.boolean'),
+                    ])
                     ->disableOptionWhen(
-                        fn (string $value) => $input !== null && ColumnType::fromJsonSchema($input)?->value === $value,
+                        fn (string $value) => (
+                            $input?->singleType() === $value
+                            && $input->annotation('format') === null
+                            && $input->annotation('x-ferry-reference') !== true
+                        ),
                     )
                     ->required(),
                 Select::make('replace_null_with_default')
@@ -34,15 +42,16 @@ final class Cast
                     ->default('true')
                     ->formatStateUsing(fn (?string $state) => $state ?? 'true')
                     ->selectablePlaceholder(false)
-                    // Keep Kafka's default implicit in stored transform settings.
+                    // Keep the default implicit in stored transform settings.
                     ->dehydrated(fn (?string $state) => $state === 'false'),
             ])
             ->inputSchema(['type' => ['string', 'integer', 'number', 'boolean', 'null']])
             ->outputSchema(function (JsonSchema $input, array $params) {
-                $schema = ColumnType::tryFrom($params['type'] ?? '')?->jsonSchema();
-                if ($schema === null) {
+                if (($params['type'] ?? null) === null) {
                     return null;
                 }
+
+                $schema = ['type' => $params['type']];
 
                 if ($input->types() === [] || in_array('null', $input->types(), true)) {
                     $schema['type'] = [$schema['type'], 'null'];

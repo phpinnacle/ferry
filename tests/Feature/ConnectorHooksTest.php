@@ -1,215 +1,337 @@
 <?php
 
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
-use Mockery\MockInterface;
+use Illuminate\Support\Facades\Schema;
+use PHPinnacle\Eidos\Forms\JsonSchema;
+use PHPinnacle\Ferry\Contracts\Origin;
 use PHPinnacle\Ferry\Data\FieldMapping;
 use PHPinnacle\Ferry\Enums\ConnectorStatus;
-use PHPinnacle\Ferry\Enums\StructureStatus;
-use PHPinnacle\Ferry\Enums\SyncStatus;
-use PHPinnacle\Ferry\Models\Connection;
+use PHPinnacle\Ferry\Enums\ReplicaStatus;
+use PHPinnacle\Ferry\Exceptions\ConnectorOperationFailed;
+use PHPinnacle\Ferry\Jobs\SynchronizeConnectorsJob;
 use PHPinnacle\Ferry\Models\Connector;
-use PHPinnacle\Ferry\Models\Sync;
-use PHPinnacle\Ferry\Services\Connectors\ConnectorManager;
+use PHPinnacle\Ferry\Models\Replica;
+use PHPinnacle\Ferry\Models\Upstream;
+use PHPinnacle\Ferry\Services\ConnectorManager;
+use PHPinnacle\Ferry\Services\OriginFactory;
+use PHPinnacle\Ferry\Tests\Fakes\Origin as FakeOrigin;
 use PHPinnacle\Ferry\Tests\TestCase;
-use PHPinnacle\Rosetta\Enums\FieldType;
-use PHPinnacle\Rosetta\Fields\ScalarField;
-use PHPinnacle\Rosetta\Fields\StringField;
 
 require_once __DIR__ . '/../TestCase.php';
-
 uses(TestCase::class);
 
+function ferry_use_origin(Origin $origin): void
+{
+    $origins = Mockery::mock(OriginFactory::class);
+    $origins->shouldReceive('for')->andReturn($origin);
+    $origins->shouldReceive('create')->andReturn($origin);
+    app()->instance(OriginFactory::class, $origins);
+}
+
+function ferry_drain_connectors(): void
+{
+    $queue = Queue::getFacadeRoot()->queue->connection();
+    $job = $queue->pop('ferry');
+    while ($job !== null) {
+        $job->fire();
+        $job->delete();
+        $job = $queue->pop('ferry');
+    }
+}
+
 beforeEach(function () {
-    Queue::fake();
+    Queue::fake()->except(SynchronizeConnectorsJob::class);
 });
 
-it('asks the connector manager to delete the sink when its synchronization is removed', function () {
-    $sync = TestCase::makeSync([], [
-        'status' => SyncStatus::Active,
-    ]);
-    TestCase::makeConnector($sync, ['name' => 'ferry-sink-' . $sync->code])
-        ->recordStatus(ConnectorStatus::Running);
-
-    /** @var ConnectorManager&MockInterface $manager */
-    $manager = Mockery::mock(ConnectorManager::class);
-    $manager
-        ->shouldReceive('delete')
-        ->once()
-        ->with(Mockery::on(fn (Sync $argument) => $argument->is($sync)));
-    $this->app->instance(ConnectorManager::class, $manager);
-
-    $sync->delete();
-
-    expect(Sync::query()->find($sync->id))->toBeNull();
+it('does nothing for an upstream without replicas', function () {
+    TestCase::makeUpstream();
+    expect(Connector::query()->count())->toBe(0)->and(DB::table('jobs')->count())->toBe(0);
 });
 
-it('asks the connector manager to delete the source when its connection is removed', function () {
-    $connection = TestCase::makeConnection();
-    TestCase::makeConnector($connection, ['name' => 'ferry-source-' . $connection->code])
-        ->recordStatus(ConnectorStatus::Running);
-
-    /** @var ConnectorManager&MockInterface $manager */
-    $manager = Mockery::mock(ConnectorManager::class);
-    $manager
-        ->shouldReceive('deleteSource')
-        ->once()
-        ->with(Mockery::on(fn (Connection $argument) => $argument->is($connection)));
-    $this->app->instance(ConnectorManager::class, $manager);
-
-    $connection->delete();
-
-    expect(Connection::query()->find($connection->id))->toBeNull();
-});
-
-it('refreshes an existing source connector after changing connection credentials', function () {
-    $connection = TestCase::makeConnection();
-    TestCase::makeConnector($connection, ['name' => 'ferry-source-' . $connection->code]);
-    $manager = Mockery::mock(ConnectorManager::class);
-    $manager
-        ->shouldReceive('refreshSource')
-        ->once()
-        ->with(Mockery::on(fn (Connection $argument) => $argument->is($connection)));
-    $this->app->instance(ConnectorManager::class, $manager);
-
-    $connection->update(['password' => 'changed-secret']);
-});
-
-it('pauses the sink connector through the connector manager once it has been activated', function () {
-    $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
-
-    TestCase::makeMetadata($connection);
-
-    $sync = TestCase::makeSync([
-        'connection_id' => $connection->id,
-        'source' => 'object-0',
-        'schema' => [
-            new FieldMapping('_idrref', 'external_id', new ScalarField(FieldType::Id)),
-            new FieldMapping('title', 'title', new StringField(length: 100, fixed: false)),
-        ],
-    ], ['status' => SyncStatus::Active]);
-    TestCase::makeConnector($sync, ['name' => 'ferry-sink-' . $sync->code])
-        ->recordStatus(ConnectorStatus::Running);
-
-    /** @var ConnectorManager&MockInterface $manager */
-    $manager = Mockery::mock(ConnectorManager::class);
-    $manager
-        ->shouldReceive('pause')
-        ->once()
-        ->with(Mockery::on(fn (Sync $argument) => $argument->is($sync)), false);
-    $this->app->instance(ConnectorManager::class, $manager);
-
-    $connection->metadata()->update(['revision' => $connection->draftRevision()]);
-    $connection->publishStructure();
-});
-
-it('removes local sink connectors when their connection cascades synchronization deletion', function () {
-    $sync = TestCase::makeSync();
-    $connection = $sync->connection;
-    TestCase::makeConnector($sync, ['name' => 'ferry-sink-' . $sync->code]);
-    $manager = Mockery::mock(ConnectorManager::class);
-    $manager->shouldNotReceive('delete');
-    $manager->shouldNotReceive('deleteSource');
-    $this->app->instance(ConnectorManager::class, $manager);
-
-    $connection->delete();
-
-    expect(Sync::query()->find($sync->id))->toBeNull()->and(Connector::query()->count())->toBe(0);
-});
-
-it('manages owners and reviews unconfigured synchronizations without Kafka transport', function () {
-    config([
-        'phpinnacle-ferry.kafka_connect.base_uri' => null,
-        'phpinnacle-ferry.kafka_connect.signal.bootstrap_servers' => null,
-    ]);
-    $sync = TestCase::makeSync();
-    $connection = $sync->connection;
-
-    $connection->forceFill(['generation' => 1, 'status' => StructureStatus::Ready])->save();
-
-    expect($sync->fresh()->status)->toBe(SyncStatus::Pause);
-
-    $connection->update(['password' => 'changed-secret']);
-    $sync->delete();
-    $connection->delete();
-
-    expect(Connection::query()->count())
+it('queues connector jobs only after the owner transaction commits', function (bool $commit) {
+    $upstream = TestCase::makeUpstream();
+    $database = $upstream->getConnection();
+    $database->beginTransaction();
+    $replica = TestCase::makeReplica(['upstream_id' => $upstream->id]);
+    expect(DB::table('jobs')->count())
         ->toBe(0)
-        ->and(Sync::query()->count())
-        ->toBe(0)
+        ->and($replica->fresh()->status)
+        ->toBe(ReplicaStatus::Pending)
+        ->and($replica->fresh()->connector?->applied_config)
+        ->toBeNull()
+        ->and($replica->fresh()->connector_id)
+        ->not->toBeNull()->and($upstream->fresh()->connector_id)
+        ->not->toBeNull();
+    $commit ? $database->commit() : $database->rollBack();
+    expect(Replica::query()->count())
+        ->toBe($commit ? 1 : 0)
         ->and(Connector::query()->count())
+        ->toBe($commit ? 2 : 0)
+        ->and(DB::table('jobs')->count())
+        ->toBe($commit ? 2 : 0)
+        ->and(Schema::hasTable($replica->destination))
+        ->toBe($commit)
+        ->and(DB::table('jobs')->pluck('payload')->implode(''))
+        ->not->toContain('secret');
+})->with(['commit' => true, 'rollback' => false]);
+
+it('applies source before sinks and activates the replica after success', function () {
+    $origin = app(OriginFactory::class)->create('kafka');
+    $replica = TestCase::makeReplica();
+    expect($origin->operations)->toBe([]);
+    ferry_drain_connectors();
+    expect(array_slice($origin->operations, offset: 0, length: 3))
+        ->toBe([
+            ['create', 'ferry-source-test-upstream'],
+            ['create', 'ferry-sink-test-replica'],
+            ['start',  'ferry-sink-test-replica'],
+        ])
+        ->and($replica->fresh()->status)
+        ->toBe(ReplicaStatus::Active)
+        ->and($replica->fresh()->connector?->applied_config)
+        ->toBe($replica->fresh()->connector?->config)
+        ->and(DB::table('jobs')->count())
         ->toBe(0);
 });
 
-it('resumes an automatic pause but preserves a manual pause after saving', function (bool $manually, bool $renamed) {
-    $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
-    TestCase::makeMetadata($connection);
-    $sync = TestCase::makeSync(['connection_id' => $connection->id]);
-    TestCase::makeConnector($sync, ['name' => 'ferry-sink-test-sync']);
-    $sync->pause(manually: $manually);
+it('does not enqueue updates for unchanged config or status checks', function () {
+    $replica = TestCase::makeReplica();
+    ferry_drain_connectors();
+    $replica->refresh();
+    $replica->update(['name' => 'Renamed']);
+    $replica->connector->recordStatus(ConnectorStatus::Running);
+    $replica->connector->save();
+    app(ConnectorManager::class)->checkStatus($replica);
+    expect(DB::table('jobs')->count())->toBe(0);
+});
 
-    $connectors = Mockery::mock(ConnectorManager::class);
-
-    if ($manually) {
-        $connectors->shouldNotReceive('activate');
-    } else {
-        $connectors
-            ->shouldReceive('activate')
-            ->once()
-            ->with($sync, false)
-            ->andReturnUsing(fn (Sync $sync) => $sync->activate());
-    }
-
-    $this->app->instance(ConnectorManager::class, $connectors);
-    $sync->update(['name' => $renamed ? 'Renamed' : $sync->name]);
-
-    expect($sync->fresh()->name)
-        ->toBe($renamed ? 'Renamed' : 'Test synchronization')
-        ->and($sync->fresh()->status)
-        ->toBe($manually ? SyncStatus::Pause : SyncStatus::Active)
-        ->and($sync->fresh()->is_paused)
-        ->toBe($manually);
-})->with([
-    'manual pause' => [true, true],
-    'automatic pause' => [false, true],
-    'unchanged mapping' => [false, false],
-]);
-
-it('updates active connectors after commit and discards the update on rollback', function (bool $commit) {
-    $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
-    TestCase::makeMetadata($connection);
-    $sync = TestCase::makeSync(['connection_id' => $connection->id], ['status' => SyncStatus::Active]);
-    TestCase::makeConnector($sync, ['name' => 'ferry-sink-test-sync']);
-    $calls = 0;
-    $manager = Mockery::mock(ConnectorManager::class);
-    $manager
-        ->shouldReceive('activate')
-        ->times($commit ? 1 : 0)
-        ->with($sync, false)
-        ->andReturnUsing(function (Sync $sync) use (&$calls) {
-            expect($sync->getConnection()->transactionLevel())->toBe(0);
-            $calls++;
-            $sync->activate();
+it('uses current configuration when old jobs are still pending', function () {
+    $replica = TestCase::makeReplica();
+    $replica->update(['schema' => [new FieldMapping('_idrref', 'latest_id', JsonSchema::fromArray([
+        'type' => 'string',
+        'format' => 'uuid',
+        'x-ferry-reference' => true,
+        'minLength' => 36,
+        'maxLength' => 36,
+    ]))]]);
+    $expected = $replica->fresh()->connector->config;
+    $seen = [];
+    $origin = Mockery::mock(FakeOrigin::class)->makePartial();
+    $origin
+        ->shouldReceive('create')
+        ->andReturnUsing(function (Connector $connector) use (&$seen) {
+            $seen[$connector->name] = $connector->config;
         });
-    $this->app->instance(ConnectorManager::class, $manager);
-    $database = $sync->getConnection();
-    $database->beginTransaction();
-    $sync->update([
-        'name' => 'Renamed',
-        'schema' => [new FieldMapping('_idrref', 'reference_id', new ScalarField(FieldType::Id))],
-    ]);
+    ferry_use_origin($origin);
+    ferry_drain_connectors();
+    expect($seen['ferry-sink-test-replica'])
+        ->toBe($expected)
+        ->and($replica->fresh()->connector->applied_config)
+        ->toBe($expected);
+});
 
-    expect($calls)->toBe(0);
+it('keeps pending state and retries after an external failure', function () {
+    $replica = TestCase::makeReplica();
+    $sinkId = $replica->connector_id;
+    $origin = Mockery::mock(FakeOrigin::class)->makePartial();
+    $origin
+        ->shouldReceive('create')
+        ->with(Mockery::on(fn (Connector $c) => $c->id !== $sinkId))
+        ->andReturnNull();
+    $origin
+        ->shouldReceive('create')
+        ->with(Mockery::on(fn (Connector $c) => $c->id === $sinkId))
+        ->once()
+        ->andThrow(new RuntimeException('Connect unavailable'));
+    ferry_use_origin($origin);
+    $job = new SynchronizeConnectorsJob($replica->upstream_id);
+    expect(fn () => $job->handle(app(ConnectorManager::class)))
+        ->toThrow(ConnectorOperationFailed::class, 'Connect unavailable');
+    expect($replica->fresh()->status)
+        ->toBe(ReplicaStatus::Pending)
+        ->and($replica->fresh()->connector->applied_config)
+        ->toBeNull()
+        ->and($replica->fresh()->connector->error)
+        ->toBe('Connect unavailable');
+    $recovered = new FakeOrigin;
+    ferry_use_origin($recovered);
+    $job->handle(app(ConnectorManager::class));
+    expect($replica->fresh()->status)
+        ->toBe(ReplicaStatus::Active)
+        ->and($replica->fresh()->connector->error)
+        ->toBeNull()
+        ->and($recovered->operations)
+        ->toContain(['create', 'ferry-sink-test-replica']);
+});
+
+it('preserves pause while queued updates are processed', function () {
+    $replica = TestCase::makeReplica();
+    $replica->pause();
+    ferry_drain_connectors();
+    $replica
+        ->refresh()
+        ->update(['schema' => [new FieldMapping('_idrref', 'renamed_id', JsonSchema::fromArray([
+            'type' => 'string',
+            'format' => 'uuid',
+            'x-ferry-reference' => true,
+            'minLength' => 36,
+            'maxLength' => 36,
+        ]))]]);
+    ferry_drain_connectors();
+    expect($replica->fresh()->status)
+        ->toBe(ReplicaStatus::Pause)
+        ->and($replica->fresh()->connector->status)
+        ->toBe(ConnectorStatus::Paused)
+        ->and($replica->fresh()->upstream->connector->status)
+        ->toBe(ConnectorStatus::Running);
+});
+
+it('removes sinks before dropping tables and keeps sibling capture', function (bool $keepSibling) {
+    $replica = TestCase::makeReplica();
+    $upstream = $replica->upstream;
+    $sibling = $keepSibling ? TestCase::makeReplica(['code' => 'sibling', 'upstream_id' => $upstream->id]) : null;
+    ferry_drain_connectors();
+    $replica->refresh()->delete();
+    expect(Schema::hasTable($replica->destination))
+        ->toBeTrue()
+        ->and(Replica::query()->find($replica->id))
+        ->toBeNull()
+        ->and(Replica::withTrashed()->find($replica->id))
+        ->not->toBeNull();
+    ferry_drain_connectors();
+    expect(Schema::hasTable($replica->destination))
+        ->toBeFalse()
+        ->and(Replica::withTrashed()->find($replica->id))
+        ->toBeNull()
+        ->and($upstream->fresh()->connector->status)
+        ->toBe($keepSibling ? ConnectorStatus::Running : ConnectorStatus::Paused)
+        ->and($upstream->fresh()->connector->config['replicas'])
+        ->toBe($sibling ? [$sibling->id] : []);
+})->with([true, false]);
+
+it('retains deletion context after failure and completes on retry', function () {
+    $replica = TestCase::makeReplica();
+    ferry_drain_connectors();
+    $replica->refresh()->delete();
+    $origin = Mockery::mock(FakeOrigin::class)->makePartial();
+    $origin->shouldReceive('remove')->once()->andThrow(new RuntimeException('Deletion unavailable'));
+    ferry_use_origin($origin);
+    $job = new SynchronizeConnectorsJob($replica->upstream_id);
+    expect(fn () => $job->handle(app(ConnectorManager::class)))->toThrow(ConnectorOperationFailed::class);
+    expect(Replica::withTrashed()->find($replica->id)?->connector_id)
+        ->not
+        ->toBeNull()
+        ->and(Schema::hasTable($replica->destination))
+        ->toBeTrue();
+    ferry_use_origin(new FakeOrigin);
+    $job->handle(app(ConnectorManager::class));
+    expect(Replica::withTrashed()->find($replica->id))
+        ->toBeNull()
+        ->and(Schema::hasTable($replica->destination))
+        ->toBeFalse();
+});
+
+it('removes upstream resources in sink then source order', function () {
+    $origin = app(OriginFactory::class)->create('kafka');
+    $replica = TestCase::makeReplica();
+    $upstream = $replica->upstream;
+    ferry_drain_connectors();
+    $origin->operations = [];
+    $upstream->refresh()->delete();
+    ferry_drain_connectors();
+    expect($origin->operations)
+        ->toBe([
+            ['remove', 'ferry-sink-test-replica'],
+            ['remove', 'ferry-source-test-upstream'],
+        ])
+        ->and(Upstream::withTrashed()->count())
+        ->toBe(0)
+        ->and(Replica::withTrashed()->count())
+        ->toBe(0)
+        ->and(Connector::query()->count())
+        ->toBe(0)
+        ->and(Schema::hasTable($replica->destination))
+        ->toBeFalse();
+});
+
+it('updates source credentials through the queue', function () {
+    $replica = TestCase::makeReplica();
+    ferry_drain_connectors();
+    $upstream = $replica->upstream->fresh();
+    $upstream->update(['config' => [...$upstream->config, 'password' => 'changed-secret']]);
+    expect($upstream->fresh()->connector->applied_config['credentials']['password'])->toBe('secret');
+    ferry_drain_connectors();
+    expect($upstream->fresh()->connector->applied_config['credentials']['password'])->toBe('changed-secret');
+});
+
+it('preserves desired state when enqueueing fails and can retry deployment', function () {
+    Schema::rename('jobs', 'unavailable_jobs');
+    expect(TestCase::makeReplica(...))->toThrow(\Illuminate\Database\QueryException::class);
+    expect(Replica::query()->count())
+        ->toBe(1)
+        ->and(Connector::query()->count())
+        ->toBe(2)
+        ->and(Schema::hasTable('ferry_replica_test-replica'))
+        ->toBeTrue();
+
+    Schema::rename('unavailable_jobs', 'jobs');
+    $replica = Replica::query()->sole();
+    app(ConnectorManager::class)->restart($replica);
+    ferry_drain_connectors();
+
+    expect($replica->fresh()->status)->toBe(ReplicaStatus::Active);
+});
+
+it('retains removed sinks when refreshing the remaining source fails', function () {
+    $replica = TestCase::makeReplica();
+    ferry_drain_connectors();
+    $replica->refresh()->delete();
+    $origin = Mockery::mock(FakeOrigin::class)->makePartial();
+    $origin->shouldReceive('update')->once()->andThrow(new RuntimeException('Source unavailable'));
+    ferry_use_origin($origin);
+    $job = new SynchronizeConnectorsJob($replica->upstream_id);
+    expect(fn () => $job->handle(app(ConnectorManager::class)))->toThrow(ConnectorOperationFailed::class);
+    expect(Replica::withTrashed()->find($replica->id)?->connector_id)
+        ->not
+        ->toBeNull()
+        ->and(Schema::hasTable($replica->destination))
+        ->toBeTrue();
+    $retry = new FakeOrigin;
+    ferry_use_origin($retry);
+    $job->handle(app(ConnectorManager::class));
+    expect($retry->operations)
+        ->toContain(['remove', 'ferry-sink-test-replica'])
+        ->and(Replica::withTrashed()->find($replica->id))
+        ->toBeNull()
+        ->and($replica->upstream->fresh()->connector->config['replicas'])
+        ->toBe([]);
+});
+
+it('uses the application queue when Ferry models use another database', function (bool $commit) {
+    config([
+        'phpinnacle-ferry.connection' => 'ferry-test',
+        'database.connections.ferry-test' => config('database.connections.sqlite'),
+    ]);
+    $migration = require __DIR__ . '/../../database/migrations/create_ferry_tables.php';
+    app(\Illuminate\Database\Migrations\Migrator::class)->usingConnection(
+        $migration->getConnection(),
+        $migration->up(...),
+    );
+    $upstream = TestCase::makeUpstream();
+    $database = $upstream->getConnection();
+    $database->beginTransaction();
+    TestCase::makeReplica(['upstream_id' => $upstream->id]);
+
+    expect(DB::connection('sqlite')->table('jobs')->count())
+        ->toBe(0)
+        ->and($database->getSchemaBuilder()->hasTable('jobs'))
+        ->toBeFalse();
 
     $commit ? $database->commit() : $database->rollBack();
 
-    expect($calls)
-        ->toBe($commit ? 1 : 0)
-        ->and($sync->fresh()->name)
-        ->toBe($commit ? 'Renamed' : 'Test synchronization')
-        ->and($sync->fresh()->schema[0]->target)
-        ->toBe($commit ? 'reference_id' : 'external_id')
-        ->and($database->getSchemaBuilder()->hasColumn($sync->destination, 'reference_id'))
-        ->toBe($commit)
-        ->and($database->getSchemaBuilder()->hasColumn($sync->destination, 'external_id'))
-        ->toBe(!$commit);
-})->with(['commit' => [true], 'rollback' => [false]]);
+    expect(DB::connection('sqlite')->table('jobs')->count())
+        ->toBe($commit ? 2 : 0)
+        ->and(Replica::query()->count())
+        ->toBe($commit ? 1 : 0);
+})->with(['commit' => true, 'rollback' => false]);

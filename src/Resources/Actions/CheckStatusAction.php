@@ -4,9 +4,10 @@ namespace PHPinnacle\Ferry\Resources\Actions;
 
 use Filament\Actions\Action;
 use Filament\Notifications\Notification;
-use PHPinnacle\Ferry\Models\Connection;
-use PHPinnacle\Ferry\Models\Sync;
-use PHPinnacle\Ferry\Services\Connectors\ConnectorManager;
+use PHPinnacle\Ferry\Enums\ConnectorStatus;
+use PHPinnacle\Ferry\Models\Replica;
+use PHPinnacle\Ferry\Models\Upstream;
+use PHPinnacle\Ferry\Services\ConnectorManager;
 use Throwable;
 
 class CheckStatusAction
@@ -17,12 +18,12 @@ class CheckStatusAction
             ->label($label)
             ->icon('phosphor-arrows-clockwise')
             ->iconButton()
-            ->action(function (ConnectorManager $manager, Connection|Sync $record) {
+            ->action(function (ConnectorManager $connectors, Upstream|Replica $record) {
                 try {
-                    $manager->checkStatus($record);
+                    $connectors->checkStatus($record);
 
                     Notification::make()
-                        ->title($record->connector?->status?->getLabel())
+                        ->title(($record->connector->status ?? ConnectorStatus::Unknown)->getLabel())
                         ->send();
                 } catch (Throwable $exception) {
                     Notification::make()

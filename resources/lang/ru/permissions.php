@@ -1,7 +1,7 @@
 <?php
 
 return [
-    'connection' => [
+    'upstream' => [
         'create' => 'Создать',
         'update' => 'Обновить',
         'delete' => 'Удалить',
@@ -9,7 +9,7 @@ return [
         'view' => 'Просмотр',
         'view_any' => 'Просмотр списка',
     ],
-    'sync' => [
+    'replica' => [
         'create' => 'Создать',
         'update' => 'Обновить',
         'delete' => 'Удалить',

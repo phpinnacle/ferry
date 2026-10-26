@@ -2,36 +2,41 @@
 
 namespace PHPinnacle\Ferry\Jobs;
 
-use PHPinnacle\Ferry\Services\StructureImporter;
+use PHPinnacle\Ferry\Services\StructureAdapterRegistry;
 
 class PrepareStructureJob extends StructureJob
 {
-    public function handle(StructureImporter $importer): void
+    public function handle(StructureAdapterRegistry $adapters): void
     {
-        $connection = $this->connection();
+        $structure = $this->structure();
 
-        if ($connection === null) {
+        if ($structure === null) {
             return;
         }
 
-        if ($connection->storage_map === null || $connection->type_map === null) {
-            $plan = $importer->prepare($connection);
+        $key = $structure->upstream->adapter;
+        if ($key === null) {
+            return;
+        }
 
-            if (!$connection->planStructure($plan['storageMap'], $plan['typeMap'], $plan['total'])) {
+        if ($structure->readPlan() === null) {
+            $plan = $adapters->getOrFail($key)->prepare($structure->upstream);
+
+            if (!$structure->plan($plan)) {
                 return;
             }
         }
 
-        if ($connection->total === 0) {
-            FinishStructureJob::dispatch($this->connectionId, $this->runId);
+        if ($structure->estimated === 0) {
+            FinishStructureJob::dispatch($this->upstreamId, $this->runId);
 
             return;
         }
 
         FetchStructureChunkJob::dispatch(
-            $this->connectionId,
+            $this->upstreamId,
             $this->runId,
-            $connection->processed,
+            $structure->processed,
         );
     }
 }

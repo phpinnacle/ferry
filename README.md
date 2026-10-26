@@ -2,20 +2,20 @@
 
 [![Latest Version on Packagist](https://img.shields.io/packagist/v/phpinnacle/ferry.svg?style=flat-square)](https://packagist.org/packages/phpinnacle/ferry)
 
-Ferry manages 1C database connections, source structure snapshots, synchronization mappings, and Kafka Connect connectors in Filament. Its forms use reusable `FieldMapping` and `FieldBinding` fields from Eidos.
+Ferry manages 1C upstream databases, source structure snapshots, replica mappings, and CDC origins in Filament. The built-in Kafka origin integrates Debezium and JDBC connectors through Kafka Connect. Its forms use reusable `FieldMapping` and `FieldBinding` fields from Eidos.
 
 ## Features
 
-- `Connection` model with an encrypted password that is never returned to the interface.
-- `ConnectionFactory` service that tests current (possibly unsaved) form values, always closes the temporary connection, and reports a sanitized result.
-- Queued structure preparation built on `phpinnacle/rosetta`, storing the semantic 1C metadata as `ConnectionMetadata` records.
-- Filament `ConnectionResource` with create/edit/list pages, "Test connection" and "Fetch structure" actions, a structure status badge and driver-based default port suggestion.
-- JSON Schema-based mapping and binding forms built on `phpinnacle/eidos`, with Ferry-owned transformation settings and logical column compatibility.
-- `Sync` model storing the source object, the field mapping schema and the generated destination table name.
-- Static destinations: application-registered tables such as customers or products that synchronizations fill instead of a generated table.
-- Filament `SyncResource` that selects an active connection with a ready structure and an object from the published snapshot, maps source fields to column names and keeps the physical destination table in sync with the record.
-- Kafka Connect connector management built on `phpinnacle/franz`: one Debezium source connector per connection, one JDBC sink connector per synchronization, with status and applied configuration stored in `Connector` models.
-- Policy-backed connection and synchronization management (`ConnectionPolicy`, `SyncPolicy`), custom database connection and optional tenancy.
+- `Upstream` model with an encrypted password that is never returned to the interface.
+- `UpstreamFactory` service that tests current (possibly unsaved) form values, always closes the temporary connection, and reports a sanitized result.
+- Queued structure preparation through a replaceable `StructureAdapter`, with a Rosetta adapter for 1C and ready JSON Schemas stored as `StructureItem` records.
+- Filament `UpstreamResource` with create/edit/list pages, "Test Upstream" and "Fetch structure" actions, a structure status badge and configuration forms supplied by the selected driver.
+- JSON Schema-based mapping and binding forms built on `phpinnacle/eidos`, with Ferry-owned transformation settings and shared JSON Schema compatibility.
+- `Replica` model storing the source object, the field mapping schema and the generated destination table name.
+- Static destinations: application-registered tables such as customers or products that replicas fill instead of a generated table.
+- Filament `ReplicaResource` that selects an active upstream with a ready structure and an object from the published snapshot, maps source fields to column names and keeps the physical destination table in sync with the record.
+- Kafka Connect connector management built on `phpinnacle/franz`: one Debezium source connector per upstream, one JDBC sink connector per replica, with status and applied configuration stored in `Connector` models.
+- Policy-backed upstream and replica management (`UpstreamPolicy`, `ReplicaPolicy`), custom database connection and optional tenancy.
 
 ## Installation
 
@@ -25,11 +25,11 @@ php artisan vendor:publish --tag="phpinnacle-ferry-migrations"
 php artisan migrate
 ```
 
-The package publishes a single `create_ferry_tables` migration for connections, metadata, synchronizations and connectors.
+The package publishes a single `create_ferry_tables` migration for fresh installations. It creates `connectors`, `upstreams`, `structures`, `structure_items`, and `replicas` on the configured Ferry connection. Rollback drops these service tables and preserves replica destination tables. The required `upstreams.origin` column stores the selected origin configuration key without a database default.
 
-Register `FerryPlugin::make()` in the target Filament panel. Publish `phpinnacle-ferry-config` when using a non-default database connection, tenant model or timeout. Structure preparation runs on the queue, so a worker must be running.
+Register `FerryPlugin::make()` in the target Filament panel. Publish `phpinnacle-ferry-config` when using a non-default database connection, tenant model or timeout. Structure preparation runs on the application queue. Connector operations use the application queue connection and the `ferry` queue; run `php artisan queue:work --queue=ferry --timeout=120` alongside the application worker.
 
-Connector management talks to Kafka Connect over PSR-18, so the application binds the transport it prefers. Kafka dependencies are resolved when a connector operation begins; constructing observers or opening a synchronization form does not initialize them:
+Connector management talks to Kafka Connect over PSR-18, so the application binds the transport it prefers. Kafka dependencies are resolved when a connector operation begins; constructing observers or opening a replica form does not initialize them:
 
 ```php
 use GuzzleHttp\Client;
@@ -43,61 +43,80 @@ $this->app->bind(RequestFactoryInterface::class, HttpFactory::class);
 $this->app->bind(StreamFactoryInterface::class, HttpFactory::class);
 ```
 
-## Source structure
+Upstreams store driver-specific settings in `config`, cast as `encrypted:array` in a `text` column and hidden from model serialization. `Driver::schema()` supplies the Filament fields for the selected database driver; changing the driver during creation resets its configuration and applies its default port. The edit form keeps `driver` and `origin` read-only while allowing connection settings to change. PostgreSQL offers `schema` and an optional `sslmode` selector backed by `Enums\SSLMode`: `disable`, `allow`, `prefer`, `require`, `verify-ca`, and `verify-full`. The selected mode remains a native string in the saved configuration and Laravel credentials; leaving it blank keeps the driver's default behavior. Editing keeps the saved password when its field is left blank. `Upstream::credentials()` combines the configuration with the selected driver for Laravel's connection factory, including driver-specific options.
 
-Creating a connection, or changing any of its credentials, starts a new preparation run: the connection switches to `StructureStatus::Preparing` and `PrepareStructureJob` is dispatched after the database transaction commits. Only the connection id and the run id travel through the queue; credentials never do.
+## Upstream structure
 
-The run reads the source in bounded chunks and writes them into a draft revision. The published snapshot is replaced only once the whole draft is complete, so a failed refresh never damages the previous one. A source without Rosetta-supported objects is a valid empty snapshot.
+Every upstream owns one `Models\Structure`, available through `$upstream->structure`. It stores the preparation status, revision, run id, progress and adapter context on the Ferry database connection. The nullable `Upstream.adapter` stores the selected structure adapter key. The form offers **1C Rosetta** (`rosetta`) and an empty **Do not read structure** option, with no default selection. Without an adapter, the structure stays `StructureStatus::Pending`, has no run ID, queues no preparation jobs, and hides the preparation action. Connection settings can still be tested independently. The adapter can be selected only during creation and remains read-only on the edit form, including an empty selection, like driver and origin. Changing connection settings while an adapter is selected starts a new preparation run after the database transaction commits. Jobs carry the upstream id, run id and chunk offset; credentials never travel through the queue.
+
+The run reads the source in bounded chunks and writes them into a draft revision. The published snapshot is replaced only once the whole draft is complete, so a failed refresh never damages the previous one. A source without supported objects is a valid empty snapshot.
 
 ```php
 use PHPinnacle\Ferry\Enums\StructureStatus;
-use PHPinnacle\Ferry\Models\Connection;
+use PHPinnacle\Ferry\Models\Upstream;
 
-$connection = Connection::query()
+$upstream = Upstream::query()
     ->where('is_active', true)
-    ->where('status', StructureStatus::Ready)
+    ->whereRelation('structure', 'status', StructureStatus::Ready)
     ->firstOrFail();
 
-foreach ($connection->publishedMetadata()->get() as $object) {
-    $object->kind;       // PHPinnacle\Rosetta\Enums\MetadataKind
-    $object->system;     // array<string, PHPinnacle\Rosetta\Contracts\Field>
-    $object->properties; // list<PHPinnacle\Rosetta\Data\MetadataProperty>
-    $object->values;     // list<PHPinnacle\Rosetta\Data\EnumerationValue>
-    $object->children;   // document tabular sections
+foreach ($upstream->structure->publishedItems()->get() as $object) {
+    $object->schema;     // PHPinnacle\Eidos\Forms\JsonSchema
+    $object->key_column; // physical source key
+    $object->values;     // list<array{id: string, label: string, title: string}>
+    $object->children;   // child StructureItem models
 }
 ```
 
-Property comments read by Rosetta are preserved in the snapshot JSON and restored as `MetadataProperty::$comment`. Existing properties without a comment remain readable.
+Each `StructureItem` stores a ready object JSON Schema in `schema`. Its `properties` keys are physical source column names, used directly in mappings and connector configuration. Types, bounds, titles and descriptions are prepared by the adapter. `field($source)` returns the logical `JsonSchema` without presentation annotations. Source keys come from `key_column`, rather than a package-wide 1C constant. Optional `code`, `kind`, `reference_id` and `values` preserve source metadata as native scalar values and arrays. See [JSON Schema extensions](#json-schema-extensions) for the complete annotation contract.
 
-Ferry interprets Rosetta properties as independently mappable physical source columns. Single references use `_fld…rref`; system fields already contain their physical names. Composite properties expand into separate source cards for the discriminator (`_type`), any boolean (`_l`), number (`_n`), date/time (`_t`), string (`_s`), and reference identifier (`_rrref`) columns. A reference type code (`_rtref`) is included when the composite permits multiple reference targets. A composite with one reference target uses `_rrref` without `_rtref`. Nested type definitions are expanded before resolving columns.
+Built-in field schemas store a full translation key in `x-ferry-trans`. The interface resolves it in the current locale with priority over `title`. Other fields use their stored title. The adapter sets `priority` for source ordering; the interface sorts equal priorities by title. The Rosetta adapter gives catalogs priority over other objects and puts obsolete titles starting with `(` last.
 
-Each card has its own type, transforms, and optional destination. Bind any subset: choosing an identifier does not automatically select its discriminator or reference type code. Debezium exposes the binary discriminator and type code as fixed-length hexadecimal strings of 2 and 8 characters. Reference identifiers retain Ferry's reference type. The property metadata remains unchanged; persisted source identifiers use the property id for ordinary fields and `<property-id>:<component>` for composite columns, such as `supplier-id:rrref`. These identifiers survive physical column renames. `ConnectionMetadata::mappableFields()`, `field($source)`, and `physicalColumn($source)` all resolve the same source-column definitions.
+The Rosetta adapter converts properties into independently mappable physical source columns before persistence. Single references use `_fld…rref`; system fields already contain their physical names. Composite properties expand into separate source cards for the discriminator (`_type`), any boolean (`_l`), number (`_n`), date/time (`_t`), string (`_s`), and reference identifier (`_rrref`) columns. A reference type code (`_rtref`) is included when the composite permits multiple reference targets. A composite with one reference target uses `_rrref` without `_rtref`. Nested type definitions are expanded before resolving columns.
 
-`publishedMetadata()` returns the root objects of the published revision; `publishedObject($source)` finds one of them by its external id and returns `null` when absent. Use the `metadata()` relation to reach every stored revision. `is_active` states whether the connection may be used at all, while `status` only reports whether its local structure is ready.
+Each card has its own type, transforms, and optional destination. Bind any subset: choosing an identifier does not automatically select its discriminator or reference type code. Debezium exposes the binary discriminator and type code as fixed-length hexadecimal strings of 2 and 8 characters. Reference identifiers use UUID string schemas annotated with `x-ferry-reference`. Persisted source identifiers are physical column names, such as `_fld17_rrref`. A renamed source column requires updating its bindings. `StructureItem::mappableFields()` returns JSON Schema definitions keyed by physical column name, with localized titles and preserved descriptions. `field($source)` reads the logical field schema without presentation annotations.
 
-When a run fails for good, the connection switches to `StructureStatus::Failed`, keeps its previous snapshot, stores a sanitized description in `last_error` and reports the original exception through `report()`. An interrupted run that stops sending heartbeats is retired on the next preparation attempt. `Connection::canPrepareStructure($staleAfter)` and `prepareStructure($staleAfter)` accept the staleness threshold in seconds; the panel action reads it from `phpinnacle-ferry.structure.stale_after`.
+`Structure::publishedItems()` returns the root objects of the published revision; `publishedItem($source)` finds one of them by its external id and returns `null` when absent. Use `$upstream->structure->items()` to reach every stored revision. `$upstream->is_active` states whether the upstream may be used, while `$upstream->structure->status` reports whether its local structure is ready.
 
-## Synchronizations
+When a run fails for good, its structure switches to `StructureStatus::Failed`, keeps its previous snapshot and reports the original exception through `report()`. Connection tests return a notification without persisting their result. Structure progress uses `processed` and `estimated`; progress updates advance the structure’s own `updated_at`, which detects interrupted runs independently of upstream edits. `Structure::canPrepare($staleAfter)` and `prepare($staleAfter)` accept the staleness threshold in seconds; the panel action reads it from `phpinnacle-ferry.structure.stale_after`.
 
-A synchronization selects a connection with a ready structure and one object from its published snapshot, then maps source fields (system fields by key, properties by id) to destination columns. For dynamic destinations, column names must be unique, start with a lowercase letter, contain only lowercase letters, digits and underscores, and differ from the reserved `idrref`. Saving the edit form requires at least one source binding or static value. Creating a dynamic synchronization creates a physical table named `{prefix}{code}` in the Ferry connection, with `idrref` as its primary key; saving its mapping adds nullable columns typed from the source, their transformations or static values.
+`Contracts\StructureAdapter` separates source reading from persistence. Adapters declare `getKey(): string` and `getLabel(): string` through Filament's `HasLabel` contract. `Services\StructureAdapterRegistry` registers adapters by `getKey()`, exposes their labels through `options()`, and resolves the saved key through `getOrFail()`. The package registers only `Services\RosettaStructureAdapter` under `rosetta`; there is no automatic fallback. Register additional implementations on the registry from an application service provider:
 
-String columns use the saved output schema: a positive `maxLength` produces `varchar(n)`, while an absent or zero limit produces `varchar` without a length restriction. Untransformed source strings use Rosetta's length; static strings have no inferred length limit. Transformations such as Mask that discard the source length therefore produce an unbounded column. Changes to string length use `ALTER COLUMN` and preserve stored values, including when the column is renamed. PostgreSQL rejects narrowing a column if existing values exceed the new limit, and the synchronization save rolls back.
+```php
+use PHPinnacle\Ferry\Services\StructureAdapterRegistry;
 
-Editing the mapping applies the difference to the table: new mappings add nullable columns, renames rename the column and removed mappings drop it. Deleting the synchronization drops the table after a data-loss confirmation. When a structure refresh removes the source object, removes a mapped field or changes a field type, the synchronization is paused automatically; the table and its stored rows stay untouched.
+$this->app->make(StructureAdapterRegistry::class)->register(
+    $this->app->make(CustomStructureAdapter::class),
+);
+```
 
-A change of logical column type drops and recreates that column, so it requires the same data-loss confirmation as removing a mapping.
+`prepare(Upstream)` returns a `Data\StructurePlan` with an estimated root count and adapter-owned serializable context. `read(Upstream, StructurePlan, $offset, $limit)` returns unsaved `StructureItem` roots with their `children` relation loaded. Jobs resolve the selected adapter for each preparation or chunk. Adapters close their source connections and do not save models, publish revisions or dispatch jobs.
 
-The model owns the dynamic table lifecycle regardless of the caller: creating a `Sync` creates its destination table, changing its `schema` applies the difference and deleting it drops the table, so a synchronization created from a command, job or seeder behaves exactly like one created from the panel. Saving state and table changes is transactional; eligible connectors update after commit.
+Jobs persist the returned objects through `Structure::importItems()`. The structure owns metadata identities, draft publication and stale-run checks. Rosetta’s storage and type maps are encoded only by `RosettaStructureAdapter`; other adapters can use different context. Rosetta fields and composite expansion stay inside the structure adapter under `Services\Rosetta`. Models, mappings, validation and Kafka configuration consume ready schemas. Other adapters return the same `StructureItem` contract without Rosetta types.
 
-`SyncSchema::fromBindings($object, $bindings, $registry, $destination, $transforms)` converts source-to-column bindings and optional field transforms and constants into typed mappings, checking source metadata and the optional static destination. Pass the `TransformRegistry` explicitly. Transform parameters must already be validated by their native Filament forms. Dynamic column-name validation belongs to `SyncSchema::validateColumns($columns, $fail)` and is applied by the form before conversion.
+`StructureItem` uses an `upstream_id` foreign key. The one-to-one `Structure` uses the same key as its primary key and exposes its items through `items()`.
 
-`Sync::brokenColumns($object, $destinationSchema)` and `hasValidSchema($object, $destinationSchema)` compare saved mappings with current declarations; `shouldResume($object, $destinationSchema)` applies the automatic-resume policy. Pass the static destination’s `PHPinnacle\Jason\Schema`, or `null` for a dynamic or unavailable destination. `schemaChanges()` plans additions, renames, removals, and string length alterations from the original and current typed mappings; `droppedColumns()` exposes removals for confirmation. Table updates use the same plan and preserve stored values on renames.
+## Replicas
 
-A pause requested by an administrator and a pause caused by a broken mapping are distinguished by `is_paused`. Saving the edit form resumes only a synchronization that was paused automatically and whose mapping is valid again; a pause requested through the pause action survives editing and requires the activate action. `ConnectorManager::activate()` refuses a synchronization whose mapping no longer matches its source or destination.
+A replica selects an upstream with a ready structure and one object from its published snapshot, then maps source fields (system fields by key, properties by id) to destination columns. For dynamic destinations, column names must be unique, start with a lowercase letter, contain only lowercase letters, digits and underscores, and differ from the reserved `idrref`. Saving the edit form requires at least one source binding or static value. Creating a dynamic replica creates a physical table named `{prefix}{code}` in the Ferry connection, with `idrref` as its primary key; saving its mapping adds nullable columns typed from the source, their transformations or static values.
+
+String columns use the saved output schema: a positive `maxLength` produces `varchar(n)`, while an absent or zero limit produces `varchar` without a length restriction. Untransformed source strings use their saved input schema's length; static strings have no inferred length limit. Transformations such as Mask that discard the source length therefore produce an unbounded column. Changes to string length use `ALTER COLUMN` and preserve stored values, including when the column is renamed. PostgreSQL rejects narrowing a column if existing values exceed the new limit, and the replica save rolls back.
+
+Editing the mapping applies the difference to the table: new mappings add nullable columns, renames rename the column and removed mappings drop it. Deleting the replica requests cleanup after a data-loss confirmation; the worker removes its sink before dropping the dynamic table. When a structure refresh removes the source object, removes a mapped field or changes its saved schema, the replica is paused automatically; the table and its stored rows stay untouched.
+
+A change of SQL column type drops and recreates that column, so it requires the same data-loss confirmation as removing a mapping.
+
+The model owns dynamic table creation and schema changes regardless of the caller. Saving a configured mapping also builds the source and sink configurations through `Origin::make()`. The service saves both connectors and their owner associations in the same transaction as the replica. Connector observers dispatch jobs after that transaction commits; rollback discards the state and table changes without queueing connector operations. Deletion retains the owner until the worker removes its connector and drops the dynamic table.
+
+The form emits ready mapping rows, which `Data\FieldMapping::fromArray()` converts into typed mappings. `ReplicaSchema::assertValid($mappings, $destination)` checks their output schemas and the optional static destination. Transform parameters are validated by their native Filament forms. Dynamic column-name validation belongs to `ReplicaSchema::validateColumns($columns, $fail)` and is applied by the form.
+
+`Replica::brokenColumns($object, $destinationSchema)` and `hasValidSchema($object, $destinationSchema)` compare saved mappings with current declarations. Pass the static destination’s `PHPinnacle\Jason\Schema`, or `null` for a dynamic or unavailable destination. `schemaChanges()` plans additions, renames, removals, and string length alterations from the original and current typed mappings; `droppedColumns()` exposes removals for confirmation. Table updates use the same plan and preserve stored values on renames.
+
+The `status` field is the only replica lifecycle state. Pauses requested by an administrator or caused by a broken mapping both use `Pause`. Saving a paused replica preserves that status; resume it with the activate action once its mapping is valid. A replica remains `Pending` until its connector is created in the origin. The initial empty mapping is a draft and does not create connectors; saving its configured mapping queues deployment. Saving an active or paused replica updates its configuration without changing its requested pause state. Kafka configuration assembly rejects mappings that no longer match their source or destination.
 
 ## Static destinations
 
-A synchronization writes either into a generated `{prefix}{code}` table (dynamic) or into a table the application already owns (static). `DynamicDestination` and `StaticDestination` independently implement the `Destination` interface, which exposes presentation metadata and `connector($sync, $object, $topic, $transforms)`. Dynamic destinations use the synchronization's generated table name; static destinations describe the application's target and its mapping fields. Register static destinations on the plugin:
+A replica writes either into a generated `{prefix}{code}` table (dynamic) or into a table the application already owns (static). `DynamicDestination` and `StaticDestination` independently implement the `Destination` interface, which exposes presentation metadata, `getTable()`, `getConnectionName()`, `getPrimaryKey()`, and `getFixedValues()`. Origins consume this destination data and own the external replication configuration. Dynamic destinations use the replica's generated table name; static destinations describe the application's target and its mapping fields. Register static destinations on the plugin:
 
 ```php
 use PHPinnacle\Ferry\Destinations\StaticDestination;
@@ -119,31 +138,89 @@ FerryPlugin::make()->destinations(new StaticDestination(
 ));
 ```
 
-The readonly `key` identifies the destination in the persisted synchronization. `schema` accepts a `PHPinnacle\Jason\Schema` or a closure returning one, exposed through `getSchema()`. Use a flat object schema with scalar field types supported by `ColumnType`: `properties` declares columns, `title` supplies labels, and `required` identifies mandatory mappings.
+The readonly `key` identifies the destination in the persisted replica. `schema` accepts a `PHPinnacle\Jason\Schema` or a closure returning one, exposed through `getSchema()`. Use a flat object schema with `string`, `integer`, `number`, or `boolean` fields (optionally nullable): `properties` declares columns, `title` supplies labels, and `required` identifies mandatory mappings.
 
 `table`, `connection`, `primaryKey` and `fixedValues` configure the target independently of its schema. A `null` connection uses the Ferry connection. Fixed values are written into every row through `InsertField` transforms; JSON Schema `default` does not insert values.
 
 `Destination` extends Filament’s `HasLabel`, `HasIcon`, and `HasColor` contracts. Static destinations accept optional `icon` and `color` constructor arguments, and `label` may be a closure. Use label and schema closures for translations and catalogs that must reflect the current request. Dynamic destinations use their table name as the label and have no icon or color by default.
 
-`ColumnType::jsonSchema()` projects a logical type into the inline schema used by the mapping editor. References use `type: string`, `format: uuid`, `minLength: 36`, `maxLength: 36`, and `x-ferry-reference: true`; UUID strings without this annotation remain logical strings. Dates use the `date-time` format.
+The replica list resolves destinations through `DestinationFactory::resolve()` and displays them as badges using their labels, icons, and colors. Dynamic destinations display their table name. The list has no separate type column.
 
-`Sync.type` explicitly selects `DestinationType::Static` or `DestinationType::Dynamic` (the default). `Sync.destination` stores the registered key for static synchronizations or the generated table name for dynamic ones. `DestinationFactory::get($key)` returns the registered destination or `null`. Use `getOrFail($key)` when a static destination is required. `DestinationFactory::resolve($sync)` returns the registered static destination or a `DynamicDestination` for its generated table. `schemaFor($sync)` returns the registered static destination's schema, or `null` for a dynamic or unavailable destination. `Sync` initializes its dynamic destination table name from the configured prefix and code in its creating lifecycle event. The saved name stays unchanged when the prefix or code changes. `DynamicDestination` accepts that initialized table name and does not generate one; resolve dynamic destinations after the synchronization has been initialized. Static records retain their registered destination key.
+JSON Schema is the field contract throughout Ferry. References use `type: string`, `format: uuid`, `minLength: 36`, `maxLength: 36`, and `x-ferry-reference: true`. The annotation controls SQL storage and native text-transform availability; compatibility treats references like other UUID strings. Dates use the `date-time` format.
 
-Saving a static synchronization accepts only declared destination fields whose logical `ColumnType` accepts the transformed source or static value: types must match, except that `Integer` can feed `Decimal` and `Reference` can feed `String` without a Cast (`Reference` covers 1C references and identifiers). Saving and structure review use the same directional logical-type compatibility. Additional JSON Schema constraints are available to the mapping editor; they do not validate streamed records. Every required field must be mapped, no destination may be mapped twice, and the source key is available for explicit mapping like any other source field. Static sink connectors use `pk.mode: record_value` and the configured `primaryKey` as `pk.fields`; declare that field in the destination schema and mark it required. There is no automatic `_idrref` mapping for static destinations. Dynamic destinations keep their automatic source key and `record_key` mode. Ferry never creates, alters or drops a static table, and its sink connector upserts rows without propagating source deletions. Removing a registered destination causes the next structure review to pause its synchronizations and report their mappings as out of date; saving and activation remain blocked until it is registered again.
+`Replica.type` explicitly selects `DestinationType::Static` or `DestinationType::Dynamic` (the default). `Replica.destination` stores the registered key for static replicas or the generated table name for dynamic ones. `DestinationFactory::get($key)` returns the registered destination or `null`. Use `getOrFail($key)` when a static destination is required. `DestinationFactory::resolve($replica)` returns the registered static destination or a `DynamicDestination` for its generated table. `schemaFor($replica)` returns the registered static destination's schema, or `null` for a dynamic or unavailable destination. `Replica` initializes its dynamic destination table name from the configured prefix and code in its creating lifecycle event. The saved name stays unchanged when the prefix or code changes. `DynamicDestination` accepts that initialized table name and does not generate one; resolve dynamic destinations after the replica has been initialized. Static records retain their registered destination key.
 
-Synchronizations are created from the list page in a modal with the synchronization icon and a description of the next step. Name, Code, Connection, Object, and Destination appear directly in the modal without a section heading or frame. Creation saves an empty mapping in Pending status and redirects immediately to the edit page. Code, connection, object, and destination are immutable in that form; only the name and mapping can be edited. Required destination mappings are validated when saving the edit form, so static synchronizations can be created before configuring their fields. The resource has no separate create page.
+Saving a static replica accepts only declared destination fields compatible with the output JSON Schema. The mapping editor, saving and structure review use directional compatibility for types, nullable values, enum subsets, formats and string lengths. An `integer` can feed a `number`; a formatted string can feed plain text. UUID strings and references with the same constraints are compatible. Native static forms validate value formats; saved constants supply their native type, exact string length and enum value for compatibility checks. These schema checks do not validate streamed records. Every required field must be mapped, no destination may be mapped twice, and the source key is available for explicit mapping like any other source field. Static sink connectors use `pk.mode: record_value` and the configured `primaryKey` as `pk.fields`; declare that field in the destination schema and mark it required. There is no automatic `_idrref` mapping for static destinations. Dynamic destinations keep their automatic source key and `record_key` mode. Ferry never creates, alters or drops a static table, and its sink connector upserts rows without propagating source deletions. Removing a registered destination causes the next structure review to pause its replicas and report their mappings as out of date; saving and activation remain blocked until it is registered again.
 
-The synchronization form has one destination select: Dynamic followed by the registered static destinations. Selecting a different destination clears the field mapping; the saved synchronization keeps its explicit type and destination key. A dynamic synchronization lists every mappable 1C field with its title and physical column name and binds it to a column name with `FieldBinding`; a static one connects 1C fields to the fields declared by the destination with `FieldMapping`, which shows the logical types and required marks and refuses incompatible connections. Static destination mappings enable `withBuiltinStaticForms()` by default: unconnected destination cards show native fields derived from their JSON Schema, including string limits, enums, numeric inputs and Boolean toggles. Values retain their native types without a Cast. Unset optional fields are omitted when converting form state to synchronization mappings; Boolean `false` and numeric zero are preserved. Existing synchronizations with transformed constants retain the static-source editor so editing does not discard their transforms. Dynamic destinations keep the Add static value workflow for source cards and transforms. Synchronization constants remain subject to the synchronization schema's scalar value and destination type requirements.
+Replicas are created from the list page in a modal with the replica icon and a description of the next step. Name, Code, Upstream, Object, and Destination appear directly in the modal without a section heading or frame. Creation saves an empty mapping in Pending status and redirects immediately to the edit page. Code, upstream, object, and destination are immutable in that form; only the name and mapping can be edited. Required destination mappings are validated when saving the edit form, so static replicas can be created before configuring their fields. The resource has no separate create page.
 
-The connection, object, and destination selectors use native browser selects with unselectable placeholders. New synchronizations default to Dynamic, the first active connection with a ready structure in name order, and its first object in the displayed order. Changing the connection selects its first available object and clears the mapping. Empty option lists leave the corresponding selection unset. Both synchronization mapping editors use `dense()` for reduced spacing and `compact()` to show descriptions in title tooltips. Dense mode reserves one row for transforms so adding the first transform does not increase the card height; wrapped transforms can expand the card.
+The replica form has one destination select: Dynamic followed by the registered static destinations. Selecting a different destination clears the field mapping; the saved replica keeps its explicit type and destination key. A dynamic replica lists every mappable 1C field with its title and physical column name and binds it to a column name with `FieldBinding`; a static one connects 1C fields to the fields declared by the destination with `FieldMapping`, which shows the logical types and required marks and refuses incompatible connections. Static destination mappings enable `withBuiltinStaticForms()` by default: unconnected destination cards show native fields derived from their JSON Schema, including string limits, enums, numeric inputs and Boolean toggles. Values retain their native types without a Cast. Unset optional fields are omitted when converting form state to replica mappings; Boolean `false` and numeric zero are preserved. Existing replicas with transformed constants retain the static-source editor so editing does not discard their transforms. Dynamic destinations keep the Add static value workflow for source cards and transforms. Replica constants remain subject to the replica schema's scalar value and destination type requirements.
 
-Synchronization source schemas retain available Rosetta constraints through `ColumnType::jsonSchema($field)`. Strings with a positive length expose `maxLength`; fixed strings also expose the same `minLength`. Equal lower and upper limits are displayed as one value, such as `9`, instead of `9–9`. Zero or unknown length is unbounded. Non-negative numbers expose `minimum: 0`. Known positive scale becomes `multipleOf: 10^-scale`. When precision and scale are both known, the numeric range uses `exclusiveMaximum: 10^(precision-scale)` and, for signed numbers, its negative as `exclusiveMinimum`. Integer types and the decimal step exclude the endpoints and express the permitted values without rounding a decimal maximum full of nines. The editor shows these as schema constraints rather than generated descriptions. Unknown dimensions do not produce inferred bounds. Rosetta property comments populate `description` for their scalar field or every physical column of a composite field. Missing comments leave the description absent. Compact cards show comments in title tooltips; type metadata remains in schema constraints and is never appended to the comment.
+The upstream, object, and destination selectors use native browser selects with unselectable placeholders. New replicas default to Dynamic, the first active upstream with a ready structure in name order, and its first object in the displayed order. Changing the upstream selects its first available object and clears the mapping. Empty option lists leave the corresponding selection unset. Both replica mapping editors use `dense()` for reduced spacing and `compact()` to show descriptions in title tooltips. Dense mode reserves one row for transforms so adding the first transform does not increase the card height; wrapped transforms can expand the card.
 
-Date/time sources require an explicit Cast before connecting to a plain string destination in the static synchronization form. The reusable `FieldMapping` component keeps Eidos's more general [directional format compatibility](https://github.com/phpinnacle/eidos#compatibility-and-output-schemas).
+The Rosetta adapter prepares source constraints once when importing the structure. Numeric source schemas additionally retain exact storage dimensions in `x-ferry-precision` and `x-ferry-scale`; dynamic decimal columns use these values, with the existing defaults of 15 and 2 when absent. Strings with a positive length expose `maxLength`; fixed strings also expose the same `minLength`. Equal lower and upper limits are displayed as one value, such as `9`, instead of `9–9`. Zero or unknown length is unbounded. Non-negative numbers expose `minimum: 0`. Known positive scale becomes `multipleOf: 10^-scale`. When precision and scale are both known, the numeric range uses `exclusiveMaximum: 10^(precision-scale)` and, for signed numbers, its negative as `exclusiveMinimum`. Integer types and the decimal step exclude the endpoints and express the permitted values without rounding a decimal maximum full of nines. The editor shows these as schema constraints rather than generated descriptions. Unknown dimensions do not produce inferred bounds. Rosetta property comments populate `description` for their scalar field or every physical column of a composite field. Missing comments leave the description absent. Compact cards show comments in title tooltips; type metadata remains in schema constraints and is never appended to the comment.
+
+Date/time sources require an explicit Cast before connecting to a plain string destination in the static replica form. The reusable `FieldMapping` component keeps Eidos's more general [directional format compatibility](https://github.com/phpinnacle/eidos#compatibility-and-output-schemas).
+
+## JSON Schema extensions
+
+Ferry owns the following `x-ferry-*` annotations. Structure adapters write them
+into `StructureItem.schema`, whose property keys are physical column names.
+The reference marker can also be used in destination and transformation schemas.
+Jason preserves these annotations, and Eidos leaves their meaning to Ferry.
+
+| Annotation | Value | Scope and behavior |
+| --- | --- | --- |
+| `x-ferry-trans` | String | Full Laravel translation key for a source property label. Resolved in the current interface locale and takes priority over `title`. Used for built-in fields. |
+| `x-ferry-reference` | Boolean `true` | Marks native reference strings, including nullable strings. Rosetta references and identifiers use UUID strings with `format: "uuid"` and length 36. Dynamic SQL tables store annotated references as text, and native text transforms reject them. Mapping compatibility uses the UUID schema independently of this marker. The annotation does not convert values. |
+| `x-ferry-precision` | Integer | Optional total number of digits in a source number. Retains the exact storage dimension alongside standard JSON Schema numeric constraints. Dynamic decimal columns use it as their precision, defaulting to 15 when absent. |
+| `x-ferry-scale` | Integer | Optional number of fractional digits in a source number, including zero. Dynamic decimal columns use it as their scale, defaulting to 2 when absent. An unknown source scale is omitted. |
+
+`StructureItem::field($source)` removes `x-ferry-trans`, `title` and
+`description` before producing the logical
+schema saved in `FieldMapping.field`. Reference and numeric annotations remain.
+Dynamic decimal creation reads precision and scale from the saved output schema (`result` when present, otherwise the untransformed source schema), defaulting to 15 and 2 when absent.
+
+Example of a stored `StructureItem.schema`:
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "_code": {
+      "type": "string",
+      "title": "Code",
+      "x-ferry-trans": "phpinnacle-ferry::resources.replica.system_fields._code"
+    },
+    "_fld17_rrref": {
+      "type": "string",
+      "format": "uuid",
+      "minLength": 36,
+      "maxLength": 36,
+      "title": "Owner",
+      "x-ferry-reference": true
+    },
+    "_fld18_n": {
+      "type": "number",
+      "title": "Amount",
+      "minimum": 0,
+      "exclusiveMaximum": 100000000,
+      "multipleOf": 0.0001,
+      "x-ferry-precision": 12,
+      "x-ferry-scale": 4
+    }
+  }
+}
+```
+
+The item's table name, `key_column` and `priority` are model attributes, not
+JSON Schema extensions. For reusable presentation annotations such as
+`x-icon`, `x-color`, `x-badges` and `x-enum`, see
+[Eidos's extension reference](https://github.com/phpinnacle/eidos#json-schema-extensions).
 
 ## Transforms
 
-A transform changes data on its way to the destination as a Kafka Connect transform of the sink connector. Editor descriptions and execution handlers share a stable key but are registered separately. `Transformation` is an immutable description with Filament-style `label()`, `icon()`, `color()`, `description()`, and `schema()` methods. `key()` identifies it. It implements Filament's `HasLabel`, `HasIcon`, `HasColor`, and `HasDescription` contracts; icons and descriptions are optional.
+A transform describes an operation on data on its way to the destination. The selected origin supplies its execution; the Kafka origin compiles it into a Kafka Connect transform of the sink connector. Editor descriptions and execution handlers share a stable key but are registered separately. `Transformation` is an immutable description with Filament-style `label()`, `icon()`, `color()`, `description()`, and `schema()` methods. `key()` identifies it. It implements Filament's `HasLabel`, `HasIcon`, `HasColor`, and `HasDescription` contracts; icons and descriptions are optional.
 
 ### Editor descriptions
 
@@ -172,9 +249,9 @@ Transformation::make('replace')
     ->schema(fn () => [TextInput::make('replacement')->required()]);
 ```
 
-Labels, icons, descriptions, and colors accept values or closures. `color()` defaults to `primary` and accepts a Filament color name, a shade palette such as `Color::Emerald`, or `null`, styling source chips. The Add transform picker uses plain labels. `schema()` accepts an array of Filament components or a closure receiving the selected `?ConnectionMetadata $object` and the preceding `?JsonSchema $input`; `getSchema($object, $input)` returns fresh components for each form. Fluent methods return a new description, leaving the original unchanged.
+Labels, icons, descriptions, and colors accept values or closures. `color()` defaults to `primary` and accepts a Filament color name, a shade palette such as `Color::Emerald`, or `null`, styling source chips. The Add transform picker uses plain labels. `schema()` accepts an array of Filament components or a closure receiving the selected `?StructureItem $object` and the preceding `?JsonSchema $input`; `getSchema($object, $input)` returns fresh components for each form. Fluent methods return a new description, leaving the original unchanged.
 
-`inputSchema()` describes supported values using the same compatibility rules as `FieldMapping`: types, enums, directional formats, string lengths and array items. Alternatively, pass a predicate `fn (JsonSchema $input) => bool` to define custom compatibility checks. Without an input schema, a description accepts any input. `accepts($input)` checks a `PHPinnacle\Eidos\Forms\JsonSchema` value object directly, without projecting it to `ColumnType`.
+`inputSchema()` describes supported values using the same compatibility rules as `FieldMapping`: types, enums, directional formats, string lengths and array items. Alternatively, pass a predicate `fn (JsonSchema $input) => bool` to define custom compatibility checks. Without an input schema, a description accepts any input. `accepts($input)` checks a `PHPinnacle\Eidos\Forms\JsonSchema` value object directly.
 
 `outputSchema()` declares a fixed JSON Schema array or a callback receiving the full input schema and settings. For example, a string transform that preserves null values can declare:
 
@@ -190,20 +267,20 @@ use PHPinnacle\Eidos\Forms\JsonSchema;
 
 Each step consumes the preceding output schema. Cast replaces the value constraints with the selected scalar type and preserves nullability; repeated casts use that result. Trim, Substring and Mask accept strings, including formatted and nullable strings, but reject the `date-time` format and schemas with `x-ferry-reference: true`, which represent logical dates and references. Ordinary UUID strings remain supported. Their outputs retain nullability and discard the original format, enum, pattern and length bounds. Custom descriptions can preserve or establish guarantees their execution actually provides.
 
-Forms, menus and previews use descriptions without resolving execution handlers or requiring their configuration. Parameter validation in `FieldTransforms` runs the description's native Filament schema, including relative field rules. Synchronization mappings persist the final output JSON Schema as `result`; `FieldMapping::type()` derives its logical `ColumnType`, and `stringLength()` reads its maximum string length, including composed schemas. The final output of a source with a target must have a supported scalar column type.
+Forms, menus and previews use descriptions without resolving execution handlers or requiring their configuration. Parameter validation in `FieldTransforms` runs the description's native Filament schema, including relative field rules. Replica mappings persist the final output JSON Schema as `result`; `FieldMapping::sourceSchema()` exposes the saved input (or a schema inferred from a native static value), and `outputSchema()` returns the final schema without discarding constraints. `canMapTo($target)` checks destination compatibility; `stringLength()` reads the declared output length, including composed schemas. The final output of a source with a target must have a supported scalar type. `ReplicaTableManager` translates it into SQL columns; decimal precision and scale come from the output schema.
 
 ### Execution handlers
 
 Configure execution separately in `config/phpinnacle-ferry.php`. The default configuration includes handlers for all five supplied descriptions, including the optional editor choices:
 
 ```php
-use PHPinnacle\Ferry\Transforms\CastTransform;
-use PHPinnacle\Ferry\Transforms\FilterTransform;
-use PHPinnacle\Ferry\Transforms\MaskFieldTransform;
-use PHPinnacle\Ferry\Transforms\SubstringTransform;
-use PHPinnacle\Ferry\Transforms\TrimTransform;
+use PHPinnacle\Ferry\Origins\Kafka\Transforms\CastTransform;
+use PHPinnacle\Ferry\Origins\Kafka\Transforms\FilterTransform;
+use PHPinnacle\Ferry\Origins\Kafka\Transforms\MaskFieldTransform;
+use PHPinnacle\Ferry\Origins\Kafka\Transforms\SubstringTransform;
+use PHPinnacle\Ferry\Origins\Kafka\Transforms\TrimTransform;
 
-// phpinnacle-ferry.transforms
+// phpinnacle-ferry.kafka.transforms
 [
     'cast' => CastTransform::class,
     'filter' => FilterTransform::class,
@@ -213,21 +290,21 @@ use PHPinnacle\Ferry\Transforms\TrimTransform;
 ];
 ```
 
-Custom handlers implement `Contracts\TransformHandler`: `connector(string $name, string $field, array $params)` builds Kafka Connect settings for the owning source field. Handlers resolve through Laravel's container only when needed. Input/output JSON Schemas belong to the editor description; parameter validation belongs to its native Filament form.
+Custom handlers implement `Origins\Kafka\Contracts\TransformHandler`: `connector(string $name, string $field, array $params)` builds Kafka Connect settings for the owning source field. Handlers resolve through Laravel's container only when needed. Input/output JSON Schemas belong to the editor description; parameter validation belongs to its native Filament form.
 
 `TransformRegistry` stores the UI descriptions registered through the plugin. Its `get($key)`, `getOrFail($key)` and `all()` methods read that catalog. `resultSchema(JsonSchema $input, array $settings)` passes the full schema through the ordered chain and returns null for an incompatible step or an unavailable output. Forms use this registry without resolving handlers.
 
-`TransformFactory::handler($key)` and `handlerOrFail($key)` resolve handlers from configuration independently of the UI registry. `pipeline($sync, $object, keyColumn: Sync::ID_COLUMN, deletes: false, fixedValues: [])` returns the complete flat Kafka Connect transformation configuration: ordered aliases, `transforms.*` properties, and required tombstone predicates. It owns envelope unwrapping, source transforms, key/value renames, constants and their transforms, and destination fixed values, in that order. Pass `keyColumn: null` to use only explicit value mappings and omit the key rename, as static destinations do. Input validation in `SyncSchema` uses only `TransformRegistry`. Workers can execute saved transforms without resolving the UI registry or booting a Filament panel. Hiding a transform from the editor does not disable its saved pipelines; remove its handler configuration to make it unavailable at runtime.
+`Origins\Kafka\TransformFactory::handler($key)` and `handlerOrFail($key)` resolve handlers from configuration independently of the UI registry. `pipeline($replica, $object, keyColumn: Replica::ID_COLUMN, deletes: false, fixedValues: [])` returns the complete flat Kafka Connect transformation configuration: ordered aliases, `transforms.*` properties, and required tombstone predicates. It owns envelope unwrapping, source transforms, key/value renames, constants and their transforms, and destination fixed values, in that order. Pass `keyColumn: null` to use only explicit value mappings and omit the key rename, as static destinations do. Input validation in `ReplicaSchema` uses only `TransformRegistry`. Workers can execute saved transforms without resolving the UI registry or booting a Filament panel. Hiding a transform from the editor does not disable its saved pipelines; remove its handler configuration to make it unavailable at runtime.
 
 The transformation editor uses Common's `InlineBuilder`. Run `php artisan filament:assets` to publish the shared editor assets.
 
-Transform settings are ordered `['type' => 'mask', 'data' => ['replacement' => '***']]` entries; parameter values are strings, and `data` may be omitted when empty. Each source row in `Sync.schema` stores its ordered transforms and output `result` schema, such as `['type' => 'string', 'maxLength' => 100]`. There is one field transform catalog, without scopes. Native Filament forms validate parameters and type chains; `SyncSchema` checks destination compatibility. The sink applies source chains in schema order, after `unwrap` and before renames. Static values are inserted after renames, followed immediately by each constant’s transforms on its target field. Saving refreshes the sink connector; the shared source connector changes only when its capture configuration changes. Structure review pauses synchronizations with unavailable handlers or required source columns, and connector activation refuses them.
+Transform settings are ordered `['type' => 'mask', 'data' => ['replacement' => '***']]` entries; parameter values are strings, and `data` may be omitted when empty. Each source row in `Replica.schema` stores its ordered transforms and output `result` schema, such as `['type' => 'string', 'maxLength' => 100]`. There is one field transform catalog, without scopes. Native Filament forms validate parameters and type chains; `ReplicaSchema` checks destination compatibility. The sink applies source chains in schema order, after `unwrap` and before renames. Static values are inserted after renames, followed immediately by each constant’s transforms on its target field. Saving a configured replica refreshes its desired sink configuration; the shared source connector changes only when its capture configuration changes. Structure review pauses replicas whose required source columns are unavailable or incompatible. Kafka compiles the source and sink configurations before applying either one. A missing runtime handler raises the pipeline compiler’s `transform_missing` error during activation or update; there is no separate handler-availability check or automatic pause for configuration changes.
 
-`Sync.transforms` separately stores an ordered `list<TransformSetting>` for record-level settings in a JSON column, defaulting to an empty list. This attribute is storage only: the form does not edit it, and source capture, compatibility checks, and connector pipelines do not interpret or execute it.
+`Replica.transforms` separately stores an ordered `list<TransformSetting>` for record-level settings in a JSON column, defaulting to an empty list. This attribute is storage only: the form does not edit it, and source capture, compatibility checks, and connector pipelines do not interpret or execute it.
 
 ### Built-in transforms
 
-The built-in `CastTransform` casts a field to a `ColumnType`. It accepts unions of scalar types, including null, and rejects arrays and objects. `ColumnType::castType()` exposes its Kafka Connect type and is `null` for references and dates, which Kafka Connect cannot cast. The native Cast selector disables the current type using the output of preceding transforms, including nullable scalar inputs. Unknown inputs or unions with several non-null types keep every supported target available. Repeated casts can alternate between types.
+The built-in Cast transformation targets JSON Schema types: `string`, `integer`, `number`, and `boolean`. It accepts unions of scalar types, including null, and rejects arrays and objects. The Kafka adapter maps those targets to native types through `Origins\Kafka\Transforms\CastTransform::type()`. The selector disables the current unformatted type using the output of preceding transforms, including nullable scalar inputs. Formatted strings, references, unknown inputs and unions with several non-null types keep every target available. Casting removes the input format and constraints; repeated casts can alternate between types.
 
 **Replace null with default** controls Kafka's `replace.null.with.default`: it defaults to Yes and uses the default declared in the field schema, preserving null when no default exists. Choosing No stores `replace_null_with_default: "false"`; the default Yes remains implicit. The output schema remains nullable when the input is nullable, because a Kafka field default is not guaranteed.
 
@@ -249,7 +326,7 @@ The predicate runs at its position in the ordered chain, so preceding Trim or Ca
 
 The form stores `condition`, `mode`, and `missing_or_null_behavior` (`include`, `exclude`, or `fail`; default `include`). These settings configure [Confluent's `Filter$Value`](https://docs.confluent.io/kafka-connectors/transforms/current/filter-confluent.html). Kafka Connect checks JSONPath syntax; Ferry validates the required expression and enum settings. Confluent applies missing/null behavior to paths outside predicates; missing or null references inside `[?()]` are treated as undefined and do not match. Ferry emits a predicate, so those native predicate semantics apply. Filters skip tombstones through the negated `RecordIsTombstone` predicate, preserving Debezium deletions.
 
-The source connector captures fields with a target or transforms; unbound filter fields are excluded from destination writes by the sink whitelist. The form resets source settings when the connection, object or destination changes. Saved filters using the former `type`/`value` comparison parameters must be reconfigured as predicates; there is no automatic conversion of stored settings.
+The source connector captures fields with a target or transforms; unbound filter fields are excluded from destination writes by the sink whitelist. The form resets source settings when the upstream, object or destination changes. Saved filters using the former `type`/`value` comparison parameters must be reconfigured as predicates; there is no automatic conversion of stored settings.
 
 ### Source settings and transforms
 
@@ -266,7 +343,7 @@ use PHPinnacle\Ferry\Forms\FieldTransforms;
 ])
 ```
 
-`object()` accepts the selected `?ConnectionMetadata`, which is passed to transformation forms. `inputSchema(array|Closure)` supplies the original source property definition. The field passes this complete schema through `TransformRegistry::resultSchema()` to determine compatible additions. Mapping consumers use the same result in their `outputSchema()` callbacks for hints and connection checks. For static source settings, pass `fn () => $inputSchema()->toArray()` to `FieldTransforms::inputSchema()`; Eidos supplies this closure through the source-settings callback.
+`object()` accepts the selected `?StructureItem`, which is passed to transformation forms. `inputSchema(array|Closure)` supplies the original source property definition. The field passes this complete schema through `TransformRegistry::resultSchema()` to determine compatible additions. Mapping consumers use the same result in their `outputSchema()` callbacks for hints and connection checks. For static source settings, pass `fn () => $inputSchema()->toArray()` to `FieldTransforms::inputSchema()`; Eidos supplies this closure through the source-settings callback.
 
 An empty editor shows a muted `+ Transform` aligned with the source title, without a frame, shadow, background, or hover tooltip. Hovering the enabled plus button or Transform label, or focusing the editor, emphasizes the text and plus icon together. Empty footer space leaves them muted. In `FieldMapping`, it can start or complete a connection in either direction, including inverse mode. Only `+ Transform` opens the catalog in an empty editor. With transforms, a native Filament input frame contains a persistent `+` button and compact chips; its free space also opens the catalog. One row is reserved so the first chip does not change the input height. Further chips wrap while the add button stays on the first row. The Add transform button stays visible but disabled when no compatible transforms are available.
 
@@ -276,47 +353,93 @@ Transforms can repeat. Those with settings open a native form; others are added 
 
 `FieldTransforms` configures Common’s `InlineBuilder` with transformation blocks and owns the JSON Schema compatibility checks and string parameter contract. The shared editor owns ordered `type`/`data` state, native parameter forms, menus, chips and ordering. Neither mapping component interprets this format or requires a transformation registry.
 
-### Editing synchronization transforms
+### Editing replica transforms
 
-Synchronization source cards use the reusable [FieldTransforms editor](#source-settings-and-transforms), including before a source is connected or bound. Boolean sources initially offer Cast and Filter; casting to string enables the optional Trim, Substring, and Mask descriptions when registered.
+Replica source cards use the reusable [FieldTransforms editor](#source-settings-and-transforms), including before a source is connected or bound. Boolean sources initially offer Cast and Filter; casting to string enables the optional Trim, Substring, and Mask descriptions when registered.
 
-Submitted mappings and bindings contain every offered source, including its `transforms` and nullable `target`. The synchronization editor uses physical source column names such as `_fld17` as JSON Schema property keys. At the form boundary, Ferry translates those names to stable metadata IDs for `Sync.schema` and back when loading; saved bindings and transforms therefore survive physical column renames. The source/static row format and native values stay unchanged. Its native source settings also emit the original `field` snapshot and output `result` JSON Schema for structure review and table creation. Source settings are validated even without a target. Rows with neither a target nor transforms do not participate in capture, execution or structure compatibility checks. Static values have their own mapping controls. Transforms apply in chip order, and static connections are checked against the transformed source schema, so casting a string to boolean enables a boolean destination.
+Submitted mappings and bindings contain every offered source, including its `transforms` and nullable `target`. The replica editor uses physical source column names such as `_fld17` as JSON Schema property keys. The same names are stored directly in `Replica.schema`; renaming a source column requires updating its bindings and transforms. Source/static row kinds and native values stay unchanged. Its native source settings also emit the original `field` JSON Schema snapshot and output `result` JSON Schema for structure review and table creation. Source settings are validated even without a target. Rows with neither a target nor transforms do not participate in capture, execution or structure compatibility checks. Static values have their own mapping controls. Transforms apply in chip order, and static connections are checked against the transformed source schema, so casting a string to boolean enables a boolean destination.
 
-## Kafka Connect connectors
+## CDC origins
 
-Data actually moves through Kafka Connect. A connection owns a single Debezium PostgreSQL source connector named `ferry-source-{code}`, and every synchronization owns a JDBC sink connector named `ferry-sink-{code}`. Adding synchronizations never creates a second source connector: the shared one captures the union of the tables and columns of the connection's active and paused synchronizations through `table.include.list` and `column.include.list`, and its replication slot and publication are namespaced by connection code so connections never collide on a shared Kafka Connect cluster.
+With `driver: kafka`, data moves through Kafka Connect. An upstream owns a single Debezium PostgreSQL source connector named `ferry-source-{code}`, and every replica owns a JDBC sink connector named `ferry-sink-{code}`. Adding replicas never creates a second source connector: the shared one captures the union of the tables and columns of the upstream's saved replicas, including pending and paused replicas, through `table.include.list` and `column.include.list`, and its replication slot and publication are namespaced by upstream code so upstreams never collide on a shared Kafka Connect cluster.
 
-Pausing a synchronization keeps its table in that scope on purpose. The source connector keeps advancing the write-ahead log for the other synchronizations of the connection, so a table dropped from the capture scope would silently lose every change made while the sink was paused.
+Pausing a replica keeps its table in that scope on purpose. The source connector keeps advancing the write-ahead log for the other replicas of the upstream, so a table dropped from the capture scope would silently lose every change made while the sink was paused.
 
-`ConnectorManager` is the entry point and every operation is idempotent, since configuration is pushed with `PUT /connectors/{name}/config`. `SourceFactory` builds source configurations and supplies connector names and topics; each `Destination` builds its sink configuration. Destinations pass a ready destination-column whitelist and the complete `TransformFactory::pipeline()` configuration to `JdbcConnectorConfig`; the JDBC builder does not add, order, or interpret transformations. `ConnectorManager` applies the configurations, refreshes status and publishes snapshot signals through `SignalProducer`.
+Choose a named entry from [`origins`](#configuration) when creating an upstream. Ferry stores the key in `Upstream::$origin` and keeps it read-only in the edit form. The form requires an explicit selection, and programmatic creation must supply `origin`; neither the model nor the database assigns a default.
+
+`OriginFactory::create($name)` reads the named entry from `origins` and selects its implementation through a `match` on `driver`. The built-in `kafka` value creates `Origins\KafkaOrigin` with its own name and settings. `for($upstreamOrReplica)` resolves the saved origin, and `options()` lists configured names without initializing transports. Each factory call creates an independent origin.
+
+`PHPinnacle\Ferry\Contracts\Origin` builds an unsaved `Connector` through `make(Upstream|Replica)`, reusing the owner's existing connector when present. All other operations accept only `Connector`: `create`, `update`, `remove`, `start`, `pause`, and `status`. Status returns `ConnectorStatus`; Kafka task diagnostics are placed on the supplied connector without saving it. Origins do not persist models, associate owners or dispatch jobs.
+
+`ConnectorManager` owns association, transactions and lifecycle coordination. Panel actions call this service:
 
 ```php
-use PHPinnacle\Ferry\Services\Connectors\ConnectorManager;
+use PHPinnacle\Ferry\Services\ConnectorManager;
 
 $connectors = app(ConnectorManager::class);
+$connectors->activate($replica);
+$connectors->pause($replica);
+$connectors->restart($replica);
+$connectors->checkStatus($replica);
 
-$connectors->activate($sync);        // push both configs, resume them and mark the synchronization active
-$connectors->pause($sync);           // pause the sink connector while the source keeps capturing its table
-$connectors->restart($sync);         // restart the failed tasks of both connectors
-$connectors->delete($sync);          // delete the sink connector and rescope the source connector
-$connectors->refreshSource($record); // push the source configuration after a credential change
-$connectors->checkStatus($sync);   // update the sink Connector record
-$connectors->checkStatus($record); // update the source Connector record
+$replica->delete(); // Queue sink removal and source refresh.
+$upstream->delete(); // Queue all sinks, then the source, for removal.
 ```
 
-Both `Connection` and `Sync` store a nullable `connector_id`; their `connector` relation returns a `Connector` model, or `null` before any configuration has been applied or status checked. The model stores the Kafka Connect `name`, `status`, `error`, `checked_at` and the last successfully applied `config`. Configuration is a JSON object exposed as `array<string, string>`; because it includes database credentials, Laravel encrypts it in a `text` column using `encrypted:array` and excludes it from model serialization. A status check does not change the stored configuration.
+`SynchronizeConnectorsJob` reads current desired state rather than a serialized configuration. It locks the upstream row for the transaction, so concurrent workers serialize changes for that upstream. It applies the source configuration before sinks, preserves paused sinks, and pauses an existing source when no replicas remain. Jobs processed out of order cannot restore an older configuration. A connector status save does not enqueue configuration changes.
 
-A source connector failure concerns all synchronizations of its connection, while a sink connector failure concerns its synchronization alone. A connector that reports itself as running while one of its tasks has failed is recorded as failed together with the trace of that task, so a stalled transfer stays visible. Both states are shown as badges in the Filament tables and can be refreshed from there. Deleting a synchronization removes only its sink connector; the source connector is owned by the connection and is removed with it.
+Connector jobs use Laravel's configured default queue connection and the `ferry` queue. With the `database` driver, they use the application's standard `jobs` table, created by its Laravel queue migration. Ferry does not create queue tables or register a queue connection. Jobs are dispatched through `afterCommit()`: workers see committed settings, and rolled-back changes enqueue no work, including when Ferry uses a separate database connection. If enqueueing fails after commit, desired state remains saved; retry deployment with the restart action after restoring the queue. The worker makes up to five attempts, with retry delays of 5, 15, 60 and 120 seconds; exhausted jobs use Laravel's configured failed-job storage and can be retried with its queue commands. Configure the queue connection's `retry_after` above the job's 120-second timeout.
 
-Connectors pin their converters instead of relying on worker defaults. The sink unwraps Debezium envelopes, applies the configured transform pipeline and renames fields. Its `fields.whitelist` includes only its own mapped columns, constants and fixed values, so synchronizations reading the same source table do not write each other's columns.
+Requests may execute again if the worker stops after a remote success but before committing its result. Configuration application uses an idempotent PUT, and removing an absent connector succeeds. Upstream and replica rows are soft-deleted during cleanup and physically removed only after successful external removal. Their unique codes remain reserved until cleanup completes. Dynamic destination tables are dropped after sink removal; static tables are never dropped.
 
-Debezium only snapshots a source connector's tables once, when its replication slot is first created; widening `table.include.list`/`column.include.list` for an already running connector does not back-fill the rows that existed before the change. The source connector therefore always runs with `read.only=true` and `signal.enabled.channels=kafka`, and `ConnectorManager::activate()` compares the connector's `column.include.list` before and after pushing the new configuration. When the diff exposes new columns, including those of a newly captured table or an unbound field filter, it publishes an `execute-snapshot` signal for each affected table through its `SignalProducer`, keyed by the connector's `topic.prefix` as Debezium's Kafka signal channel requires. The very first synchronization of a connection never needs a signal, since Debezium's own initial snapshot already covers it.
+Kafka helpers live under `Origins\Kafka`. `SinkConfigFactory` receives `TransformFactory` in its constructor; `make($destination, $replica, $object, $topic)` builds sink settings from destination data. `SourceFactory` builds capture settings and exposes `newlyScopedTables($previousConfig, $config)` for snapshot scope changes. `KafkaConnectFactory` creates clients and signal producers from the supplied origin settings.
+
+Both `Upstream` and `Replica` store a nullable `connector_id`. A new upstream without replicas creates no connector. Checking status does not create one either. `Connector` stores its origin key, upstream id, external name, reported status, error and check timestamp. Its `config` is the desired configuration; `applied_config` is the last configuration successfully applied by the worker. Both configurations use encrypted arrays in TEXT columns and are hidden from serialization. Failed operations leave the desired configuration available for retry and record the connector error.
+
+A source connector failure concerns all replicas of its upstream, while a sink connector failure concerns its replica alone. A connector that reports itself as running while one of its tasks has failed is recorded as failed together with the trace of that task, so a stalled transfer stays visible. Both states are shown as badges in the Filament tables and can be refreshed from there.
+
+Connectors pin their converters instead of relying on worker defaults. The sink unwraps Debezium envelopes, applies the configured transform pipeline and renames fields. Its `fields.whitelist` includes only its own mapped columns, constants and fixed values, so replicas reading the same source table do not write each other's columns.
+
+Widening an existing connector's `table.include.list`/`column.include.list` does not back-fill existing rows. Ferry configures `read.only=true` and `signal.enabled.channels=kafka`; updates compare `applied_config` with the desired captured columns. New columns, including those of a newly captured table or an unbound field filter, trigger an `execute-snapshot` signal for each affected table, keyed by the connector's `topic.prefix`. A new source connector needs no signal because Debezium's initial snapshot covers its capture scope. A retry may repeat a snapshot signal; sinks use upserts, so repeated records update the same destination keys.
 
 ## Configuration
 
-`phpinnacle-ferry.connection` selects the database connection for Ferry's models and dynamic destination tables. Static destinations may select their own connection. `phpinnacle-ferry.target_host` optionally overrides the database host seen by the JDBC worker, leaving Laravel's connection settings unchanged. Connector activation supports PostgreSQL sources and PostgreSQL JDBC destinations.
+`phpinnacle-ferry.connection` selects the database connection for Ferry's models and dynamic destination tables. Static destinations may select their own connection. `phpinnacle-ferry.kafka.target_host` optionally overrides the database host seen by the JDBC worker, leaving Laravel's connection settings unchanged. `KafkaOrigin` rejects non-PostgreSQL upstreams. Destinations must also use PostgreSQL: the JDBC configuration always builds a `jdbc:postgresql` URL and does not validate the destination connection's driver.
 
-`phpinnacle-ferry.structure` tunes the preparation pipeline: `chunk_size` root objects per job, the job `timeout`, the retry `backoff` delays, and `stale_after` seconds before a silent run is considered interrupted. `phpinnacle-ferry.sync.table_prefix` sets the name prefix of synchronization destination tables. `phpinnacle-ferry.kafka_connect` points at the Kafka Connect REST API: `base_uri` is read from `FERRY_KAFKA_CONNECT_URL` and is required before any connector operation, `headers` are sent with every request. Configure HTTP timeouts on the application's PSR-18 client. `phpinnacle-ferry.kafka_connect.signal` configures the Kafka signal channel used for ad hoc incremental snapshots: `topic` and `bootstrap_servers` are read from `FERRY_KAFKA_SIGNAL_TOPIC` and `FERRY_KAFKA_BOOTSTRAP_SERVERS`, `group_id` defaults to `ferry-signal`, and `flush_timeout` bounds how long publishing a signal may block. Publishing signals requires the `ext-rdkafka` PHP extension.
+`phpinnacle-ferry.structure` tunes the preparation pipeline: `chunk_size` root objects per job, the job `timeout`, the retry `backoff` delays, and `stale_after` seconds before a silent run is considered interrupted. `phpinnacle-ferry.replica.table_prefix` sets the name prefix of replica destination tables.
+
+`phpinnacle-ferry.origins` is a map of named origins. Each entry declares a `driver`; the entry key is displayed in the form. The supported `kafka` driver also declares REST `base_uri`, HTTP `headers`, and Kafka `signal` settings. For example, the following fragment defines two named origins:
+
+```php
+'origins' => [
+    'kafka' => [
+        'driver' => 'kafka',
+        'base_uri' => env('FERRY_KAFKA_CONNECT_URL'),
+        'headers' => [],
+        'signal' => [
+            'topic' => env('FERRY_KAFKA_SIGNAL_TOPIC'),
+            'bootstrap_servers' => env('FERRY_KAFKA_BOOTSTRAP_SERVERS'),
+            'group_id' => 'ferry-signal',
+            'flush_timeout' => 5000,
+        ],
+    ],
+    'analytics' => [
+        'driver' => 'kafka',
+        'base_uri' => env('ANALYTICS_KAFKA_CONNECT_URL'),
+        'headers' => [],
+        'signal' => [
+            'topic' => env('ANALYTICS_KAFKA_SIGNAL_TOPIC'),
+            'bootstrap_servers' => env('ANALYTICS_KAFKA_BOOTSTRAP_SERVERS'),
+            'group_id' => 'ferry-signal',
+            'flush_timeout' => 5000,
+        ],
+    ],
+],
+```
+
+The shipped `kafka` origin reads the `FERRY_KAFKA_*` environment variables, including `FERRY_KAFKA_SIGNAL_GROUP_ID`. Kafka-specific runtime transformation handlers are configured separately under `phpinnacle-ferry.kafka.transforms`.
+
+`base_uri` is required before any connector operation, and `headers` accompany every REST request. Configure HTTP timeouts on the application's PSR-18 client. Each origin's `signal.topic`, `bootstrap_servers`, and `group_id` configure Debezium's Kafka signal channel; `flush_timeout` bounds publishing time in milliseconds. Publishing signals requires the `ext-rdkafka` PHP extension.
 
 ## Field mapping
 
@@ -324,12 +447,13 @@ Ferry uses Eidos's `PHPinnacle\Eidos\Forms\FieldMapping` and `FieldBinding` fiel
 
 Published mapping/binding translation overrides now belong under `phpinnacle-eidos::schema-forms.*`. Republish assets with `php artisan filament:assets`, scan Eidos views in the application theme, and rebuild the theme after updating.
 
-The synchronization form supplies source and destination schemas, transformation settings, and effective output schemas. Ferry owns logical column compatibility through `canConnectUsing()`, including interpretation of `x-ferry-reference: true`; Eidos treats application annotations as opaque metadata.
+The replica form supplies source and destination schemas, transformation settings, and effective output schemas. The editor, saving and structure review use JSON Schema compatibility directly. Eidos treats application annotations such as `x-ferry-reference` as opaque metadata; Ferry interprets them only at the SQL and native-transform boundaries.
 
 ## Testing
 
 ```bash
 vendor/bin/pest --no-coverage packages/ferry/tests
+node --test packages/eidos/tests/*.test.js
 node --test packages/common/tests/inline-builder.test.js
 ```
 

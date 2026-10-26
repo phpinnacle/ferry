@@ -2,18 +2,11 @@
 
 namespace PHPinnacle\Ferry;
 
-use Illuminate\Container\Container;
-use Illuminate\Contracts\Foundation\Application;
+use Illuminate\Contracts\Container\Container;
 use Illuminate\Support\Facades\Config;
-use PHPinnacle\Ferry\Contracts\SignalProducer;
-use PHPinnacle\Ferry\Services\Connectors\ConnectorManager;
-use PHPinnacle\Ferry\Services\Connectors\RdKafkaSignalProducer;
-use PHPinnacle\Franz\Client as ConnectClient;
-use Psr\Http\Client\ClientInterface;
-use Psr\Http\Message\RequestFactoryInterface;
-use Psr\Http\Message\StreamFactoryInterface;
-use ReflectionClass;
-use RuntimeException;
+use PHPinnacle\Ferry\Services\OriginFactory;
+use PHPinnacle\Ferry\Services\RosettaStructureAdapter;
+use PHPinnacle\Ferry\Services\StructureAdapterRegistry;
 use Spatie\LaravelPackageTools\Commands\InstallCommand;
 use Spatie\LaravelPackageTools\Package;
 use Spatie\LaravelPackageTools\PackageServiceProvider;
@@ -26,41 +19,18 @@ class FerryServiceProvider extends PackageServiceProvider
 
     public function packageRegistered(): void
     {
-        $this->app->bind(ConnectorManager::class, fn (Container $app) => new ReflectionClass(ConnectorManager::class)
-            ->newLazyProxy(fn () => $app->build(ConnectorManager::class)));
+        $this->app->singleton(StructureAdapterRegistry::class, function (Container $app) {
+            $registry = new StructureAdapterRegistry;
+            $registry->register($app->make(RosettaStructureAdapter::class));
 
-        $this->app->singleton(ConnectClient::class, function (Application $app) {
-            $baseUri = Config::get('phpinnacle-ferry.kafka_connect.base_uri');
-
-            if (!is_string($baseUri) || $baseUri === '') {
-                throw new RuntimeException('The "phpinnacle-ferry.kafka_connect.base_uri" config value is not set.');
-            }
-
-            /** @var array<string, string> $headers */
-            $headers = Config::array('phpinnacle-ferry.kafka_connect.headers');
-
-            return new ConnectClient(
-                $baseUri,
-                $app->make(ClientInterface::class),
-                $app->make(RequestFactoryInterface::class),
-                $app->make(StreamFactoryInterface::class),
-                headers: $headers,
-            );
+            return $registry;
         });
 
-        $this->app->singleton(SignalProducer::class, function () {
-            $bootstrapServers = Config::get('phpinnacle-ferry.kafka_connect.signal.bootstrap_servers');
+        $this->app->bind(OriginFactory::class, function () {
+            /** @var array<string, array{driver: string, ...}> $config */
+            $config = Config::array('phpinnacle-ferry.origins');
 
-            if (!is_string($bootstrapServers) || $bootstrapServers === '') {
-                throw new RuntimeException(
-                    'The "phpinnacle-ferry.kafka_connect.signal.bootstrap_servers" config value is not set.',
-                );
-            }
-
-            return new RdKafkaSignalProducer(
-                $bootstrapServers,
-                Config::integer('phpinnacle-ferry.kafka_connect.signal.flush_timeout'),
-            );
+            return new OriginFactory($this->app, $config);
         });
     }
 

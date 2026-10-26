@@ -3,22 +3,27 @@
 namespace PHPinnacle\Ferry\Tests;
 
 use Illuminate\Support\Facades\DB;
+use Mockery;
+use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Data\FieldMapping;
 use PHPinnacle\Ferry\FerryPlugin;
-use PHPinnacle\Ferry\Models\Connection;
-use PHPinnacle\Ferry\Models\ConnectionMetadata;
 use PHPinnacle\Ferry\Models\Connector;
-use PHPinnacle\Ferry\Models\Sync;
-use PHPinnacle\Ferry\Resources\Syncs\Schemas\SyncForm;
+use PHPinnacle\Ferry\Models\Replica;
+use PHPinnacle\Ferry\Models\StructureItem;
+use PHPinnacle\Ferry\Models\Upstream;
+use PHPinnacle\Ferry\Resources\Replicas\Schemas\ReplicaForm;
 use PHPinnacle\Ferry\Services\DestinationFactory;
-use PHPinnacle\Rosetta\Enums\FieldType;
-use PHPinnacle\Rosetta\Enums\MetadataKind;
-use PHPinnacle\Rosetta\Fields\ScalarField;
+use PHPinnacle\Ferry\Services\OriginFactory;
+use PHPinnacle\Ferry\Tests\Fakes\Origin;
+use PHPinnacle\Ferry\Tests\Fixtures\StructureItems;
 use Tests\TestCase as ApplicationTestCase;
 
+require_once __DIR__ . '/Fakes/Origin.php';
+require_once __DIR__ . '/Fixtures/StructureItems.php';
+
 /**
- * @phpstan-import-type CreateState from SyncForm
- * @phpstan-import-type EditState from SyncForm
+ * @phpstan-import-type CreateState from ReplicaForm
+ * @phpstan-import-type EditState from ReplicaForm
  */
 abstract class TestCase extends ApplicationTestCase
 {
@@ -26,90 +31,115 @@ abstract class TestCase extends ApplicationTestCase
      * @param CreateState&EditState $data
      * @return array<string, mixed>
      */
-    public static function mappedSyncAttributes(array $data, DestinationFactory $destinations): array
+    public static function mappedReplicaAttributes(array $data, DestinationFactory $destinations): array
     {
-        $attributes = SyncForm::forCreate($data, $destinations);
+        $attributes = ReplicaForm::forCreate($data, $destinations);
 
-        return [...$attributes, ...SyncForm::forUpdate($data, new Sync($attributes), $destinations)];
+        return [...$attributes, ...ReplicaForm::forUpdate($data, new Replica($attributes), $destinations)];
     }
 
     /**
      * @param  array<string, mixed>  $attributes
      * @param  array<string, mixed>  $state
      */
-    public static function makeConnection(array $attributes = [], array $state = []): Connection
+    public static function makeUpstream(array $attributes = [], array $state = []): Upstream
     {
-        $connection = Connection::create([
-            'name' => 'Test connection',
-            'code' => 'test-connection',
+        $upstream = Upstream::create([
+            'name' => 'Test upstream',
+            'code' => 'test-upstream',
+            'origin' => 'kafka',
+            'adapter' => 'rosetta',
             'driver' => 'pgsql',
-            'host' => 'localhost',
-            'port' => 5432,
-            'database' => 'db',
-            'username' => 'user',
-            'password' => 'secret',
+            'config' => [
+                'host' => 'localhost',
+                'port' => 5432,
+                'database' => 'db',
+                'username' => 'user',
+                'password' => 'secret',
+            ],
             'is_active' => true,
             ...$attributes,
         ]);
 
         if ($state !== []) {
-            $connection->forceFill($state)->save();
+            $upstream->structure->forceFill($state)->save();
         }
 
-        return $connection;
+        return $upstream;
     }
 
     /** @param array<string, mixed> $attributes */
-    public static function makeMetadata(Connection $connection, array $attributes = []): ConnectionMetadata
+    public static function makeItem(Upstream $upstream, array $attributes = []): StructureItem
     {
-        return ConnectionMetadata::create([
-            'connection_id' => $connection->id,
-            'external_id' => 'object-0',
-            'name' => '_reference0',
-            'code' => 1,
-            'kind' => MetadataKind::Reference,
-            'label' => 'Object 0',
-            'title' => 'Object 0',
-            'system' => ['_idrref' => new ScalarField(FieldType::Id)],
-            'properties' => [],
-            'values' => [],
-            'position' => 0,
-            'revision' => $connection->generation,
-            ...$attributes,
-        ]);
+        return tap(
+            StructureItems::make([
+                'upstream_id' => $upstream->id,
+                'external_id' => 'object-0',
+                'name' => '_reference0',
+                'code' => 1,
+                'kind' => 'reference',
+                'label' => 'Object 0',
+                'title' => 'Object 0',
+                'fields' => ['_idrref' => JsonSchema::fromArray([
+                    'type' => 'string',
+                    'format' => 'uuid',
+                    'x-ferry-reference' => true,
+                    'minLength' => 36,
+                    'maxLength' => 36,
+                ])],
+                'sources' => [],
+                'values' => [],
+                'position' => 0,
+                'revision' => $upstream->structure->generation,
+                ...$attributes,
+            ]),
+            static fn (StructureItem $item) => $item->save(),
+        );
     }
 
     /**
      * @param  array<string, mixed>  $attributes
      * @param  array<string, mixed>  $state
      */
-    public static function makeSync(array $attributes = [], array $state = []): Sync
+    public static function makeReplica(array $attributes = [], array $state = []): Replica
     {
-        if (!array_key_exists('connection_id', $attributes)) {
-            $attributes['connection_id'] = self::makeConnection()->id;
+        if (!array_key_exists('upstream_id', $attributes)) {
+            $attributes['upstream_id'] = self::makeUpstream()->id;
         }
 
-        $sync = Sync::create([
-            'name' => 'Test synchronization',
-            'code' => 'test-sync',
+        $replica = Replica::create([
+            'name' => 'Test replica',
+            'code' => 'test-replica',
             'source' => 'object-0',
             'schema' => [
-                new FieldMapping('_idrref', 'external_id', new ScalarField(FieldType::Id)),
+                new FieldMapping('_idrref', 'external_id', JsonSchema::fromArray([
+                    'type' => 'string',
+                    'format' => 'uuid',
+                    'x-ferry-reference' => true,
+                    'minLength' => 36,
+                    'maxLength' => 36,
+                ])),
             ],
             ...$attributes,
         ]);
 
         if ($state !== []) {
-            $sync->forceFill($state)->save();
+            $replica->forceFill($state)->save();
         }
 
-        return $sync;
+        return $replica;
     }
 
     /** @param array<string, mixed> $attributes */
-    public static function makeConnector(Connection|Sync $owner, array $attributes): Connector
+    public static function makeConnector(Upstream|Replica $owner, array $attributes): Connector
     {
-        $connector = Connector::create($attributes);
+        $connector = ($owner->refresh()->connector ?? new Connector)->fill([
+            'origin' => $owner instanceof Upstream ? $owner->origin : $owner->upstream->origin,
+            'config' => [],
+            ...$attributes,
+        ]);
+        $connector->upstream_id = $owner instanceof Upstream ? $owner->id : $owner->upstream_id;
+        $connector->save();
         $owner->recordConnector($connector);
 
         return $connector;
@@ -123,11 +153,12 @@ abstract class TestCase extends ApplicationTestCase
 
         config([
             'phpinnacle-ferry.connection' => null,
-            'phpinnacle-ferry.kafka_connect.base_uri' => 'http://kafka-connect.test',
-            'phpinnacle-ferry.kafka_connect.signal.topic' => 'ferry-signal',
-            'phpinnacle-ferry.kafka_connect.signal.bootstrap_servers' => 'kafka.test:9092',
-            'phpinnacle-ferry.kafka_connect.signal.group_id' => 'ferry-signal',
+            'phpinnacle-ferry.origins.kafka.base_uri' => 'http://kafka-connect.test',
+            'phpinnacle-ferry.origins.kafka.signal.topic' => 'ferry-signal',
+            'phpinnacle-ferry.origins.kafka.signal.bootstrap_servers' => 'kafka.test:9092',
+            'phpinnacle-ferry.origins.kafka.signal.group_id' => 'ferry-signal',
             'database.default' => 'sqlite',
+            'queue.default' => 'database',
             'database.connections.sqlite.database' => ':memory:',
         ]);
 
@@ -135,7 +166,17 @@ abstract class TestCase extends ApplicationTestCase
         DB::purge('sqlite');
         DB::reconnect('sqlite');
 
+        $this->loadLaravelMigrations();
+
         $migration = require __DIR__ . '/../database/migrations/create_ferry_tables.php';
         $migration->up();
+
+        $origin = new Origin;
+        $this->app->bind(OriginFactory::class, function ($app) use ($origin) {
+            $origins = Mockery::mock(OriginFactory::class, [$app, config('phpinnacle-ferry.origins')])->makePartial();
+            $origins->shouldReceive('create')->andReturn($origin);
+
+            return $origins;
+        });
     }
 }

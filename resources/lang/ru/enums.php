@@ -1,17 +1,17 @@
 <?php
 
 return [
-    'column_type' => [
-        'string' => 'Строка',
-        'reference' => 'Ссылка',
-        'integer' => 'Целое число',
-        'decimal' => 'Десятичное число',
-        'boolean' => 'Флаг',
-        'datetime' => 'Дата и время',
-    ],
     'driver' => [
         'pgsql' => 'PostgreSQL',
         'sqlsrv' => 'MS SQL Server',
+    ],
+    'ssl_mode' => [
+        'disable' => 'Отключить SSL',
+        'allow' => 'Разрешить SSL',
+        'prefer' => 'Предпочитать SSL',
+        'require' => 'Требовать SSL',
+        'verify-ca' => 'Проверять центр сертификации',
+        'verify-full' => 'Проверять центр сертификации и имя хоста',
     ],
     'structure_status' => [
         'pending' => 'Не подготовлено',
@@ -23,7 +23,7 @@ return [
         'dynamic' => 'Динамический',
         'static' => 'Статический',
     ],
-    'sync_status' => [
+    'replica_status' => [
         'pending' => 'Ожидает',
         'active' => 'Активна',
         'pause' => 'Пауза',

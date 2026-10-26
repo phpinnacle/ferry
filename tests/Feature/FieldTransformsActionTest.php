@@ -22,7 +22,7 @@ require_once __DIR__ . '/../Fixtures/SchemaHost.php';
 uses(TestCase::class);
 
 beforeEach(function () {
-    config(['phpinnacle-ferry.transforms' => []]);
+    config(['phpinnacle-ferry.kafka.transforms' => []]);
     $transforms = app(TransformRegistry::class);
     $transforms->register(Trim::make()->color('success'), MaskField::make()->color('warning'));
     $this->field = FieldTransforms::make('transforms')->label('Name')->inputSchema(['type' => 'string']);
@@ -401,7 +401,7 @@ it('preserves JSONPath predicates when a preceding cast changes type', function 
     ($this->action)(['block' => 'cast', 'index' => 0])->data(['data' => ['type' => $type]])->call();
 
     expect($this->field->getContainer()->getState()['transforms'][1]['data'])->toBe($params);
-})->with(['boolean', 'integer', 'decimal']);
+})->with(['boolean', 'integer', 'number']);
 
 it('uses the preceding cast output for the filter example', function () {
     $this->field->inputSchema(['type' => 'boolean']);
@@ -412,7 +412,7 @@ it('uses the preceding cast output for the filter example', function () {
         ->first(fn ($component) => $component instanceof Textarea && $component->getName() === 'condition');
 
     expect($condition()->getPlaceholder())->toBe('@ == true');
-    $this->field->state([['type' => 'cast', 'data' => ['type' => 'decimal']]]);
+    $this->field->state([['type' => 'cast', 'data' => ['type' => 'number']]]);
     expect($condition()->getPlaceholder())->toBe('@ >= 100.5');
 });
 

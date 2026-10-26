@@ -10,99 +10,33 @@ use Illuminate\Validation\ValidationException;
 use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Data\FieldMapping;
 use PHPinnacle\Ferry\Data\TransformSetting;
-use PHPinnacle\Ferry\Enums\ColumnType;
 use PHPinnacle\Ferry\Enums\FieldKind;
 use PHPinnacle\Ferry\FerryPlugin;
-use PHPinnacle\Ferry\Models\ConnectionMetadata;
-use PHPinnacle\Ferry\Models\Sync;
-use PHPinnacle\Ferry\Services\TransformFactory;
+use PHPinnacle\Ferry\Models\Replica;
+use PHPinnacle\Ferry\Origins\Kafka\TransformFactory;
+use PHPinnacle\Ferry\Origins\Kafka\Transforms\CastTransform;
+use PHPinnacle\Ferry\Origins\Kafka\Transforms\FilterTransform;
+use PHPinnacle\Ferry\Origins\Kafka\Transforms\MaskFieldTransform;
+use PHPinnacle\Ferry\Origins\Kafka\Transforms\SubstringTransform;
 use PHPinnacle\Ferry\Services\TransformRegistry;
 use PHPinnacle\Ferry\Tests\Fixtures\SchemaHost;
+use PHPinnacle\Ferry\Tests\Fixtures\StructureItems;
 use PHPinnacle\Ferry\Transformation;
 use PHPinnacle\Ferry\Transformations\Cast;
 use PHPinnacle\Ferry\Transformations\MaskField;
 use PHPinnacle\Ferry\Transformations\Substring;
 use PHPinnacle\Ferry\Transformations\Trim;
-use PHPinnacle\Ferry\Transforms\CastTransform;
-use PHPinnacle\Ferry\Transforms\FilterTransform;
-use PHPinnacle\Ferry\Transforms\MaskFieldTransform;
-use PHPinnacle\Ferry\Transforms\SubstringTransform;
-use PHPinnacle\Rosetta\Contracts\Field;
-use PHPinnacle\Rosetta\Enums\FieldType;
-use PHPinnacle\Rosetta\Fields\NumberField;
-use PHPinnacle\Rosetta\Fields\ScalarField;
-use PHPinnacle\Rosetta\Fields\StringField;
 use Tests\TestCase;
 
 require_once __DIR__ . '/../Fixtures/SchemaHost.php';
+
+require_once __DIR__ . '/../Fixtures/StructureItems.php';
 
 uses(TestCase::class);
 
 beforeEach(function () {
     FerryPlugin::make();
 });
-
-it('projects available Rosetta constraints without rounding numeric metadata', function (
-    Field $field,
-    array $expected,
-) {
-    expect(ColumnType::fromField($field)->jsonSchema($field))->toBe($expected);
-})->with([
-    'variable string' => [new StringField(64, false), ['type' => 'string', 'maxLength' => 64]],
-    'fixed string' => [new StringField(8, true), ['type' => 'string', 'maxLength' => 8, 'minLength' => 8]],
-    'unlimited string' => [new StringField(0, false), ['type' => 'string']],
-    'unknown string length' => [new StringField(null, false), ['type' => 'string']],
-    'signed decimal' => [
-        new NumberField(5, 2, false),
-        [
-            'type' => 'number',
-            'multipleOf' => 0.01,
-            'exclusiveMinimum' => -1000,
-            'exclusiveMaximum' => 1000,
-        ],
-    ],
-    'unsigned decimal' => [
-        new NumberField(5, 2, true),
-        [
-            'type' => 'number',
-            'minimum' => 0,
-            'multipleOf' => 0.01,
-            'exclusiveMaximum' => 1000,
-        ],
-    ],
-    'fractional digits only' => [
-        new NumberField(3, 3, false),
-        [
-            'type' => 'number',
-            'multipleOf' => 0.001,
-            'exclusiveMinimum' => -1,
-            'exclusiveMaximum' => 1,
-        ],
-    ],
-    'large decimal' => [
-        new NumberField(20, 2, false),
-        [
-            'type' => 'number',
-            'multipleOf' => 0.01,
-            'exclusiveMinimum' => -1_000_000_000_000_000_000,
-            'exclusiveMaximum' => 1_000_000_000_000_000_000,
-        ],
-    ],
-    'integer' => [
-        new NumberField(4, 0, true),
-        [
-            'type' => 'integer',
-            'minimum' => 0,
-            'exclusiveMaximum' => 10_000,
-        ],
-    ],
-    'unknown dimensions' => [new NumberField(null, null, true), ['type' => 'integer', 'minimum' => 0]],
-    'unknown scale' => [new NumberField(10, null, false), ['type' => 'integer']],
-    'unknown precision' => [
-        new NumberField(null, 2, false),
-        ['type' => 'number', 'multipleOf' => 0.01],
-    ],
-]);
 
 it('registers the built-in transforms through the UI registry independently of their handlers', function () {
     $registry = $this->app->make(TransformRegistry::class);
@@ -129,16 +63,16 @@ it('registers application transforms through the plugin', function () {
         ->toBe(['cast', 'filter', 'trim']);
 });
 
-it('casts a field to the selected column type', function (ColumnType $type, string $spec) {
+it('casts a field to the selected column type', function (string $type, string $spec) {
     $cast = new CastTransform;
 
     expect(
         Cast::make()
-            ->getOutputSchema(JsonSchema::fromArray(['type' => 'string']), ['type' => $type->value])
+            ->getOutputSchema(JsonSchema::fromArray(['type' => 'string']), ['type' => $type])
             ?->toArray(),
     )
-        ->toBe($type->jsonSchema())
-        ->and($cast->connector('cast_price', '_fld1', ['type' => $type->value]))
+        ->toBe(['type' => $type])
+        ->and($cast->connector('cast_price', '_fld1', ['type' => $type]))
         ->toBe([
             'cast_price' => [
                 'type' => 'org.apache.kafka.connect.transforms.Cast$Value',
@@ -146,28 +80,28 @@ it('casts a field to the selected column type', function (ColumnType $type, stri
             ],
         ]);
 })->with([
-    'string' => [ColumnType::String, '_fld1:string'],
-    'integer' => [ColumnType::Integer, '_fld1:int64'],
-    'decimal' => [ColumnType::Decimal, '_fld1:float64'],
-    'boolean' => [ColumnType::Boolean, '_fld1:boolean'],
+    'string' => ['string', '_fld1:string'],
+    'integer' => ['integer', '_fld1:int64'],
+    'decimal' => ['number', '_fld1:float64'],
+    'boolean' => ['boolean', '_fld1:boolean'],
 ]);
 
 it('uses each cast result as the input to the next cast without resolving handlers', function (
     string $intermediate,
-    ColumnType $result,
+    string $result,
 ) {
-    config(['phpinnacle-ferry.transforms' => []]);
+    config(['phpinnacle-ferry.kafka.transforms' => []]);
 
     expect(app(TransformRegistry::class)->resultSchema(JsonSchema::fromArray(['type' => 'string']), [
         ['type' => 'cast', 'data' => ['type' => $intermediate]],
-        ['type' => 'cast', 'data' => ['type' => $result->value]],
+        ['type' => 'cast', 'data' => ['type' => $result]],
     ])?->toArray())
-        ->toBe($result->jsonSchema());
+        ->toBe(['type' => $result]);
 })->with([
-    'integer to boolean' => ['integer', ColumnType::Boolean],
-    'decimal to integer' => ['decimal', ColumnType::Integer],
-    'integer to decimal' => ['integer', ColumnType::Decimal],
-    'integer to integer' => ['integer', ColumnType::Integer],
+    'integer to boolean' => ['integer', 'boolean'],
+    'number to integer' => ['number', 'integer'],
+    'integer to number' => ['integer', 'number'],
+    'integer to integer' => ['integer', 'integer'],
 ]);
 
 it('clears reference metadata when explicitly casting to a string', function () {
@@ -179,7 +113,7 @@ it('clears reference metadata when explicitly casting to a string', function () 
     $output = Cast::make()->getOutputSchema($input, ['type' => 'string']);
 
     expect($output->toArray())->toBe(['type' => ['string', 'null']]);
-    expect(ColumnType::fromJsonSchema($output))->toBe(ColumnType::String);
+    expect($output->singleType())->toBe('string');
     expect(Trim::make()->accepts($output))->toBeTrue();
 });
 
@@ -196,7 +130,7 @@ it('disables and rejects the current cast type in the native form', function (ar
 })->with([
     [['type' => 'string'], 'string'],
     [['type' => 'integer'], 'integer'],
-    [['type' => 'number'], 'decimal'],
+    [['type' => 'number'], 'number'],
     [['type' => 'boolean'], 'boolean'],
     [['type' => ['integer', 'null']], 'integer'],
 ]);
@@ -206,7 +140,12 @@ it('keeps all cast targets available when the current type is unknown or a union
         Cast::make()->getSchema(null, JsonSchema::fromArray($definition)),
     );
 
-    expect($schema->getComponent('type')->getEnabledOptions())->toBe(ColumnType::castableOptions());
+    expect(array_keys($schema->getComponent('type')->getEnabledOptions()))->toBe([
+        'string',
+        'integer',
+        'number',
+        'boolean',
+    ]);
 })->with([
     [[]],
     [['type' => ['string', 'number', 'null']]],
@@ -243,12 +182,12 @@ it('validates null replacement settings before dehydration', function () {
 });
 
 it('inserts a string constant without registering a transform', function () {
-    $sync = new Sync([
+    $replica = new Replica([
         'schema' => [
             new FieldMapping(null, 'type', null, static: 'Customer', kind: FieldKind::Static),
         ],
     ]);
-    $pipeline = new TransformFactory()->pipeline($sync, new ConnectionMetadata);
+    $pipeline = new TransformFactory()->pipeline($replica, StructureItems::make());
 
     expect($pipeline)->toMatchArray([
         'transforms' => 'unwrap,rename_keys,rename_values,field_0_0',
@@ -261,11 +200,11 @@ it('inserts a string constant without registering a transform', function () {
 it('casts a typed constant after inserting it', function () {
     $constant = true;
     $mapping = new FieldMapping(null, 'is_active', null, static: $constant, kind: FieldKind::Static);
-    $sync = new Sync(['schema' => [$mapping]]);
-    $transforms = app(TransformFactory::class)->pipeline($sync, new ConnectionMetadata);
+    $replica = new Replica(['schema' => [$mapping]]);
+    $transforms = app(TransformFactory::class)->pipeline($replica, StructureItems::make());
 
-    expect($mapping->type())
-        ->toBe(ColumnType::Boolean)
+    expect($mapping->outputSchema()?->singleType())
+        ->toBe('boolean')
         ->and($mapping->transforms)
         ->toBe([])
         ->and($transforms['transforms'])
@@ -326,16 +265,22 @@ it('masks a source field without applying the Apache transform to tombstones', f
     ]);
 });
 
-it('only applies string field transforms to string inputs', function (?ColumnType $type) {
-    foreach ([
-        Trim::make(),
-        Substring::make(),
-        MaskField::make(),
-    ] as $description) {
-        expect($description->accepts(JsonSchema::fromArray($type?->jsonSchema() ?? [])))
-            ->toBe($type === ColumnType::String);
+it('only applies text transforms to native string inputs', function (array $definition, bool $allowed) {
+    foreach ([Trim::make(), Substring::make(), MaskField::make()] as $description) {
+        expect($description->accepts(JsonSchema::fromArray($definition)))->toBe($allowed);
     }
-})->with([...ColumnType::cases(), null]);
+})->with([
+    'string' => [['type' => 'string'], true],
+    'nullable string' => [['type' => ['string', 'null']], true],
+    'ordinary UUID' => [['type' => 'string', 'format' => 'uuid'], true],
+    'reference' => [['type' => 'string', 'format' => 'uuid', 'x-ferry-reference' => true], false],
+    'date-time' => [['type' => 'string', 'format' => 'date-time'], false],
+    'integer' => [['type' => 'integer'], false],
+    'number' => [['type' => 'number'], false],
+    'boolean' => [['type' => 'boolean'], false],
+    'array' => [['type' => 'array'], false],
+    'unknown' => [[], false],
+]);
 
 it('dehydrates native settings forms into string parameters and omits an empty end', function (
     Transformation $transform,
@@ -495,7 +440,7 @@ it('builds editor descriptions without resolving execution handlers', function (
 });
 
 it('builds a configured pipeline without registering editor descriptions', function () {
-    config(['phpinnacle-ferry.transforms.headless' => FilterTransform::class]);
+    config(['phpinnacle-ferry.kafka.transforms.headless' => FilterTransform::class]);
     $handler = new FilterTransform;
     app()->bind(FilterTransform::class, fn () => $handler);
     $registry = new TransformRegistry;
@@ -504,12 +449,12 @@ it('builds a configured pipeline without registering editor descriptions', funct
         fn () => throw new LogicException('The worker must not resolve editor descriptions.'),
     );
     $factory = app(TransformFactory::class);
-    $sync = new Sync;
-    $sync->forceFill([
+    $replica = new Replica;
+    $replica->forceFill([
         'schema' => [new FieldMapping(
             '_marked',
             null,
-            new ScalarField(FieldType::Boolean),
+            JsonSchema::fromArray(['type' => 'boolean']),
             transforms: [new TransformSetting('headless', [
                 'mode' => 'exclude',
                 'condition' => '@ == true',
@@ -523,9 +468,9 @@ it('builds a configured pipeline without registering editor descriptions', funct
         ->and($factory->handler('headless'))
         ->toBe($handler)
         ->and(
-            $factory->pipeline($sync, new ConnectionMetadata([
-                'system' => ['_marked' => new ScalarField(FieldType::Boolean)],
-                'properties' => [],
+            $factory->pipeline($replica, StructureItems::make([
+                'fields' => ['_marked' => JsonSchema::fromArray(['type' => 'boolean'])],
+                'sources' => [],
             ]))['transforms.field_0_0.filter.condition'],
         )
         ->toBe("$[?(@['_marked'] == true)]");
@@ -542,12 +487,12 @@ it('persists and executes static chains on their destination without renaming', 
     $mapping = FieldMapping::fromArray($row);
     expect($mapping->jsonSerialize())
         ->toBe($row)
-        ->and($mapping->sourceType())
-        ->toBe(ColumnType::String)
-        ->and($mapping->type())
-        ->toBe(ColumnType::Integer);
+        ->and($mapping->sourceSchema()?->singleType())
+        ->toBe('string')
+        ->and($mapping->outputSchema()?->singleType())
+        ->toBe('integer');
     app()->forgetInstance(TransformRegistry::class);
-    $pipeline = app(TransformFactory::class)->pipeline(new Sync(['schema' => [$mapping]]), new ConnectionMetadata);
+    $pipeline = app(TransformFactory::class)->pipeline(new Replica(['schema' => [$mapping]]), StructureItems::make());
     expect($pipeline['transforms'])
         ->toBe('unwrap,rename_keys,rename_values,field_0_0,field_0_1')
         ->and($pipeline['transforms.field_0_0.static.field'])

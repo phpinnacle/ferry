@@ -14,16 +14,6 @@ enum ConnectorStatus: string implements HasColor, HasIcon, HasLabel
     case Paused = 'paused';
     case Failed = 'failed';
 
-    public static function fromConnectState(string $state): self
-    {
-        return match (strtoupper($state)) {
-            'RUNNING' => self::Running,
-            'PAUSED', 'STOPPED' => self::Paused,
-            'FAILED' => self::Failed,
-            default => self::Unknown,
-        };
-    }
-
     public function getColor(): string
     {
         return match ($this) {

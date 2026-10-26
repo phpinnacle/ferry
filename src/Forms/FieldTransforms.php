@@ -8,7 +8,7 @@ use Illuminate\Translation\PotentiallyTranslatedString;
 use PHPinnacle\Common\Forms\InlineBuilder;
 use PHPinnacle\Common\Forms\InlineBuilder\Block;
 use PHPinnacle\Eidos\Forms\JsonSchema;
-use PHPinnacle\Ferry\Models\ConnectionMetadata;
+use PHPinnacle\Ferry\Models\StructureItem;
 use PHPinnacle\Ferry\Services\TransformRegistry;
 use PHPinnacle\Ferry\Transformation;
 
@@ -19,7 +19,7 @@ use PHPinnacle\Ferry\Transformation;
  */
 class FieldTransforms extends InlineBuilder
 {
-    protected ?ConnectionMetadata $object = null;
+    protected ?StructureItem $object = null;
 
     /** @var Definition|Closure(): Definition */
     protected array|Closure $inputSchema = [];
@@ -57,14 +57,14 @@ class FieldTransforms extends InlineBuilder
         );
     }
 
-    public function object(?ConnectionMetadata $object): static
+    public function object(?StructureItem $object): static
     {
         $this->object = $object;
 
         return $this;
     }
 
-    public function getObject(): ?ConnectionMetadata
+    public function getObject(): ?StructureItem
     {
         return $this->object;
     }
@@ -97,8 +97,8 @@ class FieldTransforms extends InlineBuilder
         parent::setUp();
 
         $this->hiddenLabel();
-        $this->addActionLabel(__('phpinnacle-ferry::resources.sync.fields.add_transform'));
-        $this->placeholder(__('phpinnacle-ferry::resources.sync.fields.transform'));
+        $this->addActionLabel(__('phpinnacle-ferry::resources.replica.fields.add_transform'));
+        $this->placeholder(__('phpinnacle-ferry::resources.replica.fields.transform'));
         $this->blocks(function (self $component) {
             $registry = app(TransformRegistry::class);
 

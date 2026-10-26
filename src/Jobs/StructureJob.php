@@ -6,8 +6,8 @@ use Illuminate\Contracts\Queue\ShouldBeEncrypted;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Config;
-use PHPinnacle\Ferry\Models\Connection;
-use PHPinnacle\Ferry\Support\ConnectionErrorFormatter;
+use PHPinnacle\Ferry\Models\Structure;
+use PHPinnacle\Ferry\Models\Upstream;
 use Throwable;
 
 abstract class StructureJob implements ShouldBeEncrypted, ShouldQueue
@@ -21,7 +21,7 @@ abstract class StructureJob implements ShouldBeEncrypted, ShouldQueue
     public int $timeout;
 
     public function __construct(
-        public readonly string $connectionId,
+        public readonly string $upstreamId,
         public readonly string $runId,
     ) {
         $this->timeout = Config::integer('phpinnacle-ferry.structure.timeout');
@@ -40,22 +40,22 @@ abstract class StructureJob implements ShouldBeEncrypted, ShouldQueue
             report($exception);
         }
 
-        new Connection()
+        new Structure()
             ->getConnection()
-            ->transaction(function () use ($exception) {
-                $this->lockedConnection()?->failStructure(
-                    $exception !== null ? ConnectionErrorFormatter::format($exception) : null,
-                );
+            ->transaction(function () {
+                $this->lockedStructure()?->fail();
             });
     }
 
-    protected function connection(): ?Connection
+    protected function structure(): ?Structure
     {
-        return Connection::structureRun($this->connectionId, $this->runId)->first();
+        return Structure::run($this->upstreamId, $this->runId)->first();
     }
 
-    protected function lockedConnection(): ?Connection
+    protected function lockedStructure(): ?Structure
     {
-        return Connection::structureRun($this->connectionId, $this->runId)->lockForUpdate()->first();
+        Upstream::withTrashed()->whereKey($this->upstreamId)->lockForUpdate()->first();
+
+        return Structure::run($this->upstreamId, $this->runId)->lockForUpdate()->first();
     }
 }

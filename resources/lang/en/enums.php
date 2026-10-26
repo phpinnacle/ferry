@@ -1,17 +1,17 @@
 <?php
 
 return [
-    'column_type' => [
-        'string' => 'String',
-        'reference' => 'Reference',
-        'integer' => 'Integer',
-        'decimal' => 'Decimal',
-        'boolean' => 'Boolean',
-        'datetime' => 'Date and Time',
-    ],
     'driver' => [
         'pgsql' => 'PostgreSQL',
         'sqlsrv' => 'MS SQL Server',
+    ],
+    'ssl_mode' => [
+        'disable' => 'Disable SSL',
+        'allow' => 'Allow SSL',
+        'prefer' => 'Prefer SSL',
+        'require' => 'Require SSL',
+        'verify-ca' => 'Verify CA',
+        'verify-full' => 'Verify CA and hostname',
     ],
     'structure_status' => [
         'pending' => 'Not Prepared',
@@ -23,7 +23,7 @@ return [
         'dynamic' => 'Dynamic',
         'static' => 'Static',
     ],
-    'sync_status' => [
+    'replica_status' => [
         'pending' => 'Pending',
         'active' => 'Active',
         'pause' => 'Paused',

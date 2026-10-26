@@ -4,10 +4,11 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 use PHPinnacle\Ferry\Enums\DestinationType;
-use PHPinnacle\Ferry\Models\Connection;
-use PHPinnacle\Ferry\Models\ConnectionMetadata;
 use PHPinnacle\Ferry\Models\Connector;
-use PHPinnacle\Ferry\Models\Sync;
+use PHPinnacle\Ferry\Models\Replica;
+use PHPinnacle\Ferry\Models\Structure;
+use PHPinnacle\Ferry\Models\StructureItem;
+use PHPinnacle\Ferry\Models\Upstream;
 
 return new class extends Migration {
     public function up(): void
@@ -16,7 +17,10 @@ return new class extends Migration {
         Schema::create('connectors', function (Blueprint $table) {
             $table->uuid('id')->primary();
             $table->string('name')->unique();
+            $table->string('origin');
+            $table->uuid('upstream_id')->index();
             $table->text('config')->nullable();
+            $table->text('applied_config')->nullable();
             $table->string('status')->nullable()->index();
             $table->text('error')->nullable();
             $table->timestamp('checked_at')->nullable();
@@ -25,8 +29,8 @@ return new class extends Migration {
             $this->addTenancy($table);
         });
 
-        /** @see Connection */
-        Schema::create('connections', function (Blueprint $table) {
+        /** @see Upstream */
+        Schema::create('upstreams', function (Blueprint $table) {
             $table->uuid('id')->primary();
             $table
                 ->foreignIdFor(Connector::class, 'connector_id')
@@ -36,65 +40,64 @@ return new class extends Migration {
                 ->nullOnDelete();
             $table->string('name');
             $table->string('code')->unique();
+            $table->string('origin');
+            $table->string('adapter')->nullable();
             $table->string('driver');
-            $table->string('host');
-            $table->unsignedInteger('port');
-            $table->string('database');
-            $table->string('username');
-            $table->text('password');
-            $table->string('schema')->nullable();
-            $table->string('ssl_mode')->nullable();
+            $table->text('config');
             $table->boolean('is_active')->default(true);
-            $table->timestamp('last_tested_at')->nullable();
-            $table->boolean('last_test_passed')->nullable();
-            $table->string('status')->index();
-            $table->unsignedBigInteger('generation')->default(0);
-            $table->uuid('run_id')->nullable();
-            $table->unsignedInteger('processed')->default(0);
-            $table->unsignedInteger('total')->default(0);
-            $table->json('storage_map')->nullable();
-            $table->json('type_map')->nullable();
-            $table->timestamp('published_at')->nullable();
-            $table->text('last_error')->nullable();
-            $table->timestamp('heartbeat_at')->nullable();
             $table->timestamps();
+            $table->softDeletes();
 
             $this->addTenancy($table);
         });
 
-        /** @see ConnectionMetadata */
-        Schema::create('connection_metadata', function (Blueprint $table) {
+        /** @see Structure */
+        Schema::create('structures', function (Blueprint $table) {
+            $table
+                ->foreignIdFor(Upstream::class, 'upstream_id')
+                ->primary()
+                ->constrained('upstreams')
+                ->cascadeOnDelete();
+            $table->string('status')->index();
+            $table->unsignedBigInteger('generation')->default(0);
+            $table->uuid('run_id')->nullable();
+            $table->unsignedInteger('processed')->default(0);
+            $table->unsignedInteger('estimated')->default(0);
+            $table->json('context')->nullable();
+            $table->timestamps();
+        });
+
+        /** @see StructureItem */
+        Schema::create('structure_items', function (Blueprint $table) {
             $table->uuid('id')->primary();
             $table
-                ->foreignIdFor(Connection::class, 'connection_id')
-                ->constrained('connections')
+                ->foreignIdFor(Upstream::class, 'upstream_id')
+                ->constrained('upstreams')
                 ->cascadeOnDelete();
-            $table
-                ->foreignIdFor(ConnectionMetadata::class, 'parent_id')
-                ->index()
-                ->nullable();
+            $table->uuid('parent_id')->index()->nullable();
             $table->string('external_id');
             $table->string('reference_id')->nullable();
             $table->string('name');
-            $table->unsignedInteger('code');
-            $table->string('kind')->index();
+            $table->unsignedInteger('code')->nullable();
+            $table->string('kind')->nullable()->index();
             $table->string('label');
             $table->string('title');
-            $table->json('system');
-            $table->json('properties');
+            $table->string('key_column');
+            $table->unsignedInteger('priority')->default(1);
+            $table->json('schema');
             $table->json('values');
             $table->unsignedInteger('position');
             $table->unsignedBigInteger('revision')->default(0);
             $table->timestamps();
 
-            $table->unique(['connection_id', 'external_id', 'revision']);
-            $table->index(['connection_id', 'revision']);
+            $table->unique(['upstream_id', 'external_id', 'revision']);
+            $table->index(['upstream_id', 'revision']);
 
             $this->addTenancy($table);
         });
 
-        /** @see Sync */
-        Schema::create('syncs', function (Blueprint $table) {
+        /** @see Replica */
+        Schema::create('replicas', function (Blueprint $table) {
             $table->uuid('id')->primary();
             $table
                 ->foreignIdFor(Connector::class, 'connector_id')
@@ -103,19 +106,19 @@ return new class extends Migration {
                 ->constrained('connectors')
                 ->nullOnDelete();
             $table
-                ->foreignIdFor(Connection::class, 'connection_id')
-                ->constrained('connections')
+                ->foreignIdFor(Upstream::class, 'upstream_id')
+                ->constrained('upstreams')
                 ->cascadeOnDelete();
             $table->string('name');
             $table->string('code')->unique();
             $table->string('status')->index();
-            $table->boolean('is_paused')->default(false);
             $table->string('type')->default(DestinationType::Dynamic->value);
             $table->string('source');
             $table->string('destination');
             $table->json('schema');
             $table->json('transforms')->default('[]');
             $table->timestamps();
+            $table->softDeletes();
 
             $this->addTenancy($table);
         });
@@ -123,9 +126,10 @@ return new class extends Migration {
 
     public function down(): void
     {
-        Schema::dropIfExists('syncs');
-        Schema::dropIfExists('connection_metadata');
-        Schema::dropIfExists('connections');
+        Schema::dropIfExists('replicas');
+        Schema::dropIfExists('structure_items');
+        Schema::dropIfExists('structures');
+        Schema::dropIfExists('upstreams');
         Schema::dropIfExists('connectors');
     }
 

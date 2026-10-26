@@ -11,15 +11,19 @@ use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Schema;
 use PHPinnacle\Ferry\Enums\ConnectorStatus;
 use PHPinnacle\Ferry\Enums\DestinationType;
-use PHPinnacle\Ferry\Models\Connection;
 use PHPinnacle\Ferry\Models\Connector;
-use PHPinnacle\Ferry\Models\Sync;
-use PHPinnacle\Ferry\Resources\Connections\Tables\ConnectionTable;
-use PHPinnacle\Ferry\Resources\Syncs\Actions\RestartSyncAction;
-use PHPinnacle\Ferry\Resources\Syncs\Tables\SyncTable;
+use PHPinnacle\Ferry\Models\Replica;
+use PHPinnacle\Ferry\Models\Upstream;
+use PHPinnacle\Ferry\Resources\Replicas\Actions\RestartReplicaAction;
+use PHPinnacle\Ferry\Resources\Replicas\Tables\ReplicaTable;
+use PHPinnacle\Ferry\Resources\Upstreams\Tables\UpstreamTable;
+use PHPinnacle\Ferry\Services\DestinationFactory;
 use PHPinnacle\Ferry\Tests\TestCase;
 
+use function PHPinnacle\Ferry\Tests\Fakes\customers_destination;
+
 require_once __DIR__ . '/../TestCase.php';
+require_once __DIR__ . '/../Fakes/CustomersDestination.php';
 
 uses(TestCase::class);
 
@@ -27,13 +31,37 @@ beforeEach(function () {
     Queue::fake();
 });
 
+it('displays destination labels as badges without a type column', function (
+    DestinationType $type,
+    ?string $destination,
+) {
+    app(DestinationFactory::class)->register(customers_destination());
+    $replica = TestCase::makeReplica(['type' => $type, 'destination' => $destination]);
+    $livewire = Mockery::mock(HasTable::class);
+    $livewire->shouldReceive('getTableRecordKey')->andReturnUsing(fn (Model $record) => $record->getKey());
+    $table = ReplicaTable::configure(Table::make($livewire));
+    $column = $table->getColumn('destination')->record($replica);
+
+    expect($table->getColumn('type'))
+        ->toBeNull()
+        ->and($column->isBadge())
+        ->toBeTrue()
+        ->and($column->formatState($column->getState()))
+        ->toBe($destination === 'customers' ? 'Customers' : $replica->destination);
+})->with([
+    'registered static destination' => [DestinationType::Static, 'customers'],
+    'dynamic destination' => [DestinationType::Dynamic, null],
+]);
+
 it('encrypts the JSON configuration and excludes it from model serialization', function () {
-    $connection = TestCase::makeConnection();
+    $upstream = TestCase::makeUpstream();
     $config = ['database.hostname' => 'source.internal', 'database.password' => 'connector-secret'];
-    $connector = TestCase::makeConnector($connection, ['name' => 'ferry-source-test-connection']);
+    $connector = TestCase::makeConnector($upstream, ['name' => 'ferry-source-test-upstream']);
     $connector->recordConfig($config);
+    $connector->markApplied();
 
     $stored = DB::table('connectors')->where('id', $connector->id)->value('config');
+    $applied = DB::table('connectors')->where('id', $connector->id)->value('applied_config');
 
     expect($stored)
         ->not->toContain('connector-secret')->and(json_decode(
@@ -41,22 +69,28 @@ it('encrypts the JSON configuration and excludes it from model serialization', f
             true,
             flags: JSON_THROW_ON_ERROR,
         ))->toBe($config)->and($connector->fresh()->config)->toBe($config)->and($connector->fresh()->toArray())
-        ->not->toHaveKey('config')->and($connection->fresh()->load('connector')->toArray()['connector'])
+        ->not->toHaveKey('config')->and($applied)
+        ->not->toContain('connector-secret')->and(json_decode(
+            Crypt::decryptString($applied),
+            true,
+            flags: JSON_THROW_ON_ERROR,
+        ))->toBe($config)->and($connector->fresh()->toArray())
+        ->not->toHaveKey('applied_config')->and($upstream->fresh()->load('connector')->toArray()['connector'])
         ->not->toHaveKey('config');
 });
 
-it('records status independently of the source and synchronization lifecycle', function () {
-    $sync = TestCase::makeSync();
-    $source = TestCase::makeConnector($sync->connection, ['name' => 'ferry-source-test-connection']);
-    $sink = TestCase::makeConnector($sync, ['name' => 'ferry-sink-test-sync']);
-    Event::fake(['eloquent.updated: ' . Connection::class, 'eloquent.updated: ' . Sync::class]);
+it('records status independently of the source and replica lifecycle', function () {
+    $replica = TestCase::makeReplica();
+    $source = TestCase::makeConnector($replica->upstream, ['name' => 'ferry-source-test-upstream']);
+    $sink = TestCase::makeConnector($replica, ['name' => 'ferry-sink-test-replica']);
+    Event::fake(['eloquent.updated: ' . Upstream::class, 'eloquent.updated: ' . Replica::class]);
 
     $source->recordStatus(ConnectorStatus::Running);
     $sink->recordStatus(ConnectorStatus::Failed, 'Failed task');
 
-    expect($sync->fresh()->connection->connector?->status)
+    expect($replica->fresh()->upstream->connector?->status)
         ->toBe(ConnectorStatus::Running)
-        ->and($sync->fresh()->connector?->error)
+        ->and($replica->fresh()->connector?->error)
         ->toBe('Failed task')
         ->and($sink->fresh()->checked_at)
         ->not->toBeNull();
@@ -64,8 +98,8 @@ it('records status independently of the source and synchronization lifecycle', f
     $sink->recordStatus(ConnectorStatus::Running);
 
     expect($sink->fresh()->error)->toBeNull();
-    Event::assertNotDispatched('eloquent.updated: ' . Connection::class);
-    Event::assertNotDispatched('eloquent.updated: ' . Sync::class);
+    Event::assertNotDispatched('eloquent.updated: ' . Upstream::class);
+    Event::assertNotDispatched('eloquent.updated: ' . Replica::class);
 });
 
 it('uses the configured Ferry database for connectors and their owners', function () {
@@ -76,97 +110,102 @@ it('uses the configured Ferry database for connectors and their owners', functio
     $migration = require __DIR__ . '/../../database/migrations/create_ferry_tables.php';
     app(Migrator::class)->usingConnection($migration->getConnection(), $migration->up(...));
 
-    $connection = TestCase::makeConnection();
-    $sync = TestCase::makeSync(['connection_id' => $connection->id]);
-    $connector = TestCase::makeConnector($connection, ['name' => 'ferry-source-test-connection']);
+    $upstream = TestCase::makeUpstream();
+    $replica = TestCase::makeReplica(['upstream_id' => $upstream->id]);
+    $connector = TestCase::makeConnector($upstream, ['name' => 'ferry-source-test-upstream']);
     $connector->recordStatus(ConnectorStatus::Running);
 
-    expect($connection->fresh()->connector?->is($connector))
+    expect($upstream->fresh()->connector?->is($connector))
         ->toBeTrue()
         ->and(Connector::query()->count())
-        ->toBe(1)
-        ->and($sync->fresh()->type)
+        ->toBe(2)
+        ->and($replica->fresh()->type)
         ->toBe(DestinationType::Dynamic)
-        ->and(DB::connection('sqlite')->table('syncs')->count())
+        ->and(DB::connection('sqlite')->table('replicas')->count())
         ->toBe(0)
         ->and(DB::connection('sqlite')->table('connectors')->count())
         ->toBe(0);
+
+    app(Migrator::class)->usingConnection($migration->getConnection(), $migration->down(...));
+
+    expect(Schema::connection('ferry-test')->hasTable('upstreams'))
+        ->toBeFalse()
+        ->and(Schema::connection('sqlite')->hasTable('upstreams'))
+        ->toBeTrue();
 });
 
-it('rolls back and reapplies the package tables together', function () {
+it('rolls back all Ferry tables and can install them again', function () {
+    TestCase::makeReplica();
     $migration = require __DIR__ . '/../../database/migrations/create_ferry_tables.php';
     $migration->down();
 
-    foreach (['connectors', 'syncs', 'connection_metadata', 'connections'] as $table) {
+    foreach (['replicas', 'structure_items', 'structures', 'upstreams', 'connectors'] as $table) {
         expect(Schema::hasTable($table))->toBeFalse();
     }
 
-    $migration->up();
-    $sync = TestCase::makeSync();
-    $connector = TestCase::makeConnector($sync, ['name' => 'ferry-sink-test-sync']);
+    expect(Schema::hasTable('jobs'))->toBeTrue();
 
-    expect($sync->fresh()->connector?->is($connector))
-        ->toBeTrue()
-        ->and($sync->fresh()->type)
-        ->toBe(DestinationType::Dynamic)
-        ->and(Schema::hasColumn('syncs', 'static_destination'))
-        ->toBeFalse();
+    $migration->up();
+
+    expect(TestCase::makeReplica(['code' => 'reinstalled'])->fresh()->upstream->structure)->not->toBeNull();
 });
 
 it('displays and sorts connector statuses through the owner tables', function () {
-    $sync = TestCase::makeSync();
-    $connection = $sync->connection;
-    $source = TestCase::makeConnector($connection, ['name' => 'ferry-source-test-connection']);
+    $replica = TestCase::makeReplica();
+    $upstream = $replica->upstream;
+    $source = TestCase::makeConnector($upstream, ['name' => 'ferry-source-test-upstream']);
     $source->recordStatus(ConnectorStatus::Paused);
-    $sink = TestCase::makeConnector($sync, ['name' => 'ferry-sink-test-sync']);
+    $sink = TestCase::makeConnector($replica, ['name' => 'ferry-sink-test-replica']);
     $sink->recordStatus(ConnectorStatus::Failed);
 
-    $otherConnection = TestCase::makeConnection(['code' => 'other-connection']);
-    TestCase::makeConnector($otherConnection, ['name' => 'ferry-source-other-connection'])
+    $otherUpstream = TestCase::makeUpstream(['code' => 'other-upstream']);
+    TestCase::makeConnector($otherUpstream, ['name' => 'ferry-source-other-upstream'])
         ->recordStatus(ConnectorStatus::Running);
-    $otherSync = TestCase::makeSync(['code' => 'other-sync', 'connection_id' => $connection->id]);
-    TestCase::makeConnector($otherSync, ['name' => 'ferry-sink-other-sync'])->recordStatus(ConnectorStatus::Running);
+    $otherReplica = TestCase::makeReplica(['code' => 'other-replica', 'upstream_id' => $upstream->id]);
+    TestCase::makeConnector($otherReplica, [
+        'name' => 'ferry-sink-other-replica',
+    ])->recordStatus(ConnectorStatus::Running);
 
     $livewire = Mockery::mock(HasTable::class);
     $livewire->shouldReceive('getTableRecordKey')->andReturnUsing(fn (Model $record) => $record->getKey());
-    $sourceColumn = ConnectionTable::configure(Table::make($livewire))->getColumn(
+    $sourceColumn = UpstreamTable::configure(Table::make($livewire))->getColumn(
         'connector.status',
     );
-    $sinkColumn = SyncTable::configure(Table::make($livewire))->getColumn('connector.status');
+    $sinkColumn = ReplicaTable::configure(Table::make($livewire))->getColumn('connector.status');
 
-    expect($sourceColumn->record($connection)->getState())
+    expect($sourceColumn->record($upstream)->getState())
         ->toBe(ConnectorStatus::Paused)
-        ->and($sinkColumn->record($sync)->getState())
+        ->and($sinkColumn->record($replica)->getState())
         ->toBe(ConnectorStatus::Failed)
-        ->and($sourceColumn->applySort(Connection::query())->pluck('id')->all())
-        ->toBe([$connection->id, $otherConnection->id])
-        ->and($sinkColumn->applySort(Sync::query())->pluck('id')->all())
-        ->toBe([$sync->id, $otherSync->id])
-        ->and(RestartSyncAction::table()->record($sync)->authorize(true)->isVisible())
+        ->and($sourceColumn->applySort(Upstream::query())->pluck('id')->all())
+        ->toBe([$upstream->id, $otherUpstream->id])
+        ->and($sinkColumn->applySort(Replica::query())->pluck('id')->all())
+        ->toBe([$replica->id, $otherReplica->id])
+        ->and(RestartReplicaAction::table()->record($replica)->authorize(true)->isVisible())
         ->toBeTrue();
 
     $sink->recordStatus(ConnectorStatus::Running);
 
-    expect(RestartSyncAction::table()->record($sync->fresh())->authorize(true)->isVisible())->toBeFalse();
+    expect(RestartReplicaAction::table()->record($replica->fresh())->authorize(true)->isVisible())->toBeFalse();
 });
 
 it('clears connector references without deleting their owners when a connector is removed', function () {
-    $sync = TestCase::makeSync();
-    $connection = $sync->connection;
-    $source = TestCase::makeConnector($connection, ['name' => 'ferry-source-test-connection']);
-    $sink = TestCase::makeConnector($sync, ['name' => 'ferry-sink-test-sync']);
+    $replica = TestCase::makeReplica();
+    $upstream = $replica->upstream;
+    $source = TestCase::makeConnector($upstream, ['name' => 'ferry-source-test-upstream']);
+    $sink = TestCase::makeConnector($replica, ['name' => 'ferry-sink-test-replica']);
 
-    expect($connection->fresh()->connector_id)->toBe($source->id)->and($sync->fresh()->connector_id)->toBe($sink->id);
+    expect($upstream->fresh()->connector_id)->toBe($source->id)->and($replica->fresh()->connector_id)->toBe($sink->id);
 
     $source->delete();
     $sink->delete();
 
-    expect($connection->fresh()->connector_id)
+    expect($upstream->fresh()->connector_id)
         ->toBeNull()
-        ->and($sync->fresh()->connector_id)
+        ->and($replica->fresh()->connector_id)
         ->toBeNull()
-        ->and(Connection::query()->count())
+        ->and(Upstream::query()->count())
         ->toBe(1)
-        ->and(Sync::query()->count())
+        ->and(Replica::query()->count())
         ->toBe(1);
 });

@@ -6,10 +6,6 @@ use BackedEnum;
 use Closure;
 use Illuminate\Contracts\Support\Htmlable;
 use PHPinnacle\Ferry\Contracts\Destination;
-use PHPinnacle\Ferry\Models\ConnectionMetadata;
-use PHPinnacle\Ferry\Models\Sync;
-use PHPinnacle\Ferry\Services\Connectors\JdbcConnectorConfig;
-use PHPinnacle\Ferry\Services\TransformFactory;
 use PHPinnacle\Jason\Schema;
 
 final readonly class StaticDestination implements Destination
@@ -53,28 +49,24 @@ final readonly class StaticDestination implements Destination
         return $this->color;
     }
 
-    public function connector(
-        Sync $sync,
-        ConnectionMetadata $object,
-        string $topic,
-        TransformFactory $transforms,
-    ): array {
-        return new JdbcConnectorConfig(
-            table: $this->table,
-            topic: $topic,
-            columns: [
-                ...array_values($sync->columnMap($object, keyColumn: null)),
-                ...$sync->constantColumns(),
-                ...array_keys($this->fixedValues),
-            ],
-            transforms: $transforms->pipeline(
-                $sync,
-                $object,
-                keyColumn: null,
-                fixedValues: $this->fixedValues,
-            ),
-            connection: $this->connection,
-            primaryKey: $this->primaryKey,
-        )->toArray();
+    public function getTable(): string
+    {
+        return $this->table;
+    }
+
+    public function getConnectionName(): ?string
+    {
+        return $this->connection;
+    }
+
+    public function getPrimaryKey(): string
+    {
+        return $this->primaryKey;
+    }
+
+    /** @return array<string, string> */
+    public function getFixedValues(): array
+    {
+        return $this->fixedValues;
     }
 }

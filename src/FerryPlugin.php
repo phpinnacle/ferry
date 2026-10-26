@@ -59,8 +59,8 @@ class FerryPlugin implements Plugin
     public function register(Panel $panel): void
     {
         $panel->resources([
-            Resources\Connections\ConnectionResource::class,
-            Resources\Syncs\SyncResource::class,
+            Resources\Upstreams\UpstreamResource::class,
+            Resources\Replicas\ReplicaResource::class,
         ]);
     }
 }

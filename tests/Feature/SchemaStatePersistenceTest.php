@@ -2,16 +2,13 @@
 
 use Filament\Schemas\Schema;
 use Illuminate\Support\Facades\Queue;
-use PHPinnacle\Ferry\Enums\ColumnType;
+use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Enums\StructureStatus;
-use PHPinnacle\Ferry\Models\Sync;
-use PHPinnacle\Ferry\Resources\Syncs\Schemas\SyncForm;
+use PHPinnacle\Ferry\Models\Replica;
+use PHPinnacle\Ferry\Resources\Replicas\Schemas\ReplicaForm;
 use PHPinnacle\Ferry\Services\DestinationFactory;
 use PHPinnacle\Ferry\Tests\Fixtures\SchemaHost;
 use PHPinnacle\Ferry\Tests\TestCase;
-use PHPinnacle\Rosetta\Enums\FieldType;
-use PHPinnacle\Rosetta\Fields\ScalarField;
-use PHPinnacle\Rosetta\Fields\StringField;
 
 require_once __DIR__ . '/../TestCase.php';
 require_once __DIR__ . '/../Fixtures/SchemaHost.php';
@@ -24,16 +21,16 @@ it('stores and restores the exact native schema emitted by the form', function (
     array $transforms = [],
 ) {
     Queue::fake();
-    $connection = TestCase::makeConnection([], ['status' => StructureStatus::Ready, 'generation' => 1]);
-    TestCase::makeMetadata($connection, ['system' => [
-        '_description' => new StringField(length: 100, fixed: false),
-        '_marked' => new ScalarField(FieldType::Boolean),
-        '_unused' => new StringField(length: 20, fixed: false),
+    $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
+    TestCase::makeItem($upstream, ['fields' => [
+        '_description' => JsonSchema::fromArray(['type' => 'string', 'maxLength' => 100]),
+        '_marked' => JsonSchema::fromArray(['type' => 'boolean']),
+        '_unused' => JsonSchema::fromArray(['type' => 'string', 'maxLength' => 20]),
     ]]);
     $livewire = SchemaHost::make();
-    $form = SyncForm::configure(Schema::make($livewire)->statePath('data')->operation('create'));
+    $form = ReplicaForm::configure(Schema::make($livewire)->statePath('data')->operation('create'));
     $form->fill([
-        'connection_id' => $connection->id,
+        'upstream_id' => $upstream->id,
         'source' => 'object-0',
         'destination' => 'dynamic',
         'name' => 'Native schema',
@@ -60,13 +57,13 @@ it('stores and restores the exact native schema emitted by the form', function (
         ],
     ]);
     $state = $form->getState();
-    $attributes = TestCase::mappedSyncAttributes($state, app(DestinationFactory::class));
+    $attributes = TestCase::mappedReplicaAttributes($state, app(DestinationFactory::class));
     expect($attributes['schema'])->toBe($state['schema']);
 
-    $sync = Sync::create($attributes);
-    $saved = $sync->fresh();
+    $replica = Replica::create($attributes);
+    $saved = $replica->fresh();
     $constant = collect($saved->schema)->sole(fn ($mapping) => $mapping->target === 'constant');
-    $raw = $sync->getConnection()->table('syncs')->where('id', $sync->id)->value('schema');
+    $raw = $replica->getConnection()->table('replicas')->where('id', $replica->id)->value('schema');
     expect(json_decode($raw, true, flags: JSON_THROW_ON_ERROR))
         ->toBe($state['schema'])
         ->and($saved->toArray()['schema'])
@@ -75,18 +72,18 @@ it('stores and restores the exact native schema emitted by the form', function (
         ->toMatchArray(['type' => 'string', 'maxLength' => 100])
         ->and($constant->static)
         ->toBe($value)
-        ->and($constant->type())
-        ->toBe(ColumnType::from($type))
-        ->and($sync->getConnection()->getSchemaBuilder()->getColumnListing($sync->destination))
+        ->and($constant->outputSchema()?->singleType())
+        ->toBe($type)
+        ->and($replica->getConnection()->getSchemaBuilder()->getColumnListing($replica->destination))
         ->toBe(['idrref', 'name', 'constant']);
 
-    $edit = SyncForm::configure(Schema::make($livewire)->statePath('data')->record($sync)->operation('edit'));
-    $edit->fill(SyncForm::fill($saved->toArray()));
+    $edit = ReplicaForm::configure(Schema::make($livewire)->statePath('data')->record($replica)->operation('edit'));
+    $edit->fill(ReplicaForm::fill($saved->toArray()));
     expect($edit->getState()['schema'])->toEqual($state['schema']);
 })->with([
     'false' => [false, 'boolean'],
     'zero' => [0, 'integer'],
-    'whole decimal' => [1.0, 'decimal'],
+    'whole decimal' => [1.0, 'number'],
     'string true' => ['true', 'string'],
     'transformed string' => ['10', 'integer', [['type' => 'cast', 'data' => ['type' => 'integer']]]],
 ]);
