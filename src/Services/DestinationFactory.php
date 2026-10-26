@@ -9,7 +9,6 @@ use PHPinnacle\Ferry\Destinations\DynamicDestination;
 use PHPinnacle\Ferry\Destinations\StaticDestination;
 use PHPinnacle\Ferry\Enums\DestinationType;
 use PHPinnacle\Ferry\Models\Replica;
-use PHPinnacle\Jason\Schema;
 
 #[Singleton]
 class DestinationFactory
@@ -47,9 +46,9 @@ class DestinationFactory
         };
     }
 
-    public function schemaFor(Replica $replica): ?Schema
+    public function staticFor(Replica $replica): ?StaticDestination
     {
-        return $replica->type === DestinationType::Static ? $this->get($replica->destination)?->getSchema() : null;
+        return $replica->type === DestinationType::Static ? $this->get($replica->destination) : null;
     }
 
     /** @return array<string, StaticDestination> */

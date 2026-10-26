@@ -50,7 +50,7 @@ it('reports removed and newly required destination fields', function () {
         ],
     ]);
 
-    expect($replica->brokenColumns($this->object, customers_destination()->getSchema()))->toBe([
+    expect($replica->brokenColumns($this->object, customers_destination()))->toBe([
         'is_retired',
         'tax_number',
     ]);
@@ -95,6 +95,34 @@ it('rejects dynamic replication when the source loses its primary key', function
     expect($replica->hasValidSchema($this->object))->toBeFalse();
 });
 
+it('reports static key mappings when the source or destination primary key changes', function () {
+    $destination = new StaticDestination(
+        'keyed',
+        'Keyed',
+        'keyed',
+        ['id'],
+        Schema::object(['id' => Schema::string(), 'name' => Schema::string()])->required(['id']),
+    );
+    $replica = new Replica([
+        'type' => DestinationType::Static,
+        'destination' => 'keyed',
+        'schema' => [
+            new FieldMapping('_idrref', 'id', $this->object->field('_idrref')),
+            new FieldMapping('_description', 'name', $this->object->field('_description')),
+        ],
+    ]);
+    expect($replica->hasValidSchema($this->object, $destination))->toBeTrue();
+
+    $changedDestination = new StaticDestination('keyed', 'Keyed', 'keyed', ['name'], $destination->getSchema());
+    expect($replica->brokenColumns($this->object, $changedDestination))->toBe(['name']);
+
+    $this->object->primary_key = [];
+    expect($replica->brokenColumns($this->object, $destination))
+        ->toBe(['id'])
+        ->and($replica->hasValidSchema($this->object, $destination))
+        ->toBeFalse();
+});
+
 it('uses JSON Schema compatibility when saving and reviewing static replicas', function (
     array $source,
     array $target,
@@ -114,14 +142,15 @@ it('uses JSON Schema compatibility when saving and reviewing static replicas', f
     $mappings = [new FieldMapping('amount', 'amount', $field)];
 
     if ($allowed) {
-        ReplicaSchema::assertValid($mappings, $destination);
+        ReplicaSchema::assertValid($mappings, $destination, $object->primary_key);
         expect($mappings[0]->outputSchema()?->toArray())->toBe($source)->and($mappings[0]->transforms)->toBe([]);
     } else {
-        expect(fn () => ReplicaSchema::assertValid($mappings, $destination))->toThrow(ValidationException::class);
+        expect(fn () => ReplicaSchema::assertValid($mappings, $destination, $object->primary_key))
+            ->toThrow(ValidationException::class);
     }
 
     $replica = new Replica(['type' => DestinationType::Static, 'destination' => 'totals', 'schema' => $mappings]);
-    expect($replica->brokenColumns($object, $destination->getSchema()))->toBe($allowed ? [] : ['amount']);
+    expect($replica->brokenColumns($object, $destination))->toBe($allowed ? [] : ['amount']);
 })->with([
     'integer to number' => [['type' => 'integer'], ['type' => 'number'], true],
     'number to integer' => [['type' => 'number'], ['type' => 'integer'], false],
@@ -171,6 +200,20 @@ it('reviews changes to saved source constraints', function () {
     expect($replica->brokenColumns($this->object))->toBe(['name']);
 });
 
+it('ignores JSON object key order when reviewing saved source schemas', function () {
+    $replica = new Replica(['schema' => [
+        new FieldMapping('_idrref', 'id', JsonSchema::fromArray([
+            'maxLength' => 36,
+            'minLength' => 36,
+            'x-ferry-reference' => true,
+            'format' => 'uuid',
+            'type' => 'string',
+        ])),
+    ]]);
+
+    expect($replica->brokenColumns($this->object))->toBe([])->and($replica->hasValidSchema($this->object))->toBeTrue();
+});
+
 it('compares native static values with destination enums and lengths', function (
     string $value,
     array $target,
@@ -182,13 +225,14 @@ it('compares native static values with destination enums and lengths', function 
     $mapping = new FieldMapping(null, 'label', null, static: $value, kind: FieldKind::Static);
 
     if ($allowed) {
-        ReplicaSchema::assertValid([$mapping], $destination);
+        ReplicaSchema::assertValid([$mapping], $destination, $this->object->primary_key);
     } else {
-        expect(fn () => ReplicaSchema::assertValid([$mapping], $destination))->toThrow(ValidationException::class);
+        expect(fn () => ReplicaSchema::assertValid([$mapping], $destination, $this->object->primary_key))
+            ->toThrow(ValidationException::class);
     }
 
     $replica = new Replica(['type' => DestinationType::Static, 'schema' => [$mapping]]);
-    expect($replica->brokenColumns($this->object, $destination->getSchema()))->toBe($allowed ? [] : ['label']);
+    expect($replica->brokenColumns($this->object, $destination))->toBe($allowed ? [] : ['label']);
 })->with([
     'allowed enum' => ['active', ['type' => 'string', 'enum' => ['active', 'inactive']], true],
     'outside enum' => ['other', ['type' => 'string', 'enum' => ['active', 'inactive']], false],

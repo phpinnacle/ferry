@@ -31,7 +31,7 @@ class StructureObserver
 
             if (
                 !$object instanceof StructureItem
-                || !$replica->hasValidSchema($object, $this->destinations->schemaFor($replica))
+                || !$replica->hasValidSchema($object, $this->destinations->staticFor($replica))
             ) {
                 $replica->pause();
             }

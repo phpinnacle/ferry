@@ -13,12 +13,12 @@ use PHPinnacle\Ferry\Casts\SchemaCast;
 use PHPinnacle\Ferry\Casts\TransformsCast;
 use PHPinnacle\Ferry\Data\FieldMapping;
 use PHPinnacle\Ferry\Data\TransformSetting;
+use PHPinnacle\Ferry\Destinations\StaticDestination;
 use PHPinnacle\Ferry\Enums\DestinationType;
 use PHPinnacle\Ferry\Enums\ReplicaStatus;
 use PHPinnacle\Ferry\Models\Concerns\HasConnector;
 use PHPinnacle\Ferry\Observers\ReplicaObserver;
 use PHPinnacle\Ferry\Services\ReplicaTableManager;
-use PHPinnacle\Jason\Schema;
 
 /**
  * @property string $id
@@ -125,9 +125,9 @@ class Replica extends Model
     }
 
     /** @return list<string> */
-    public function brokenColumns(?StructureItem $object, ?Schema $destinationSchema = null): array
+    public function brokenColumns(?StructureItem $object, ?StaticDestination $destination = null): array
     {
-        if ($object === null || $this->type === DestinationType::Static && $destinationSchema === null) {
+        if ($object === null || $this->type === DestinationType::Static && $destination === null) {
             /** @var list<string> */
             return array_map(
                 static fn (FieldMapping $mapping) => $mapping->target ?? $mapping->source,
@@ -135,7 +135,7 @@ class Replica extends Model
             );
         }
 
-        $schema = JsonSchema::fromArray($destinationSchema?->keywords() ?? []);
+        $schema = JsonSchema::fromArray($destination?->getSchema()->keywords() ?? []);
         $fields = $schema->properties();
         $columns = [];
         $destinationColumns = [];
@@ -148,16 +148,18 @@ class Replica extends Model
             if ($mapping->source !== null) {
                 $field = $object->field($mapping->source);
 
-                if ($field === null || $field->toArray() !== $mapping->sourceSchema()?->toArray()) {
+                if ($field === null || !$mapping->sourceSchema()?->equals($field)) {
                     $columns[] = $mapping->target ?? $mapping->source;
                 }
             }
 
-            if ($mapping->target !== null && $destinationSchema !== null) {
+            if ($mapping->target !== null && $destination !== null) {
                 $destinationField = $fields[$mapping->target] ?? null;
                 if (
                     $destinationField === null
                     || !$mapping->canMapTo($destinationField)
+                    || in_array($mapping->target, $destination->getPrimaryKey(), true)
+                    && !in_array($mapping->source, $object->primary_key, true)
                 ) {
                     $destinationColumns[] = $mapping->target;
                 }
@@ -181,11 +183,11 @@ class Replica extends Model
         return array_values(array_unique([...$columns, ...$destinationColumns]));
     }
 
-    public function hasValidSchema(StructureItem $object, ?Schema $destinationSchema = null): bool
+    public function hasValidSchema(StructureItem $object, ?StaticDestination $destination = null): bool
     {
         return (
             ($this->type !== DestinationType::Dynamic || $object->primary_key !== [])
-            && $this->brokenColumns($object, $destinationSchema) === []
+            && $this->brokenColumns($object, $destination) === []
         );
     }
 

@@ -14,6 +14,7 @@ use Filament\Schemas\Schema;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Validation\ValidationException;
 use PHPinnacle\Common\Concerns\FormSlug;
+use PHPinnacle\Eidos\Forms\BuiltinStaticForms;
 use PHPinnacle\Eidos\Forms\FieldBinding;
 use PHPinnacle\Eidos\Forms\FieldMapping;
 use PHPinnacle\Eidos\Forms\JsonSchema;
@@ -87,7 +88,7 @@ class ReplicaForm
         Replica $record,
         DestinationFactory $destinations,
     ): array {
-        self::object($record->upstream, $record->source, 'data.schema');
+        $object = self::object($record->upstream, $record->source, 'data.schema');
         $destination = $record->type === DestinationType::Static ? $destinations->get($record->destination) : null;
 
         if ($record->type === DestinationType::Static && $destination === null) {
@@ -106,7 +107,11 @@ class ReplicaForm
                 $mappings[] = $mapping;
             }
         }
-        ReplicaSchema::assertValid(array_map(SchemaMapping::fromArray(...), $mappings), $destination);
+        ReplicaSchema::assertValid(
+            array_map(SchemaMapping::fromArray(...), $mappings),
+            $destination,
+            $object->primary_key,
+        );
 
         return [
             'name' => $data['name'],
@@ -241,7 +246,7 @@ class ReplicaForm
                 $destination = $destinations->get(self::staticKey($selectedDestination));
                 $brokenColumns =
                     $record !== null && $record->schema !== []
-                        ? $record->brokenColumns($object, $destination?->getSchema())
+                        ? $record->brokenColumns($object, $destination)
                         : [];
 
                 $targetWarnings = [];
@@ -373,7 +378,13 @@ class ReplicaForm
         return FieldMapping::make('schema')
             ->dense()
             ->compact()
-            ->withBuiltinStaticForms()
+            ->staticForms(fn (FieldMapping $component, string $target, JsonSchema $property) => in_array(
+                $target,
+                $destination?->getPrimaryKey() ?? [],
+                true,
+            )
+                    ? null
+                    : BuiltinStaticForms::make($property, in_array($target, $component->getRequiredTargets(), true)))
             ->staticValues(array_any(
                 $record->schema ?? [],
                 static fn (SchemaMapping $mapping) => (
@@ -389,6 +400,12 @@ class ReplicaForm
                 dest: $destination !== null
                     ? JsonSchema::fromArray($destination->getSchema()->keywords())->toArray()
                     : [],
+            )
+            ->canConnectUsing(
+                fn (JsonSchema $source, JsonSchema $target, string $sourceName, string $targetName) => (
+                    !in_array($targetName, $destination?->getPrimaryKey() ?? [], true)
+                    || in_array($sourceName, $object->primary_key ?? [], true)
+                ),
             )
             ->outputSchema(function (FieldMapping $component, TransformRegistry $registry) {
                 /** @var array<string, array<array-key, TransformInput>> $fieldTransforms */

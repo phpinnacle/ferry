@@ -83,8 +83,11 @@ readonly class ReplicaSchema
         }
     }
 
-    /** @param list<FieldMapping> $mappings */
-    public static function assertValid(array $mappings, ?StaticDestination $destination): void
+    /**
+     * @param list<FieldMapping> $mappings
+     * @param list<string> $sourcePrimaryKey
+     */
+    public static function assertValid(array $mappings, ?StaticDestination $destination, array $sourcePrimaryKey): void
     {
         $destinationSchema = JsonSchema::fromArray($destination?->getSchema()->keywords() ?? []);
         $fields = $destinationSchema->properties();
@@ -101,6 +104,16 @@ readonly class ReplicaSchema
             }
             if ($destination !== null) {
                 self::assertCompatibleWithDestination($fields, $mapping->target, $mapping);
+                if (
+                    in_array($mapping->target, $destination->getPrimaryKey(), true)
+                    && !in_array($mapping->source, $sourcePrimaryKey, true)
+                ) {
+                    throw ValidationException::withMessages([
+                        'data.schema' => __('phpinnacle-ferry::resources.replica.errors.destination_primary_key_source', [
+                            'field' => $mapping->target,
+                        ]),
+                    ]);
+                }
             }
         }
         if ($destination !== null) {

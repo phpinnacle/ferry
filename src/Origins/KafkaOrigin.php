@@ -186,7 +186,7 @@ class KafkaOrigin implements Origin
             ]));
         }
 
-        if (!$replica->hasValidSchema($object, $this->destinations->schemaFor($replica))) {
+        if (!$replica->hasValidSchema($object, $this->destinations->staticFor($replica))) {
             throw new LogicException(__('phpinnacle-ferry::resources.replica.errors.invalid_mapping', [
                 'code' => $replica->code,
             ]));

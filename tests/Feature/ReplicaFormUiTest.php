@@ -42,6 +42,89 @@ beforeEach(function () {
     Queue::fake();
 });
 
+it('only connects static destination primary keys to source primary-key fields', function () {
+    $destination = new StaticDestination(
+        key: 'keyed',
+        label: 'Keyed',
+        table: 'keyed',
+        primaryKey: ['id', 'tenant'],
+        schema: Schema::object([
+            'id' => Schema::string(),
+            'tenant' => Schema::string(),
+            'name' => Schema::string(),
+        ])->required(['id', 'tenant']),
+    );
+    app(DestinationFactory::class)->register($destination);
+    $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
+    $object = TestCase::makeItem($upstream, [
+        'primary_key' => ['record_id', 'tenant_id'],
+        'fields' => [],
+        'sources' => [
+            'record_id' => ['type' => 'string'],
+            'tenant_id' => ['type' => 'string'],
+            'owner' => ['type' => 'string'],
+        ],
+    ]);
+    $replica = TestCase::makeReplica([
+        'upstream_id' => $upstream->id,
+        'type' => DestinationType::Static,
+        'destination' => 'keyed',
+        'schema' => [],
+    ]);
+    $form = ReplicaForm::configure(
+        FilamentSchema::make(SchemaHost::make())->statePath('data')->record($replica)->operation('edit'),
+    );
+    $data = ReplicaForm::fill($replica->toArray());
+    $form->fill([
+        ...$data,
+        'schema' => MappingState::mapping([
+            'id' => MappingState::source('record_id'),
+            'tenant' => MappingState::source('tenant_id'),
+        ]),
+    ]);
+    $mapping = $form->getComponentByStatePath('schema');
+
+    expect($mapping->getConnectionModes())
+        ->toHaveKey('record_id.id', 'whole')
+        ->toHaveKey('tenant_id.tenant', 'whole')
+        ->toHaveKey('owner.name', 'whole')
+        ->not->toHaveKey('owner.id')
+        ->not->toHaveKey('owner.tenant');
+    expect($mapping->getStaticFormSchema('id'))
+        ->toBeNull()
+        ->and($mapping->getStaticFormSchema('tenant'))
+        ->toBeNull()
+        ->and($mapping->getStaticFormSchema('name'))
+        ->not->toBeNull();
+    $replica->fill(ReplicaForm::forUpdate($form->getState(), $replica, app(DestinationFactory::class)));
+    expect($replica->columnMap($object))->toBe(['record_id' => 'id', 'tenant_id' => 'tenant']);
+
+    $form->fill([
+        ...$data,
+        'schema' => MappingState::mapping([
+            'id' => MappingState::source('owner'),
+            'tenant' => MappingState::source('tenant_id'),
+        ]),
+    ]);
+    expect($form->getState(...))->toThrow(ValidationException::class);
+
+    foreach ([
+        new SchemaMapping('owner', 'id', $object->field('owner')),
+        SchemaMapping::fromArray(['kind' => 'static', 'target' => 'id', 'static' => 'constant']),
+    ] as $invalid) {
+        $rows = [$invalid, new SchemaMapping('tenant_id', 'tenant', $object->field('tenant_id'))];
+        expect(fn () => ReplicaForm::forUpdate(
+            [
+                'name' => 'Keyed',
+                'schema' => array_map(fn (SchemaMapping $row) => $row->jsonSerialize(), $rows),
+            ],
+            $replica,
+            app(DestinationFactory::class),
+        ))
+            ->toThrow(ValidationException::class);
+    }
+});
+
 it('requires explicit composite key bindings and creates the dynamic table on the first complete save', function () {
     config(['database.connections.sqlite.host' => 'db.internal', 'database.connections.sqlite.port' => 5432]);
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
@@ -931,7 +1014,7 @@ it('stores physical source names directly and detects renamed source columns', f
     expect($replica->brokenColumns(
         $object,
         $type === DestinationType::Static
-            ? app(DestinationFactory::class)->getOrFail('customers')->getSchema()
+            ? app(DestinationFactory::class)->getOrFail('customers')
             : null,
     ))
         ->toContain('name')
@@ -1059,10 +1142,14 @@ it('uses destination JSON Schema titles, constraints and required mappings in th
         'name' => 'Customer name',
         'is_active' => 'Active',
     ]);
-    expect(app(DestinationFactory::class)->schemaFor(new Replica([
-        'type' => DestinationType::Static,
-        'destination' => 'schema_customers',
-    ])))
+    expect(
+        app(DestinationFactory::class)
+            ->staticFor(new Replica([
+                'type' => DestinationType::Static,
+                'destination' => 'schema_customers',
+            ]))
+            ->getSchema(),
+    )
         ->toBe($schema);
 });
 
@@ -1138,17 +1225,22 @@ it('maps UUID references into bounded strings while respecting target length and
         'upstream_id' => $upstream->id,
         'source' => 'object-0',
         'destination' => 'static:references',
-        'schema' => MappingState::mapping(['external_id' => MappingState::source('_partner')]),
+        'schema' => MappingState::mapping([
+            'external_id' => MappingState::source('_idrref'),
+            'exact_id' => MappingState::source('_partner'),
+        ]),
     ]);
     $mapping = $form->getComponentByStatePath('schema');
 
     expect($mapping->getConnectionModes())
-        ->toHaveKey('_partner.external_id', 'whole')
-        ->toHaveKey('_partner.exact_id', 'whole')
+        ->not->toHaveKey('_partner.external_id')->toHaveKey('_idrref.external_id', 'whole')->toHaveKey(
+            '_partner.exact_id',
+            'whole',
+        )
         ->not->toHaveKey('_partner.short_id')
         ->not->toHaveKey('_description.uuid_id');
     $replica = Replica::create(TestCase::mappedReplicaAttributes($form->getState(), app(DestinationFactory::class)));
-    expect($replica->brokenColumns($object, $destination->getSchema()))->toBe([]);
-    expect($replica->schema[0]->source)->toBe('_partner');
+    expect($replica->brokenColumns($object, $destination))->toBe([]);
+    expect($replica->schema[0]->source)->toBe('_idrref');
     expect($replica->schema[0]->target)->toBe('external_id');
 });
