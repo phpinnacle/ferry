@@ -33,7 +33,6 @@ return [
             'base_uri' => env('FERRY_KAFKA_CONNECT_URL'),
             'headers' => [],
             'target_host' => null,
-            'extract_state' => 'source',
             'source' => [
                 'key.converter' => 'org.apache.kafka.connect.json.JsonConverter',
                 'key.converter.schemas.enable' => 'true',

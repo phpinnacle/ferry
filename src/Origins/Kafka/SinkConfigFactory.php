@@ -3,7 +3,6 @@
 namespace PHPinnacle\Ferry\Origins\Kafka;
 
 use PHPinnacle\Ferry\Contracts\Destination;
-use PHPinnacle\Ferry\Enums\DestinationType;
 use PHPinnacle\Ferry\Models\Replica;
 use PHPinnacle\Ferry\Models\StructureItem;
 
@@ -14,16 +13,13 @@ class SinkConfigFactory
     ) {}
 
     /** @return array<string, string> */
-    // @mago-expect lint:excessive-parameter-list
     public function make(
         Destination $destination,
         Replica $replica,
         StructureItem $object,
         string $topic,
         ?string $targetHost = null,
-        bool $unwrap = false,
     ): array {
-        $dynamic = $replica->type === DestinationType::Dynamic;
         $primaryKey = $destination->getPrimaryKey();
         $keyMap = $replica->primaryKeyMap($object);
         $fixedValues = $destination->getFixedValues();
@@ -36,10 +32,9 @@ class SinkConfigFactory
                 ...$replica->constantColumns(),
                 ...array_keys($fixedValues),
             ],
-            transforms: $this->transforms->pipeline($replica, $object, $keyMap, $dynamic, $fixedValues, $unwrap),
+            transforms: $this->transforms->pipeline($replica, $object, $keyMap, $fixedValues),
             connection: $destination->getConnectionName(),
             targetHost: $targetHost,
-            deletes: $dynamic,
             primaryKey: $primaryKey,
         )->toArray();
     }

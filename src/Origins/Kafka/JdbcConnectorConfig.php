@@ -17,7 +17,6 @@ final readonly class JdbcConnectorConfig
         private array $columns,
         private array $transforms,
         private ?string $connection = null,
-        private bool $deletes = false,
         private ?array $primaryKey = null,
         private ?string $targetHost = null,
     ) {}
@@ -38,7 +37,7 @@ final readonly class JdbcConnectorConfig
             'pk.mode' => 'record_key',
             ...($this->primaryKey !== null ? ['pk.fields' => implode(',', $this->primaryKey)] : []),
             'insert.mode' => 'upsert',
-            'delete.enabled' => $this->deletes ? 'true' : 'false',
+            'delete.enabled' => 'true',
             'auto.create' => 'false',
             'fields.whitelist' => implode(',', $this->columns),
             ...$this->transforms,

@@ -256,7 +256,7 @@ it('uses each named origin target host only for its sink', function () {
     }
 });
 
-it('extracts new record state at the configured stage of each named origin', function (bool $static) {
+it('extracts new record state at the source and preserves deletes for every destination', function (bool $static) {
     $replica = ferry_replica();
     app(DestinationFactory::class)->register(new StaticDestination(
         key: 'customers',
@@ -282,56 +282,34 @@ it('extracts new record state at the configured stage of each named origin', fun
         ])->saveQuietly();
     }
     $settings = config('phpinnacle-ferry.origins.kafka');
-    expect($settings['extract_state'])->toBe('source');
     $origins = new OriginFactory(app(), [
         'kafka' => $settings,
-        'analytics' => [...$settings, 'extract_state' => 'sink'],
+        'analytics' => $settings,
     ]);
 
-    foreach (['kafka' => 'source', 'analytics' => 'sink'] as $name => $stage) {
+    foreach (['kafka', 'analytics'] as $name) {
         $origin = $origins->create($name);
         $source = $origin->make($replica->upstream)->config;
         $sink = $origin->make($replica)->config;
 
-        if ($stage === 'source') {
-            expect($source)->toMatchArray([
-                'transforms' => 'unwrap',
-                'transforms.unwrap.type' => 'io.debezium.transforms.ExtractNewRecordState',
-                'transforms.unwrap.delete.tombstone.handling.mode' => 'tombstone',
-            ]);
-            expect($sink)->not->toHaveKeys([
-                'transforms.unwrap.type',
-                'transforms.unwrap.delete.tombstone.handling.mode',
-            ]);
-            expect($sink['transforms'])
-                ->toBe(
-                    $static
-                        ? 'drop_tombstones,rename_keys,rename_values,field_1_0,field_2_0,insert_type,insert_profile_id'
-                        : 'rename_keys,rename_values',
-                );
-            if ($static) {
-                expect($sink)->toMatchArray([
-                    'transforms.drop_tombstones.type' => 'org.apache.kafka.connect.transforms.Filter',
-                    'transforms.drop_tombstones.predicate' => 'tombstone',
-                    'predicates' => 'tombstone',
-                    'predicates.tombstone.type' => 'org.apache.kafka.connect.transforms.predicates.RecordIsTombstone',
-                ]);
-            }
-        } else {
-            expect($source)->not->toHaveKeys(['transforms', 'transforms.unwrap.type']);
-            expect($sink)->toMatchArray([
-                'transforms.unwrap.type' => 'io.debezium.transforms.ExtractNewRecordState',
-                'transforms.unwrap.delete.tombstone.handling.mode' => $static ? 'drop' : 'tombstone',
-            ]);
-            expect($sink['transforms'])
-                ->toBe(
-                    $static
-                        ? 'unwrap,rename_keys,rename_values,field_1_0,field_2_0,insert_type,insert_profile_id'
-                        : 'unwrap,rename_keys,rename_values',
-                );
-        }
+        expect($source)->toMatchArray([
+            'transforms' => 'unwrap',
+            'transforms.unwrap.type' => 'io.debezium.transforms.ExtractNewRecordState',
+            'transforms.unwrap.delete.tombstone.handling.mode' => 'tombstone',
+        ]);
+        expect($sink)->not->toHaveKeys([
+            'transforms.unwrap.type',
+            'transforms.unwrap.delete.tombstone.handling.mode',
+            'transforms.drop_tombstones.type',
+        ]);
+        expect($sink['transforms'])
+            ->toBe(
+                $static
+                    ? 'rename_keys,rename_values,field_1_0,field_2_0,insert_type,insert_profile_id'
+                    : 'rename_keys,rename_values',
+            );
 
-        expect($sink['delete.enabled'])->toBe($static ? 'false' : 'true');
+        expect($sink['delete.enabled'])->toBe('true');
         expect($sink['pk.mode'])->toBe('record_key');
         expect($sink['transforms.rename_keys.include'])->toBe('_idrref');
         expect($sink['transforms.rename_keys.renames'])->toBe($static ? '_idrref:customer_id' : '_idrref:external_id');
@@ -360,7 +338,7 @@ it('builds sink configuration through the destination registry', function (?stri
         ->and($connector->config['table.name.format'])
         ->toBe($destination ?? $replica->destination)
         ->and($connector->config['delete.enabled'])
-        ->toBe($destination === null ? 'true' : 'false')
+        ->toBe('true')
         ->and($http->requests)
         ->toBe([]);
 })->with(['dynamic' => [null], 'static' => ['customers']]);

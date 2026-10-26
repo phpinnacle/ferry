@@ -134,7 +134,7 @@ it('stores ordered record transforms without applying them', function () {
         ->and(json_decode($saved->getRawOriginal('transforms'), true, flags: JSON_THROW_ON_ERROR))
         ->toBe($serialized)
         ->and(app(TransformFactory::class)->pipeline($saved, StructureItems::make())['transforms'])
-        ->toBe('unwrap,rename_values');
+        ->toBe('rename_values');
 });
 
 it('rolls back a replica and its table when creation fails', function () {

@@ -39,27 +39,13 @@ class TransformFactory
      * @param array<string, string> $fixedValues
      * @return array<string, string>
      */
-    // @mago-expect lint:excessive-parameter-list
     public function pipeline(
         Replica $replica,
         StructureItem $object,
         array $keyMap = [],
-        bool $deletes = false,
         array $fixedValues = [],
-        bool $unwrap = true,
     ): array {
         $pipeline = [];
-        if ($unwrap) {
-            $pipeline['unwrap'] = [
-                'type' => 'io.debezium.transforms.ExtractNewRecordState',
-                'delete.tombstone.handling.mode' => $deletes ? 'tombstone' : 'drop',
-            ];
-        } elseif (!$deletes) {
-            $pipeline['drop_tombstones'] = [
-                'type' => 'org.apache.kafka.connect.transforms.Filter',
-                'predicate' => 'tombstone',
-            ];
-        }
         $after = [];
 
         foreach ($replica->schema as $index => $mapping) {

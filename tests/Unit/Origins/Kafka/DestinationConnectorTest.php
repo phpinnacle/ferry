@@ -206,7 +206,7 @@ it('builds a static sink with fixed fields and its target upstream', function (
         ->and($config['transforms.rename_values.renames'])
         ->toBe('_idrref:customer_id,_fld1:name')
         ->and($config['transforms'])
-        ->toBe('drop_tombstones,rename_keys,rename_values,insert_type,insert_profile_id')
+        ->toBe('rename_keys,rename_values,insert_type,insert_profile_id')
         ->and($config['transforms.insert_type.type'])
         ->toBe('org.apache.kafka.connect.transforms.InsertField$Value')
         ->and($config['transforms.insert_type.static.field'])
@@ -219,9 +219,7 @@ it('builds a static sink with fixed fields and its target upstream', function (
         ->toBe('b2b-profile-id')
         ->and($config)
         ->toMatchArray([
-            'delete.enabled' => 'false',
-            'transforms.drop_tombstones.type' => 'org.apache.kafka.connect.transforms.Filter',
-            'transforms.drop_tombstones.predicate' => 'tombstone',
+            'delete.enabled' => 'true',
             ...$target,
         ]);
 })->with([
@@ -349,7 +347,7 @@ it('selects and renames only source key fields mapped to the static primary key'
     expect($config)->toMatchArray([
         'pk.mode' => 'record_key',
         'transforms.rename_keys.type' => 'org.apache.kafka.connect.transforms.ReplaceField$Key',
-        'delete.enabled' => 'false',
+        'delete.enabled' => 'true',
         ...$expected,
     ]);
 })->with([

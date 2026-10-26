@@ -190,7 +190,7 @@ it('inserts a string constant without registering a transform', function () {
     $pipeline = new TransformFactory()->pipeline($replica, StructureItems::make());
 
     expect($pipeline)->toMatchArray([
-        'transforms' => 'unwrap,rename_values,field_0_0',
+        'transforms' => 'rename_values,field_0_0',
         'transforms.field_0_0.type' => 'org.apache.kafka.connect.transforms.InsertField$Value',
         'transforms.field_0_0.static.field' => 'type',
         'transforms.field_0_0.static.value' => 'Customer',
@@ -208,7 +208,7 @@ it('casts a typed constant after inserting it', function () {
         ->and($mapping->transforms)
         ->toBe([])
         ->and($transforms['transforms'])
-        ->toBe('unwrap,rename_values,field_0_0,field_0_0_cast')
+        ->toBe('rename_values,field_0_0,field_0_0_cast')
         ->and($transforms['transforms.field_0_0_cast.spec'])
         ->toBe('is_active:boolean');
 });
@@ -504,7 +504,7 @@ it('persists and executes static chains on their destination without renaming', 
     app()->forgetInstance(TransformRegistry::class);
     $pipeline = app(TransformFactory::class)->pipeline(new Replica(['schema' => [$mapping]]), StructureItems::make());
     expect($pipeline['transforms'])
-        ->toBe('unwrap,rename_values,field_0_0,field_0_1')
+        ->toBe('rename_values,field_0_0,field_0_1')
         ->and($pipeline['transforms.field_0_0.static.field'])
         ->toBe('discount')
         ->and($pipeline['transforms.field_0_0.static.value'])

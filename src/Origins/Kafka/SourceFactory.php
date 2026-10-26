@@ -14,7 +14,6 @@ class SourceFactory
 
     /**
      * @param array{
-     *     extract_state: 'source'|'sink',
      *     signal: array{topic: string, bootstrap_servers: string, group_id: string, ...},
      *     ...
      * } $config
@@ -96,14 +95,9 @@ class SourceFactory
             'signal.kafka.bootstrap.servers' => $signal['bootstrap_servers'],
             'signal.kafka.groupId' => $signal['group_id'],
             ...$scope,
-            ...(
-                $config['extract_state'] === 'source'
-                    ? [
-                        'transforms' => 'unwrap',
-                        'transforms.unwrap.type' => 'io.debezium.transforms.ExtractNewRecordState',
-                        'transforms.unwrap.delete.tombstone.handling.mode' => 'tombstone',
-                    ] : []
-            ),
+            'transforms' => 'unwrap',
+            'transforms.unwrap.type' => 'io.debezium.transforms.ExtractNewRecordState',
+            'transforms.unwrap.delete.tombstone.handling.mode' => 'tombstone',
         ];
     }
 
