@@ -72,6 +72,8 @@ it('prepares serializable context and reads physical primary keys for roots and 
         ->toBe('object-id')
         ->and($objects[0]->kind)
         ->toBe('document')
+        ->and($objects[0]->primary_key)
+        ->toBe($primaryKey)
         ->and($objects[0]->schema->annotation('x-primary-key'))
         ->toBe($primaryKey)
         ->and($objects[0]->schema->properties())
@@ -82,6 +84,8 @@ it('prepares serializable context and reads physical primary keys for roots and 
         ->toHaveCount(1)
         ->and($objects[0]->children[0]->exists)
         ->toBeFalse()
+        ->and($objects[0]->children[0]->primary_key)
+        ->toBe(['_document1_idrref', '_lineno3'])
         ->and($objects[0]->children[0]->schema->annotation('x-primary-key'))
         ->toBe(['_document1_idrref', '_lineno3']);
 })->with([

@@ -65,7 +65,7 @@ $makeAdapter = function (int $estimated, string $key = 'rosetta') {
                     'external_id' => sprintf('object-%d', $position),
                     'name' => sprintf('table%d', $position),
                     'title' => sprintf('Object %d', $position),
-                    'key_column' => 'record_id',
+                    'primary_key' => ['record_id'],
                     'schema' => JsonSchema::fromArray([
                         'type' => 'object',
                         'properties' => [
@@ -360,6 +360,7 @@ it('imports repeated chunks once and refuses to restore a superseded draft', fun
 
     expect($upstream->structure->items()->sole()->id)->toBe($first->id);
     expect($first->name)->toBe('_reference1');
+    expect($first->primary_key)->toBe(['_idrref']);
     expect($first->schema->annotation('x-primary-key'))->toBe(['_idrref']);
     expect($first->displayTitle())->toBe('Stale object');
 

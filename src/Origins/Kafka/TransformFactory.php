@@ -35,6 +35,7 @@ class TransformFactory
     }
 
     /**
+     * @param array<string, string> $keyMap
      * @param array<string, string> $fixedValues
      * @return array<string, string>
      */
@@ -42,7 +43,7 @@ class TransformFactory
     public function pipeline(
         Replica $replica,
         StructureItem $object,
-        ?string $keyColumn = Replica::ID_COLUMN,
+        array $keyMap = [],
         bool $deletes = false,
         array $fixedValues = [],
         bool $unwrap = true,
@@ -84,15 +85,15 @@ class TransformFactory
             }
         }
 
-        if ($keyColumn !== null) {
+        if ($keyMap !== []) {
             $pipeline['rename_keys'] = [
                 'type' => 'org.apache.kafka.connect.transforms.ReplaceField$Key',
-                'renames' => self::renames([$object->key_column => $keyColumn]),
+                'renames' => self::renames($keyMap),
             ];
         }
         $pipeline['rename_values'] = [
             'type' => 'org.apache.kafka.connect.transforms.ReplaceField$Value',
-            'renames' => self::renames($replica->columnMap($object, $keyColumn)),
+            'renames' => self::renames($replica->columnMap($object)),
         ];
         $pipeline += $after;
 

@@ -24,10 +24,11 @@ it('falls back from the title to the label and then to the physical name', funct
 
 it('reads ready schemas by physical column name', function () {
     $item = new StructureItem([
-        'key_column' => 'record_id',
+        'primary_key' => ['tenant_id', 'record_id'],
         'schema' => JsonSchema::fromArray([
             'type' => 'object',
             'properties' => [
+                'tenant_id' => ['type' => 'integer', 'title' => 'Tenant'],
                 'record_id' => ['type' => 'integer', 'title' => 'ID'],
                 'display_name' => [
                     'type' => 'string',
@@ -63,7 +64,7 @@ it('resolves the full translation key before the title in the current interface 
             ],
         ],
     ];
-    $item = new StructureItem(['key_column' => 'id', 'schema' => JsonSchema::fromArray($definition)]);
+    $item = new StructureItem(['primary_key' => ['id'], 'schema' => JsonSchema::fromArray($definition)]);
     Lang::setLocale('en');
     $english = $item->mappableFields()['_description']['title'];
     expect($english)

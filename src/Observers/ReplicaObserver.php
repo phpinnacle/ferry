@@ -16,7 +16,7 @@ class ReplicaObserver
 
     public function created(Replica $replica): void
     {
-        if ($replica->type === DestinationType::Dynamic) {
+        if ($replica->type === DestinationType::Dynamic && $replica->schema !== []) {
             $this->tables->create($replica);
         }
     }
@@ -36,7 +36,11 @@ class ReplicaObserver
             return;
         }
 
-        $this->tables->update($replica);
+        if ($replica->getOriginal('schema') === []) {
+            $this->tables->create($replica);
+        } else {
+            $this->tables->update($replica);
+        }
     }
 
     public function saved(Replica $replica): void

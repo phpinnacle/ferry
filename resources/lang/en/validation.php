@@ -10,6 +10,7 @@ return [
         'source_duplicate' => 'The source field ":field" is mapped more than once',
         'column_duplicate' => 'The column name ":column" is used more than once',
         'column_format' => 'The column name ":column" must start with a letter and contain only Latin letters, digits and underscores',
-        'column_reserved' => 'The column name ":column" is reserved',
+        'primary_key_required' => 'Map every source primary-key column: :columns',
+        'primary_key_missing' => 'The source must declare a primary key for a dynamic destination',
     ],
 ];

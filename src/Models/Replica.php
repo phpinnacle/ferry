@@ -44,10 +44,6 @@ class Replica extends Model
     use HasUuids;
     use SoftDeletes;
 
-    public const string ID_COLUMN = 'idrref';
-
-    public const array RESERVED_COLUMNS = [self::ID_COLUMN];
-
     protected $table = 'replicas';
 
     protected $attributes = [
@@ -178,12 +174,19 @@ class Replica extends Model
             }
         }
 
+        if ($this->type === DestinationType::Dynamic) {
+            $columns = [...$columns, ...array_diff($object->primary_key, array_keys($this->columnMap($object)))];
+        }
+
         return array_values(array_unique([...$columns, ...$destinationColumns]));
     }
 
     public function hasValidSchema(StructureItem $object, ?Schema $destinationSchema = null): bool
     {
-        return $this->brokenColumns($object, $destinationSchema) === [];
+        return (
+            ($this->type !== DestinationType::Dynamic || $object->primary_key !== [])
+            && $this->brokenColumns($object, $destinationSchema) === []
+        );
     }
 
     /** @return list<string> */
@@ -257,23 +260,38 @@ class Replica extends Model
     }
 
     /** @return array<string, string> */
-    public function columnMap(StructureItem $object, ?string $keyColumn = self::ID_COLUMN): array
+    public function columnMap(StructureItem $object): array
     {
-        $columns = $keyColumn !== null ? [$object->key_column => $keyColumn] : [];
+        $columns = [];
 
         foreach ($this->schema as $mapping) {
             if (
                 $mapping->target !== null
                 && $mapping->source !== null
                 && $object->field($mapping->source) !== null
-                && ($keyColumn === null
-                || $mapping->source !== $object->key_column)
             ) {
                 $columns[$mapping->source] = $mapping->target;
             }
         }
 
         return $columns;
+    }
+
+    public function sourceObject(): StructureItem
+    {
+        return $this->upstream->structure->publishedItems()->where('external_id', $this->source)->firstOrFail();
+    }
+
+    /** @return array<string, string> */
+    public function primaryKeyMap(StructureItem $object): array
+    {
+        $columns = $this->columnMap($object);
+        $keys = [];
+        foreach ($object->primary_key as $column) {
+            $keys[$column] = $columns[$column];
+        }
+
+        return $keys;
     }
 
     /** @return list<string> */

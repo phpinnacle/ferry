@@ -66,6 +66,8 @@ it('lists mappable fields with translated system titles and property titles', fu
         ],
     ]);
 
+    $object->primary_key = ['_idrref'];
+
     expect(array_map(fn (array $field) => $field['title'], $object->mappableFields()))
         ->toBe([
             '_idrref' => __('phpinnacle-ferry::resources.replica.system_fields._idrref'),

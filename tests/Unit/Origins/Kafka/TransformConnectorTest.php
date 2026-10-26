@@ -55,6 +55,7 @@ it('orders source transforms and static values around the renames of a sink', fu
         'upstream_id' => $upstream->id,
         'source' => 'object-0',
         'schema' => [
+            TestCase::keyMapping(),
             new FieldMapping(
                 '_fld1',
                 'size',
@@ -75,17 +76,17 @@ it('orders source transforms and static values around the renames of a sink', fu
     );
 
     expect($config['transforms'])
-        ->toBe('field_0_0,rename_keys,rename_values,field_1_0,field_1_0_cast')
-        ->and($config['transforms.field_0_0.spec'])
+        ->toBe('field_1_0,rename_keys,rename_values,field_2_0,field_2_0_cast')
+        ->and($config['transforms.field_1_0.spec'])
         ->toBe('_fld1:int64')
         ->and($config['transforms.rename_values.renames'])
-        ->toBe('_idrref:idrref,_fld1:size')
-        ->and($config['transforms.field_1_0.static.field'])
+        ->toBe('_idrref:external_id,_fld1:size')
+        ->and($config['transforms.field_2_0.static.field'])
         ->toBe('active')
-        ->and($config['transforms.field_1_0_cast.spec'])
+        ->and($config['transforms.field_2_0_cast.spec'])
         ->toBe('active:boolean')
         ->and($config['fields.whitelist'])
-        ->toBe('idrref,size,active')
+        ->toBe('external_id,size,active')
         ->and($replica->hasValidSchema($object))
         ->toBeTrue()
         ->and(array_keys($replica->columnMap($object)))
@@ -114,6 +115,7 @@ it('captures an unbound field filter without writing it or capturing unused fiel
         'upstream_id' => $upstream->id,
         'source' => 'object-0',
         'schema' => [
+            TestCase::keyMapping(),
             new FieldMapping(
                 '_marked',
                 null,
@@ -143,19 +145,19 @@ it('captures an unbound field filter without writing it or capturing unused fiel
     expect($source['column.include.list'])
         ->toBe('public._reference0._idrref,public._reference0._marked')
         ->and($config['transforms'])
-        ->toBe('field_0_0,rename_keys,rename_values')
-        ->and($config['transforms.field_0_0.filter.condition'])
+        ->toBe('field_1_0,rename_keys,rename_values')
+        ->and($config['transforms.field_1_0.filter.condition'])
         ->toBe("$[?(@['_marked'] == true)]")
-        ->and($config['transforms.field_0_0.predicate'])
+        ->and($config['transforms.field_1_0.predicate'])
         ->toBe('tombstone')
-        ->and($config['transforms.field_0_0.negate'])
+        ->and($config['transforms.field_1_0.negate'])
         ->toBe('true')
         ->and($config['predicates'])
         ->toBe('tombstone')
         ->and($config['predicates.tombstone.type'])
         ->toBe('org.apache.kafka.connect.transforms.predicates.RecordIsTombstone')
         ->and($config['fields.whitelist'])
-        ->toBe('idrref');
+        ->toBe('external_id');
 });
 
 it('keeps building the shared source when a replica refers to a transform that is no longer registered', function () {
@@ -164,18 +166,27 @@ it('keeps building the shared source when a replica refers to a transform that i
     $replica = TestCase::makeReplica([
         'upstream_id' => $upstream->id,
         'source' => 'object-0',
-        'schema' => [new \PHPinnacle\Ferry\Data\FieldMapping(
-            '_idrref',
-            null,
-            JsonSchema::fromArray([
-                'type' => 'string',
-                'format' => 'uuid',
-                'x-ferry-reference' => true,
-                'minLength' => 36,
-                'maxLength' => 36,
-            ]),
-            transforms: [new TransformSetting('missing')],
-        )],
+        'schema' => [
+            new \PHPinnacle\Ferry\Data\FieldMapping(
+                '_idrref',
+                'external_id',
+                JsonSchema::fromArray([
+                    'type' => 'string',
+                    'format' => 'uuid',
+                    'x-ferry-reference' => true,
+                    'minLength' => 36,
+                    'maxLength' => 36,
+                ]),
+                result: JsonSchema::fromArray([
+                    'type' => 'string',
+                    'format' => 'uuid',
+                    'x-ferry-reference' => true,
+                    'minLength' => 36,
+                    'maxLength' => 36,
+                ]),
+                transforms: [new TransformSetting('missing')],
+            ),
+        ],
     ]);
 
     expect(new SourceFactory()->source(
@@ -205,6 +216,7 @@ it('builds installed string transforms before renames and guards masking against
         'upstream_id' => $upstream->id,
         'source' => 'object-0',
         'schema' => [
+            TestCase::keyMapping(),
             new FieldMapping(
                 '_description',
                 'contact',
@@ -227,36 +239,36 @@ it('builds installed string transforms before renames and guards masking against
     );
 
     expect($config['transforms'])
-        ->toBe('field_0_0,field_0_1,field_0_2,field_0_3,rename_keys,rename_values')
-        ->and($config['transforms.field_0_0.type'])
+        ->toBe('field_1_0,field_1_1,field_1_2,field_1_3,rename_keys,rename_values')
+        ->and($config['transforms.field_1_0.type'])
         ->toBe('org.phpinnacle.toblerone.TrimTransform$Value')
-        ->and($config['transforms.field_0_0.fields'])
+        ->and($config['transforms.field_1_0.fields'])
         ->toBe('_description')
-        ->and($config['transforms.field_0_1.type'])
+        ->and($config['transforms.field_1_1.type'])
         ->toBe('org.phpinnacle.toblerone.SubstringTransform$Value')
-        ->and($config['transforms.field_0_1.fields'])
+        ->and($config['transforms.field_1_1.fields'])
         ->toBe('_description:0:5')
-        ->and($replica->fresh()->schema[0]->transforms)
+        ->and($replica->fresh()->schema[1]->transforms)
         ->toEqual([
             new TransformSetting('trim'),
             new TransformSetting('substring', ['start' => '0', 'end' => '5']),
             new TransformSetting('substring', ['start' => '1', 'end' => '3']),
             new TransformSetting('mask', ['replacement' => 'hidden']),
         ])
-        ->and($config['transforms.field_0_2.fields'])
+        ->and($config['transforms.field_1_2.fields'])
         ->toBe('_description:1:3')
-        ->and($config['transforms.field_0_3.fields'])
+        ->and($config['transforms.field_1_3.fields'])
         ->toBe('_description')
-        ->and($config['transforms.field_0_3.replacement'])
+        ->and($config['transforms.field_1_3.replacement'])
         ->toBe('hidden')
-        ->and($config['transforms.field_0_3.predicate'])
+        ->and($config['transforms.field_1_3.predicate'])
         ->toBe('tombstone')
-        ->and($config['transforms.field_0_3.negate'])
+        ->and($config['transforms.field_1_3.negate'])
         ->toBe('true')
         ->and($config['predicates.tombstone.type'])
         ->toBe('org.apache.kafka.connect.transforms.predicates.RecordIsTombstone')
         ->and($config['transforms.rename_values.renames'])
-        ->toBe('_idrref:idrref,_description:contact');
+        ->toBe('_idrref:external_id,_description:contact');
 });
 
 it('scopes and transforms independently selected reference components using their real columns', function () {
@@ -296,6 +308,7 @@ it('scopes and transforms independently selected reference components using thei
     $replica = TestCase::makeReplica([
         'upstream_id' => $upstream->id,
         'schema' => [
+            TestCase::keyMapping(),
             new FieldMapping('_fld16rref', 'supplier', $object->field('_fld16rref')),
             new FieldMapping('_fld17_rrref', 'owner', $object->field('_fld17_rrref')),
             new FieldMapping(
@@ -331,11 +344,11 @@ it('scopes and transforms independently selected reference components using thei
             'public._reference0._fld17_type',
         ])
         ->and($sink['transforms.rename_values.renames'])
-        ->toBe('_idrref:idrref,_fld16rref:supplier,_fld17_rrref:owner')
-        ->and($sink['transforms.field_2_0.filter.condition'])
+        ->toBe('_idrref:external_id,_fld16rref:supplier,_fld17_rrref:owner')
+        ->and($sink['transforms.field_3_0.filter.condition'])
         ->toBe("$[?(@['_fld17_type'] == '08')]")
         ->and($sink['fields.whitelist'])
-        ->toBe('idrref,supplier,owner')
+        ->toBe('external_id,supplier,owner')
         ->and($replica->fresh()->schema)
         ->toEqual($replica->schema)
         ->and($replica->hasValidSchema($object))
@@ -387,5 +400,5 @@ it('scopes and transforms independently selected reference components using thei
         ->and($replica->brokenColumns($renamed))
         ->toContain('supplier', 'owner')
         ->and($replica->columnMap($renamed))
-        ->toBe(['_idrref' => 'idrref']);
+        ->toBe(['_idrref' => 'external_id']);
 });

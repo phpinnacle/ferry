@@ -42,6 +42,82 @@ beforeEach(function () {
     Queue::fake();
 });
 
+it('requires explicit composite key bindings and creates the dynamic table on the first complete save', function () {
+    config(['database.connections.sqlite.host' => 'db.internal', 'database.connections.sqlite.port' => 5432]);
+    $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
+    $object = TestCase::makeItem($upstream, [
+        'primary_key' => ['tenant_id', 'record_id'],
+        'fields' => [],
+        'sources' => [
+            'tenant_id' => ['type' => 'integer', 'title' => 'Tenant'],
+            'record_id' => ['type' => 'string', 'maxLength' => 20, 'title' => 'ID'],
+            'display_name' => ['type' => 'string', 'maxLength' => 100, 'title' => 'Name'],
+        ],
+    ]);
+    $replica = TestCase::makeReplica(['upstream_id' => $upstream->id, 'schema' => []]);
+    $database = $replica->getConnection();
+    expect($database->getSchemaBuilder()->hasTable($replica->destination))->toBeFalse();
+    $form = ReplicaForm::configure(
+        FilamentSchema::make(SchemaHost::make())->statePath('data')->record($replica)->operation('edit'),
+    );
+    $data = ReplicaForm::fill($replica->toArray());
+    $form->fill([
+        ...$data,
+        'schema' => MappingState::binding([
+            'tenant_id' => 'tenant',
+            'display_name' => 'name',
+            'id' => ['value' => 'constant'],
+        ]),
+    ]);
+    $mapping = $form->getComponentByStatePath('schema');
+    expect(array_column(array_filter($mapping->getSources(), fn (array $source) => $source['required']), 'id'))
+        ->toBe(['tenant_id', 'record_id']);
+    view()->share('errors', new \Illuminate\Support\ViewErrorBag);
+    expect($mapping->toHtml())->toContain('eidos-mapping-required');
+    expect(fn () => ReplicaForm::forUpdate($form->getState(), $replica, app(DestinationFactory::class)))
+        ->toThrow(ValidationException::class, 'record_id');
+    expect($database->getSchemaBuilder()->hasTable($replica->destination))->toBeFalse();
+
+    $form->fill([
+        ...$data,
+        'schema' => MappingState::binding([
+            'record_id' => 'id',
+            'tenant_id' => 'tenant',
+            'display_name' => 'name',
+        ]),
+    ]);
+    $replica->update(ReplicaForm::forUpdate($form->getState(), $replica, app(DestinationFactory::class)));
+    $index = array_find(
+        $database->getSchemaBuilder()->getIndexes($replica->destination),
+        fn (array $index) => $index['primary'],
+    );
+    expect($index['columns'])->toBe(['tenant', 'id']);
+    expect($database->getSchemaBuilder()->getColumnListing($replica->destination))->toBe(['tenant', 'id', 'name']);
+    $database
+        ->table($replica->destination)
+        ->insert([
+            ['tenant' => 1, 'id' => 'same-id', 'name' => 'One'],
+            ['tenant' => 2, 'id' => 'same-id', 'name' => 'Two'],
+        ]);
+    expect(fn () => $database->table($replica->destination)->insert(['tenant' => 1, 'id' => 'same-id']))
+        ->toThrow(\Illuminate\Database\QueryException::class);
+
+    $destination = app(DestinationFactory::class)->resolve($replica);
+    expect($destination->getPrimaryKey())->toBe(['tenant', 'id']);
+    $config = app(\PHPinnacle\Ferry\Origins\Kafka\SinkConfigFactory::class)->make(
+        $destination,
+        $replica,
+        $object,
+        'customers',
+    );
+    expect($config)->toMatchArray([
+        'pk.mode' => 'record_key',
+        'pk.fields' => 'tenant,id',
+        'transforms.rename_keys.renames' => 'tenant_id:tenant,record_id:id',
+        'delete.enabled' => 'true',
+    ]);
+});
+
 it('accepts UUID transform outputs for reference destinations', function () {
     app(TransformRegistry::class)->register(Transformation::make('as_uuid')
         ->inputSchema(['type' => 'string'])
@@ -552,7 +628,7 @@ it('validates the bound column names of a dynamic replica', function (string $co
 })->with([
     'valid column' => ['external_id', true],
     'uppercase column' => ['External', false],
-    'reserved column' => ['idrref', false],
+    'former technical column' => ['idrref', true],
 ]);
 
 it('creates every parameter of a chosen transform so that live inputs can bind to them', function () {
@@ -707,7 +783,7 @@ it('resets the shared schema when switching destinations', function (string $fro
     expect(array_map(
         fn (array $settings) => $settings['transforms'],
         $mapping->getSourceSettings(),
-    ))->toBe(['_description' => []]);
+    ))->toBe(['_idrref' => [], '_description' => []]);
     view()->share('errors', new \Illuminate\Support\ViewErrorBag);
     expect($form->toHtml())->toContain('Field Mapping');
 })->with([
@@ -737,6 +813,7 @@ it('passes outdated mappings to the field warnings instead of a separate entry',
         'type' => $type,
         'destination' => $type === DestinationType::Static ? 'customers' : null,
         'schema' => [
+            ...($type === DestinationType::Dynamic ? [TestCase::keyMapping()] : []),
             new SchemaMapping('_description', 'name', JsonSchema::fromArray(['type' => 'string', 'maxLength' => 100])),
             new SchemaMapping('_missing', 'gone', JsonSchema::fromArray(['type' => 'string', 'maxLength' => 100])),
         ],
@@ -778,6 +855,7 @@ it('warns on a changed source used only by a filter', function () {
     $replica = TestCase::makeReplica([
         'upstream_id' => $upstream->id,
         'schema' => [
+            TestCase::keyMapping(),
             new SchemaMapping('_marked', null, JsonSchema::fromArray(['type' => 'boolean']), transforms: [
                 new \PHPinnacle\Ferry\Data\TransformSetting('filter', [
                     'mode' => 'exclude',
@@ -820,6 +898,11 @@ it('stores physical source names directly and detects renamed source columns', f
         'name' => 'Physical names',
         'code' => 'physical_names',
         'schema' => [
+            ...(
+                $type === DestinationType::Dynamic
+                    ? [['kind' => 'source', 'source' => '_idrref', 'target' => 'external_id']]
+                    : []
+            ),
             ['kind' => 'source', 'source' => '_fld17', 'target' => 'name', 'transforms' => $transforms],
             ['kind' => 'source', 'source' => '_code', 'target' => 'tax_number', 'transforms' => []],
         ],
@@ -902,7 +985,7 @@ it('shows each composite column as a separate source card and saves only its sel
         'source' => 'object-0',
         'destination' => $destination,
         'schema' => $destination === DestinationType::Dynamic->value
-            ? MappingState::binding(['_fld17_rrref' => 'owner'])
+            ? MappingState::binding(['_idrref' => 'external_id', '_fld17_rrref' => 'owner'])
             : MappingState::mapping(['owner' => MappingState::source('_fld17_rrref')]),
     ]);
     $mapping = $form->getComponentByStatePath('schema');
@@ -917,7 +1000,10 @@ it('shows each composite column as a separate source card and saves only its sel
         ->and($sources['_fld17_type']['label'])
         ->toBe('Owner · ' . __('phpinnacle-ferry::resources.replica.components.type'));
     $data = TestCase::mappedReplicaAttributes($form->getState(), app(DestinationFactory::class));
-    $bound = array_values(array_filter($data['schema'], fn (array $row) => $row['target'] !== null));
+    $bound = array_values(array_filter(
+        $data['schema'],
+        fn (array $row) => $row['target'] !== null && $row['source'] !== '_idrref',
+    ));
     expect($bound)
         ->toHaveCount(1)
         ->and($bound[0]['source'])
@@ -933,7 +1019,10 @@ it('shows each composite column as a separate source card and saves only its sel
             'maxLength' => 36,
         ]);
     $filled = ReplicaForm::fill([...$data, 'type' => $data['type']->value, 'destination' => 'owners']);
-    $bound = array_values(array_filter($filled['schema'], fn (array $row) => $row['target'] !== null));
+    $bound = array_values(array_filter(
+        $filled['schema'],
+        fn (array $row) => $row['target'] !== null && $row['source'] !== '_idrref',
+    ));
     expect($bound[0]['source'])->toBe('_fld17_rrref');
 })->with([DestinationType::Dynamic->value, 'static:owners']);
 

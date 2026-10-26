@@ -1,7 +1,6 @@
 <?php
 
 use Illuminate\Support\Facades\Validator;
-use PHPinnacle\Ferry\Models\Replica;
 use PHPinnacle\Ferry\Rules\ReplicaSchema;
 use Tests\TestCase;
 
@@ -44,10 +43,15 @@ it('accepts only snake case latin column names', function (string $column) use (
     'space' => 'column name',
 ]);
 
-it('forbids reserved technical column names', function () use ($validate) {
-    expect($validate([Replica::ID_COLUMN]))
-        ->toBe(__(
-            'phpinnacle-ferry::validation.replica_schema.column_reserved',
-            ['column' => Replica::ID_COLUMN],
-        ));
+it('allows the former technical column name', function () use ($validate) {
+    expect($validate(['idrref']))->toBeNull();
+});
+
+it('requires a declared source primary key for dynamic bindings', function () {
+    $validator = Validator::make(['schema' => ['record_id']], ['schema' => [
+        fn (string $attribute, mixed $value, Closure $fail) => ReplicaSchema::validatePrimaryKey([], $value, $fail),
+    ]]);
+
+    expect($validator->errors()->first('schema'))
+        ->toBe(__('phpinnacle-ferry::validation.replica_schema.primary_key_missing'));
 });

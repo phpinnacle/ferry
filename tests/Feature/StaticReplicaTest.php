@@ -63,7 +63,7 @@ it('prepares typed replica attributes from its form', function (?string $destina
         'source' => 'object-0',
         'destination' => $destination !== null ? 'static:' . $destination : DestinationType::Dynamic->value,
         'schema' => $destination === null
-            ? MappingState::binding(['_description' => 'name', '_code' => 'tax_number'])
+            ? MappingState::binding(['_idrref' => 'external_id', '_description' => 'name', '_code' => 'tax_number'])
             : MappingState::mapping([
                 'name' => MappingState::source('_description'),
                 'tax_number' => MappingState::source('_code'),
@@ -110,7 +110,11 @@ it('prepares typed replica attributes from its form', function (?string $destina
             'target',
             'source',
         ))
-        ->toEqual(['_description' => 'name', '_code' => 'tax_number'])
+        ->toEqual([
+            '_description' => 'name',
+            '_code' => 'tax_number',
+            '_idrref' => $destination === null ? 'external_id' : null,
+        ])
         ->and(Schema::hasTable('ferry_replica_customers_replica'))
         ->toBe($destination === null);
 
@@ -133,7 +137,7 @@ it('keeps a static value through creating, filling and updating a static replica
         'name' => MappingState::source('_description'),
         'is_active' => MappingState::value(true),
         'tax_number' => MappingState::value('none'),
-    ], ['_description' => ['transforms' => []], '_code' => ['transforms' => []]]);
+    ], ['_description' => ['transforms' => []], '_idrref' => ['transforms' => []], '_code' => ['transforms' => []]]);
 
     $createForm = ReplicaForm::configure(FormSchema::make($livewire)->statePath('data')->operation('create'));
     $createForm->fill([
@@ -153,7 +157,7 @@ it('keeps a static value through creating, filling and updating a static replica
     $replica = Replica::create(TestCase::mappedReplicaAttributes($createState, $destinations));
 
     expect(array_column($replica->schema, 'source'))
-        ->toBe(['_description', null, null, '_code'])
+        ->toBe(['_description', null, null, '_idrref', '_code'])
         ->and($replica->constantColumns())
         ->toBe(['is_active', 'tax_number'])
         ->and($replica->schema[1]->outputSchema()?->singleType())
@@ -184,7 +188,12 @@ it('keeps a typed static value through creating and filling a dynamic replica', 
     ]);
     $destinations = app(DestinationFactory::class);
     $livewire = SchemaHost::make();
-    $state = MappingState::binding(['_description' => 'title', 'priority' => ['value' => 5]], [
+    $state = MappingState::binding([
+        '_idrref' => 'external_id',
+        '_description' => 'title',
+        'priority' => ['value' => 5],
+    ], [
+        '_idrref' => ['transforms' => []],
         '_description' => ['transforms' => []],
     ]);
 
@@ -207,7 +216,7 @@ it('keeps a typed static value through creating and filling a dynamic replica', 
 
     expect(Schema::hasColumns('ferry_replica_customers_replica', ['title', 'priority']))
         ->toBeTrue()
-        ->and($replica->schema[1]->outputSchema()?->singleType())
+        ->and($replica->schema[2]->outputSchema()?->singleType())
         ->toBe('integer');
 
     $form = ReplicaForm::configure(FormSchema::make($livewire)->statePath('data')->record($replica)->operation('edit'));
@@ -392,7 +401,7 @@ it('persists and restores transforms on every source independently of its target
         'code' => 'codes_replica',
         'source' => 'object-0',
         'destination' => 'dynamic',
-        'schema' => MappingState::binding(['_code' => 'code']),
+        'schema' => MappingState::binding(['_idrref' => 'external_id', '_code' => 'code']),
     ]);
     view()->share('errors', new ViewErrorBag);
     $mapping = $form->getComponentByStatePath('schema');
@@ -417,12 +426,12 @@ it('persists and restores transforms on every source independently of its target
     );
 
     expect($attributes['schema'])
-        ->toHaveCount(2)
-        ->and($attributes['schema'][1]['target'])
+        ->toHaveCount(3)
+        ->and($attributes['schema'][2]['target'])
         ->toBeNull()
-        ->and($attributes['schema'][1]['transforms'])
+        ->and($attributes['schema'][2]['transforms'])
         ->toBe([['type' => 'cast', 'data' => ['type' => 'integer']]])
-        ->and($attributes['schema'][0]['transforms'])
+        ->and($attributes['schema'][1]['transforms'])
         ->toBe([['type' => 'cast', 'data' => ['type' => 'integer']]]);
 });
 
@@ -445,9 +454,7 @@ it('validates destination columns directly for bindings and static values', func
 })->with([
     'empty mapping' => [[]],
     'invalid bound column' => [['_description' => 'Title']],
-    'reserved bound column' => [['_description' => Replica::ID_COLUMN]],
     'invalid constant column' => [['bad-column' => ['type' => 'string', 'value' => 'x']]],
-    'reserved constant column' => [[Replica::ID_COLUMN => ['type' => 'string', 'value' => 'x']]],
 ]);
 
 it('rejects a static value column that duplicates a bound column', function () {
@@ -516,6 +523,7 @@ it('confirms removed and retyped dynamic columns when saving the form', function
         'type' => $change === 'static' ? DestinationType::Static : DestinationType::Dynamic,
         'destination' => $change === 'static' ? 'customers' : null,
         'schema' => [
+            ...($change === 'static' ? [] : [TestCase::keyMapping()]),
             new FieldMapping('_description', 'name', $object->field('_description')),
             new FieldMapping('_code', 'tax_number', $object->field('_code')),
         ],
@@ -779,7 +787,7 @@ it('creates an unmapped pending replica from only its identifying fields', funct
     expect($replica->connector_id)->toBeNull();
     expect($replica->type)->toBe($type);
     if ($type === DestinationType::Dynamic) {
-        expect(Schema::getColumnListing($replica->destination))->toBe([Replica::ID_COLUMN]);
+        expect(Schema::hasTable($replica->destination))->toBeFalse();
     } else {
         expect(Schema::hasTable('customers'))->toBeFalse();
         $edit = ReplicaForm::configure(

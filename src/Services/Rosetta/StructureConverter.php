@@ -45,7 +45,6 @@ class StructureConverter
             'kind' => $definition->kind->value,
             'label' => $definition->label,
             'title' => $definition->title,
-            'key_column' => '_idrref',
             'schema' => JsonSchema::fromArray(['type' => 'object', 'properties' => $properties]),
             'values' => array_map(static fn ($value) => $value->jsonSerialize(), $definition->values),
         ]);

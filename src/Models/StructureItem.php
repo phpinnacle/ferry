@@ -24,7 +24,7 @@ use PHPinnacle\Ferry\Casts\JsonSchemaCast;
  * @property string|null $kind
  * @property string $label
  * @property string $title
- * @property string $key_column
+ * @property list<string> $primary_key
  * @property int $priority
  * @property JsonSchema $schema
  * @property list<array{id: string, label: string, title: string}> $values
@@ -43,11 +43,12 @@ class StructureItem extends Model
 
     protected $table = 'structure_items';
 
-    protected $attributes = ['priority' => 1, 'label' => '', 'title' => '', 'values' => '[]'];
+    protected $attributes = ['primary_key' => '[]', 'priority' => 1, 'label' => '', 'title' => '', 'values' => '[]'];
 
     protected $casts = [
         'code' => 'integer',
         'priority' => 'integer',
+        'primary_key' => 'array',
         'schema' => JsonSchemaCast::class,
         'values' => 'array',
         'position' => 'integer',
@@ -64,7 +65,7 @@ class StructureItem extends Model
         'kind',
         'label',
         'title',
-        'key_column',
+        'primary_key',
         'priority',
         'schema',
         'values',
@@ -128,7 +129,7 @@ class StructureItem extends Model
         foreach ($this->properties() as $source => $field) {
             $source = (string) $source;
             if (
-                $source === $this->key_column
+                in_array($source, $this->primary_key, true)
                 && !$withKey
                 || !in_array($field->singleType(), ['string', 'integer', 'number', 'boolean'], true)
             ) {

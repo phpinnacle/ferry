@@ -43,7 +43,7 @@ it('stores ordered record transforms without applying them', function () {
         ->and(json_decode($saved->getRawOriginal('transforms'), true, flags: JSON_THROW_ON_ERROR))
         ->toBe($serialized)
         ->and(app(TransformFactory::class)->pipeline($saved, StructureItems::make())['transforms'])
-        ->toBe('unwrap,rename_keys,rename_values');
+        ->toBe('unwrap,rename_values');
 });
 
 it('rolls back a replica and its table when creation fails', function () {
@@ -56,7 +56,7 @@ it('rolls back a replica and its table when creation fails', function () {
                 ->getConnection()
                 ->getSchemaBuilder()
                 ->create($replica->destination, function (Blueprint $table) {
-                    $table->string(Replica::ID_COLUMN)->primary();
+                    $table->string('external_id')->primary();
                 });
 
             throw new RuntimeException('Destination creation failed');
@@ -133,7 +133,7 @@ it('owns the persisted schema and destination table throughout its lifecycle', f
         ->and($upstream->isInUse())
         ->toBeTrue()
         ->and(Schema::getColumnListing($replica->destination))
-        ->toContain(Replica::ID_COLUMN, 'external_id', 'title', 'price', 'posted')
+        ->toContain('external_id', 'title', 'price', 'posted')
         ->not->toContain('id', 'created_at', 'updated_at');
 
     $replica->delete();
@@ -174,7 +174,6 @@ it('adds, renames and drops columns when the mapping changes', function () {
     ]);
 
     DB::table($replica->destination)->insert([
-        Replica::ID_COLUMN => 'row-1',
         'external_id' => 'source-1',
         'title' => 'Original title',
     ]);
@@ -189,7 +188,6 @@ it('adds, renames and drops columns when the mapping changes', function () {
     $replica->save();
 
     expect(DB::table($replica->destination)->sole())->toEqual((object) [
-        Replica::ID_COLUMN => 'row-1',
         'row_id' => 'source-1',
         'price' => null,
     ]);
@@ -200,10 +198,14 @@ it('adds, renames and drops columns when the mapping changes', function () {
 
 it('preserves renamed values when a new mapping reuses the original column name', function () {
     $field = JsonSchema::fromArray(['type' => 'string', 'maxLength' => 100]);
-    $replica = TestCase::makeReplica(['schema' => [new FieldMapping('name', 'name', $field)]]);
-    DB::table($replica->destination)->insert([Replica::ID_COLUMN => 'row-1', 'name' => 'Original']);
+    $replica = TestCase::makeReplica(['schema' => [
+        TestCase::keyMapping(),
+        new FieldMapping('name', 'name', $field),
+    ]]);
+    DB::table($replica->destination)->insert(['external_id' => 'row-1', 'name' => 'Original']);
 
     $replica->fill(['schema' => [
+        TestCase::keyMapping(),
         new FieldMapping('name', 'display_name', $field),
         new FieldMapping('alias', 'name', $field),
     ]]);
@@ -212,7 +214,7 @@ it('preserves renamed values when a new mapping reuses the original column name'
     $replica->save();
 
     expect(DB::table($replica->destination)->sole())->toEqual((object) [
-        Replica::ID_COLUMN => 'row-1',
+        'external_id' => 'row-1',
         'display_name' => 'Original',
         'name' => null,
     ]);
@@ -249,7 +251,11 @@ it('uses output schema bounds for PostgreSQL varchar columns', function () {
         ),
         new FieldMapping(null, 'constant', null, static: 'value', kind: FieldKind::Static),
     ];
-    $replica = new Replica(['schema' => $mappings]);
+    $replica = Mockery::mock(Replica::class)->makePartial();
+    $replica->fill(['schema' => [TestCase::keyMapping(), ...$mappings]]);
+    $replica
+        ->shouldReceive('sourceObject')
+        ->andReturn(StructureItems::make(['fields' => ['_idrref' => TestCase::keyMapping()->field]]));
     $replica->destination = 'string_outputs';
     config(['phpinnacle-ferry.connection' => 'pgsql']);
 
@@ -271,12 +277,14 @@ it('alters string bounds without dropping stored values, including when renaming
         'sources' => [],
     ]);
     $replica = TestCase::makeReplica(['schema' => [
+        TestCase::keyMapping(),
         new FieldMapping('code', 'code', $object->field('code')),
     ]]);
-    DB::table($replica->destination)->insert([Replica::ID_COLUMN => 'row-1', 'code' => 'A']);
+    DB::table($replica->destination)->insert(['external_id' => 'row-1', 'code' => 'A']);
 
     foreach (['mask' => null, 'bounded' => 30] as $key => $length) {
         $replica->fill(['schema' => [
+            TestCase::keyMapping(),
             new FieldMapping(
                 'code',
                 'display_code',
@@ -423,13 +431,16 @@ it('reviews source structure without checking configured transform handlers', fu
 
     $replica = TestCase::makeReplica([
         'upstream_id' => $upstream->id,
-        'schema' => [new FieldMapping('_marked', null, JsonSchema::fromArray(['type' => 'boolean']), transforms: [
-            new TransformSetting($key, [
-                'mode' => 'exclude',
-                'condition' => '@ == true',
-                'missing_or_null_behavior' => 'include',
+        'schema' => [
+            TestCase::keyMapping(),
+            new FieldMapping('_marked', null, JsonSchema::fromArray(['type' => 'boolean']), transforms: [
+                new TransformSetting($key, [
+                    'mode' => 'exclude',
+                    'condition' => '@ == true',
+                    'missing_or_null_behavior' => 'include',
+                ]),
             ]),
-        ])],
+        ],
     ], ['status' => ReplicaStatus::Active]);
 
     TestCase::makeItem($upstream, ['revision' => $upstream->structure->draftRevision(), 'fields' => $system]);
@@ -526,7 +537,7 @@ it('keeps replicas active when the structure is republished unchanged', function
 it('generates its dynamic table name on creation and preserves it after prefix and code changes', function () {
     config(['phpinnacle-ferry.replica.table_prefix' => 'initial_']);
     $replica = TestCase::makeReplica(['code' => 'orders', 'destination' => 'ignored_table']);
-    DB::table('initial_orders')->insert([Replica::ID_COLUMN => 'row-1', 'external_id' => 'source-1']);
+    DB::table('initial_orders')->insert(['external_id' => 'source-1']);
 
     expect($replica->fresh()->destination)->toBe('initial_orders');
     expect(Schema::hasTable('ignored_table'))->toBeFalse();
@@ -544,18 +555,25 @@ it('creates decimal columns from the effective output schema', function (?array 
         'phpinnacle-ferry.connection' => 'schema-preview',
         'database.connections.schema-preview' => ['driver' => 'pgsql', 'database' => 'preview'],
     ]);
-    $replica = new Replica([
+    $replica = Mockery::mock(Replica::class)->makePartial();
+    $replica
+        ->shouldReceive('sourceObject')
+        ->andReturn(StructureItems::make(['fields' => ['_idrref' => TestCase::keyMapping()->field]]));
+    $replica->fill([
         'destination' => 'decimal_columns',
-        'schema' => [new FieldMapping(
-            'amount',
-            'amount',
-            JsonSchema::fromArray([
-                'type' => 'number',
-                'x-ferry-precision' => 12,
-                'x-ferry-scale' => 4,
-            ]),
-            result: $result !== null ? JsonSchema::fromArray($result) : null,
-        )],
+        'schema' => [
+            TestCase::keyMapping(),
+            new FieldMapping(
+                'amount',
+                'amount',
+                JsonSchema::fromArray([
+                    'type' => 'number',
+                    'x-ferry-precision' => 12,
+                    'x-ferry-scale' => 4,
+                ]),
+                result: $result !== null ? JsonSchema::fromArray($result) : null,
+            ),
+        ],
     ]);
 
     $queries = $replica->getConnection()->pretend(fn () => app(ReplicaTableManager::class)->create($replica));

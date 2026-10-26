@@ -73,8 +73,9 @@ it('reports every mapping as broken when its destination is gone', function () {
 });
 
 it('ignores removed unused sources during structure review', function () {
-    $object = StructureItems::make(['fields' => [], 'sources' => []]);
+    $object = StructureItems::make(['fields' => ['_idrref' => $this->object->field('_idrref')], 'sources' => []]);
     $replica = new Replica(['schema' => [
+        new FieldMapping('_idrref', 'external_id', $this->object->field('_idrref')),
         new FieldMapping(
             '_unused',
             null,
@@ -83,6 +84,15 @@ it('ignores removed unused sources during structure review', function () {
     ]]);
 
     expect($replica->hasValidSchema($object))->toBeTrue();
+});
+
+it('rejects dynamic replication when the source loses its primary key', function () {
+    $replica = new Replica(['schema' => [
+        new FieldMapping('_idrref', 'id', $this->object->field('_idrref')),
+    ]]);
+    $this->object->primary_key = [];
+
+    expect($replica->hasValidSchema($this->object))->toBeFalse();
 });
 
 it('uses JSON Schema compatibility when saving and reviewing static replicas', function (
@@ -149,11 +159,14 @@ it('uses JSON Schema compatibility when saving and reviewing static replicas', f
 ]);
 
 it('reviews changes to saved source constraints', function () {
-    $replica = new Replica(['schema' => [new FieldMapping(
-        '_description',
-        'name',
-        JsonSchema::fromArray(['type' => 'string', 'maxLength' => 80]),
-    )]]);
+    $replica = new Replica(['schema' => [
+        new FieldMapping('_idrref', 'external_id', $this->object->field('_idrref')),
+        new FieldMapping(
+            '_description',
+            'name',
+            JsonSchema::fromArray(['type' => 'string', 'maxLength' => 80]),
+        ),
+    ]]);
 
     expect($replica->brokenColumns($this->object))->toBe(['name']);
 });
@@ -199,8 +212,6 @@ it('exposes default presentation for resolved destinations', function (
     ]));
 
     expect($destination->getLabel())->toBe($label);
-    expect($destination->getPrimaryKey())
-        ->toBe($type === DestinationType::Static ? ['customer_id'] : [Replica::ID_COLUMN]);
     expect($destination->getIcon())->toBeNull();
     expect($destination->getColor())->toBeNull();
 })->with([

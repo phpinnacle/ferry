@@ -8,7 +8,6 @@ use Illuminate\Validation\ValidationException;
 use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Data\FieldMapping;
 use PHPinnacle\Ferry\Destinations\StaticDestination;
-use PHPinnacle\Ferry\Models\Replica;
 use PHPinnacle\Ferry\Services\ReplicaTableManager;
 
 readonly class ReplicaSchema
@@ -61,15 +60,27 @@ readonly class ReplicaSchema
             return false;
         }
 
-        if (in_array($column, Replica::RESERVED_COLUMNS, true)) {
-            $fail('phpinnacle-ferry::validation.replica_schema.column_reserved')->translate([
-                'column' => $column,
-            ]);
-
-            return false;
-        }
-
         return true;
+    }
+
+    /**
+     * @param list<string> $primaryKey
+     * @param list<string> $sources
+     * @param Closure(string): PotentiallyTranslatedString $fail
+     */
+    public static function validatePrimaryKey(array $primaryKey, array $sources, Closure $fail): void
+    {
+        if ($primaryKey === []) {
+            $fail('phpinnacle-ferry::validation.replica_schema.primary_key_missing')->translate();
+
+            return;
+        }
+        $missing = array_diff($primaryKey, $sources);
+        if ($missing !== []) {
+            $fail('phpinnacle-ferry::validation.replica_schema.primary_key_required')->translate([
+                'columns' => implode(', ', $missing),
+            ]);
+        }
     }
 
     /** @param list<FieldMapping> $mappings */

@@ -307,7 +307,7 @@ class Structure extends Model
                 'kind',
                 'label',
                 'title',
-                'key_column',
+                'primary_key',
                 'priority',
                 'schema',
                 'values',

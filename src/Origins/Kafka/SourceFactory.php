@@ -26,6 +26,7 @@ class SourceFactory
         $replicas = $upstream->replicas()->get();
         $tables = [];
         $columns = [];
+        $keys = [];
 
         $objects = $upstream
             ->structure
@@ -43,9 +44,13 @@ class SourceFactory
 
             $table = $this->table($upstream, $object);
 
-            $tables[$table] = sprintf('%s:%s', $table, $object->key_column);
+            $tables[$table] = true;
 
-            foreach (array_keys($replica->columnMap($object)) as $column) {
+            if ($object->primary_key !== []) {
+                $keys[$table] = sprintf('%s:%s', $table, implode(',', $object->primary_key));
+            }
+
+            foreach ([...$object->primary_key, ...array_keys($replica->columnMap($object))] as $column) {
                 $columns[sprintf('%s.%s', $table, $column)] = true;
             }
 
@@ -62,7 +67,7 @@ class SourceFactory
             ? [
                 'table.include.list' => implode(',', array_keys($tables)),
                 'column.include.list' => implode(',', array_keys($columns)),
-                'message.key.columns' => implode(';', $tables),
+                ...($keys !== [] ? ['message.key.columns' => implode(';', $keys)] : []),
             ]
             : ['table.include.list' => '(?!)'];
 

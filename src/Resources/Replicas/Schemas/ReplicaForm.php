@@ -322,7 +322,7 @@ class ReplicaForm
             ->compact()
             ->warnings($warnings)
             ->label(__('phpinnacle-ferry::resources.replica.fields.schema'))
-            ->jsonSchema(self::sourceSchema($object))
+            ->jsonSchema([...self::sourceSchema($object), 'required' => $object->primary_key ?? []])
             ->labels(
                 source: __('phpinnacle-ferry::resources.replica.fields.source_title'),
                 dest: __('phpinnacle-ferry::resources.replica.fields.target_column'),
@@ -336,13 +336,25 @@ class ReplicaForm
             ->staticValues()
             ->rule(fn (FieldBinding $component) => function (string $attribute, mixed $value, Closure $fail) use (
                 $component,
+                $object,
             ) {
-                /** @var list<array{target: string|null}> $bindings */
+                /** @var list<array{kind: 'source'|'static', source?: string, target: string|null}> $bindings */
                 $bindings = $component->getBindingValues();
                 ReplicaSchema::validateColumns(array_column(
                     array_filter($bindings, static fn (array $entry) => $entry['target'] !== null),
                     'target',
                 ), $fail);
+                ReplicaSchema::validatePrimaryKey(
+                    $object->primary_key ?? [],
+                    array_column(
+                        array_filter(
+                            $bindings,
+                            static fn (array $entry) => $entry['kind'] === 'source' && $entry['target'] !== null,
+                        ),
+                        'source',
+                    ),
+                    $fail,
+                );
             })
             ->columnSpanFull();
     }

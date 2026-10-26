@@ -24,7 +24,7 @@ it('stores adapter-independent structures on a fresh installation and cascades o
         'upstream_id' => $upstream->id,
         'external_id' => 'records',
         'name' => 'records',
-        'key_column' => 'record_id',
+        'primary_key' => ['tenant_id', 'record_id'],
         'schema' => $schema,
         'position' => 0,
     ])->fresh();
@@ -40,6 +40,8 @@ it('stores adapter-independent structures on a fresh installation and cascades o
         ->toBeNull()
         ->and($item->priority)
         ->toBe(1)
+        ->and($item->primary_key)
+        ->toBe(['tenant_id', 'record_id'])
         ->and($item->schema->toArray())
         ->toBe($schema->toArray())
         ->and($item->structure->is($upstream->structure))

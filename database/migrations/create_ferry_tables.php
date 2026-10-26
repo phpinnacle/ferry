@@ -82,7 +82,7 @@ return new class extends Migration {
             $table->string('kind')->nullable()->index();
             $table->string('label');
             $table->string('title');
-            $table->string('key_column');
+            $table->json('primary_key');
             $table->unsignedInteger('priority')->default(1);
             $table->json('schema');
             $table->json('values');

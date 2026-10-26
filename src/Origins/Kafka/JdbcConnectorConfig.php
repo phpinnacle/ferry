@@ -10,6 +10,7 @@ final readonly class JdbcConnectorConfig
      * @param list<string> $columns
      * @param array<string, string> $transforms
      * @param non-empty-list<string>|null $primaryKey
+     * @param 'record_key'|'record_value' $primaryKeyMode
      */
     public function __construct(
         private string $table,
@@ -20,6 +21,7 @@ final readonly class JdbcConnectorConfig
         private bool $deletes = false,
         private ?array $primaryKey = null,
         private ?string $targetHost = null,
+        private string $primaryKeyMode = 'record_key',
     ) {}
 
     /** @return array<string, string> */
@@ -35,7 +37,7 @@ final readonly class JdbcConnectorConfig
             'connection.url' => $target['url'],
             'connection.user' => $target['username'],
             'connection.password' => $target['password'],
-            'pk.mode' => $this->primaryKey !== null ? 'record_value' : 'record_key',
+            'pk.mode' => $this->primaryKeyMode,
             ...($this->primaryKey !== null ? ['pk.fields' => implode(',', $this->primaryKey)] : []),
             'insert.mode' => 'upsert',
             'delete.enabled' => $this->deletes ? 'true' : 'false',

@@ -36,6 +36,7 @@ it('stores and restores the exact native schema emitted by the form', function (
         'name' => 'Native schema',
         'code' => 'native_schema',
         'schema' => [
+            ['kind' => 'source', 'source' => '_idrref', 'target' => 'external_id'],
             ['kind' => 'source', 'source' => '_description', 'target' => 'name', 'transforms' => []],
             [
                 'kind' => 'source',
@@ -80,7 +81,7 @@ it('stores and restores the exact native schema emitted by the form', function (
         ->and($constant->outputSchema()?->singleType())
         ->toBe($type)
         ->and($replica->getConnection()->getSchemaBuilder()->getColumnListing($replica->destination))
-        ->toBe(['idrref', 'name', 'constant']);
+        ->toBe(['external_id', 'name', 'constant']);
 
     $edit = ReplicaForm::configure(Schema::make($livewire)->statePath('data')->record($replica)->operation('edit'));
     $edit->fill(ReplicaForm::fill($saved->toArray()));

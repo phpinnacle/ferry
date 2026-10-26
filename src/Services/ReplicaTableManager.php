@@ -13,17 +13,17 @@ class ReplicaTableManager
 {
     public function create(Replica $replica): void
     {
+        $primaryKey = array_values($replica->primaryKeyMap($replica->sourceObject()));
         $replica
             ->getConnection()
             ->getSchemaBuilder()
-            ->create($replica->destination, function (Blueprint $table) use ($replica) {
-                $table->string(Replica::ID_COLUMN)->primary();
-
+            ->create($replica->destination, function (Blueprint $table) use ($replica, $primaryKey) {
                 foreach ($replica->schema as $mapping) {
                     if ($mapping->target !== null) {
-                        $this->column($table, $mapping)->nullable();
+                        $this->column($table, $mapping)->nullable(!in_array($mapping->target, $primaryKey, true));
                     }
                 }
+                $table->primary($primaryKey);
             });
     }
 

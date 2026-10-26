@@ -74,6 +74,7 @@ it('routes every Ferry job to the configured queue or the Laravel default', func
 
 it('queues connector jobs only after the owner transaction commits', function (bool $commit) {
     $upstream = TestCase::makeUpstream();
+    TestCase::makeItem($upstream);
     $database = $upstream->getConnection();
     $database->beginTransaction();
     $replica = TestCase::makeReplica(['upstream_id' => $upstream->id]);
@@ -342,6 +343,7 @@ it('uses the application queue when Ferry models use another database', function
         $migration->up(...),
     );
     $upstream = TestCase::makeUpstream();
+    TestCase::makeItem($upstream);
     $database = $upstream->getConnection();
     $database->beginTransaction();
     TestCase::makeReplica(['upstream_id' => $upstream->id]);

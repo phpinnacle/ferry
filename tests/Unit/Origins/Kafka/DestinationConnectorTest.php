@@ -70,6 +70,7 @@ it('builds a confluent jdbc sink connector config with field renames', function 
         'upstream_id' => $upstream->id,
         'source' => 'object-0',
         'schema' => [
+            TestCase::keyMapping(),
             new FieldMapping('_fld1', 'title', $object->field('_fld1')),
         ],
     ]);
@@ -103,9 +104,9 @@ it('builds a confluent jdbc sink connector config with field renames', function 
         ->and($config['connection.url'])
         ->toBe('jdbc:postgresql://db.internal:5432/:memory:')
         ->and($config['transforms.rename_keys.renames'])
-        ->toBe('_idrref:idrref')
+        ->toBe('_idrref:external_id')
         ->and($config['transforms.rename_values.renames'])
-        ->toBe('_idrref:idrref,_fld1:title')
+        ->toBe('_idrref:external_id,_fld1:title')
         ->and($config['transforms'])
         ->toBe('rename_keys,rename_values')
         ->and($config)
@@ -126,6 +127,7 @@ it('keeps each sink limited to the fields of its own mapping when several replic
         'code' => 'replica-a',
         'source' => 'object-0',
         'schema' => [
+            TestCase::keyMapping(),
             new FieldMapping('_fld1', 'title', $object->field('_fld1')),
         ],
     ]);
@@ -135,6 +137,7 @@ it('keeps each sink limited to the fields of its own mapping when several replic
         'code' => 'replica-b',
         'source' => 'object-0',
         'schema' => [
+            TestCase::keyMapping(),
             new FieldMapping('_fld2', 'tax_number', $object->field('_fld2')),
         ],
     ]);
@@ -155,9 +158,9 @@ it('keeps each sink limited to the fields of its own mapping when several replic
     );
 
     expect($firstConfig['fields.whitelist'])
-        ->toBe('idrref,title')
+        ->toBe('external_id,title')
         ->and($secondConfig['fields.whitelist'])
-        ->toBe('idrref,tax_number');
+        ->toBe('external_id,tax_number');
 });
 
 it('builds a static sink with fixed fields and its target upstream', function (

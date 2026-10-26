@@ -43,7 +43,7 @@ class DestinationFactory
     {
         return match ($replica->type) {
             DestinationType::Static => $this->getOrFail($replica->destination),
-            DestinationType::Dynamic => new DynamicDestination($replica->destination),
+            DestinationType::Dynamic => new DynamicDestination($replica),
         };
     }
 

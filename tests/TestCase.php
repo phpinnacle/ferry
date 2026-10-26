@@ -80,18 +80,15 @@ abstract class TestCase extends ApplicationTestCase
                 'kind' => 'reference',
                 'label' => 'Object 0',
                 'title' => 'Object 0',
-                'fields' => ['_idrref' => JsonSchema::fromArray([
-                    'type' => 'string',
-                    'format' => 'uuid',
-                    'x-ferry-reference' => true,
-                    'minLength' => 36,
-                    'maxLength' => 36,
-                ])],
                 'sources' => [],
                 'values' => [],
                 'position' => 0,
                 'revision' => $upstream->structure->generation,
                 ...$attributes,
+                'fields' => [
+                    '_idrref' => self::keyMapping()->field,
+                    ...($attributes['fields'] ?? []),
+                ],
             ]),
             static fn (StructureItem $item) => $item->save(),
         );
@@ -104,22 +101,16 @@ abstract class TestCase extends ApplicationTestCase
     public static function makeReplica(array $attributes = [], array $state = []): Replica
     {
         if (!array_key_exists('upstream_id', $attributes)) {
-            $attributes['upstream_id'] = self::makeUpstream()->id;
+            $upstream = self::makeUpstream();
+            self::makeItem($upstream);
+            $attributes['upstream_id'] = $upstream->id;
         }
 
         $replica = Replica::create([
             'name' => 'Test replica',
             'code' => 'test-replica',
             'source' => 'object-0',
-            'schema' => [
-                new FieldMapping('_idrref', 'external_id', JsonSchema::fromArray([
-                    'type' => 'string',
-                    'format' => 'uuid',
-                    'x-ferry-reference' => true,
-                    'minLength' => 36,
-                    'maxLength' => 36,
-                ])),
-            ],
+            'schema' => [self::keyMapping()],
             ...$attributes,
         ]);
 
@@ -128,6 +119,17 @@ abstract class TestCase extends ApplicationTestCase
         }
 
         return $replica;
+    }
+
+    public static function keyMapping(): FieldMapping
+    {
+        return new FieldMapping('_idrref', 'external_id', JsonSchema::fromArray([
+            'type' => 'string',
+            'format' => 'uuid',
+            'x-ferry-reference' => true,
+            'minLength' => 36,
+            'maxLength' => 36,
+        ]));
     }
 
     /** @param array<string, mixed> $attributes */

@@ -111,6 +111,7 @@ it('uses the configured Ferry database for connectors and their owners', functio
     app(Migrator::class)->usingConnection($migration->getConnection(), $migration->up(...));
 
     $upstream = TestCase::makeUpstream();
+    TestCase::makeItem($upstream);
     $replica = TestCase::makeReplica(['upstream_id' => $upstream->id]);
     $connector = TestCase::makeConnector($upstream, ['name' => 'ferry-source-test-upstream']);
     $connector->recordStatus(ConnectorStatus::Running);

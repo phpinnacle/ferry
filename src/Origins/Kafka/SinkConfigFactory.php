@@ -24,22 +24,23 @@ class SinkConfigFactory
         bool $unwrap = false,
     ): array {
         $dynamic = $replica->type === DestinationType::Dynamic;
-        $keyColumn = $dynamic ? $destination->getPrimaryKey()[0] : null;
+        $keyMap = $dynamic ? $replica->primaryKeyMap($object) : [];
         $fixedValues = $destination->getFixedValues();
 
         return new JdbcConnectorConfig(
             table: $destination->getTable(),
             topic: $topic,
             columns: [
-                ...array_values($replica->columnMap($object, $keyColumn)),
+                ...array_values($replica->columnMap($object)),
                 ...$replica->constantColumns(),
                 ...array_keys($fixedValues),
             ],
-            transforms: $this->transforms->pipeline($replica, $object, $keyColumn, $dynamic, $fixedValues, $unwrap),
+            transforms: $this->transforms->pipeline($replica, $object, $keyMap, $dynamic, $fixedValues, $unwrap),
             connection: $destination->getConnectionName(),
             targetHost: $targetHost,
             deletes: $dynamic,
-            primaryKey: $dynamic ? null : $destination->getPrimaryKey(),
+            primaryKey: $destination->getPrimaryKey(),
+            primaryKeyMode: $dynamic ? 'record_key' : 'record_value',
         )->toArray();
     }
 }
