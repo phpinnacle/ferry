@@ -91,5 +91,5 @@ it('stores and restores the exact native schema emitted by the form', function (
     'zero' => [0, 'integer'],
     'whole decimal' => [1.0, 'number'],
     'string true' => ['true', 'string'],
-    'transformed string' => ['10', 'integer', [['type' => 'cast', 'data' => ['type' => 'integer']]]],
+    'transformed string' => ['10', 'integer', [['type' => 'cast', 'data' => ['type' => 'int64']]]],
 ]);

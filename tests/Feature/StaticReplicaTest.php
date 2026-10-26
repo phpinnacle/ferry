@@ -376,9 +376,9 @@ it('validates transform parameters through their native form schemas', function 
 
 it('allows repeated transforms on submission', function () {
     $settings = [
-        ['type' => 'cast', 'data' => ['type' => 'integer']],
+        ['type' => 'cast', 'data' => ['type' => 'int64']],
         ['type' => 'cast', 'data' => ['type' => 'string']],
-        ['type' => 'cast', 'data' => ['type' => 'integer']],
+        ['type' => 'cast', 'data' => ['type' => 'int64']],
     ];
     $schema = FormSchema::make(SchemaHost::make())
         ->statePath('data')
@@ -415,8 +415,8 @@ it('persists and restores transforms on every source independently of its target
     $action = $form->getComponentByStatePath('schema.sources.' . $keys['_code'] . '.transforms')->getAction(
         'fieldTransforms',
     );
-    $cast = ['type' => 'cast', 'data' => ['type' => 'integer']];
-    $hydratedCast = ['type' => 'cast', 'data' => ['type' => 'integer', 'replace_null_with_default' => 'true']];
+    $cast = ['type' => 'cast', 'data' => ['type' => 'int64']];
+    $hydratedCast = ['type' => 'cast', 'data' => ['type' => 'int64', 'replace_null_with_default' => 'true']];
 
     expect($form->toHtml())->toContain('data-binding-source-settings="_description"');
     $action(['block' => 'cast'])->data(['data' => $cast['data']])->call();
@@ -436,9 +436,9 @@ it('persists and restores transforms on every source independently of its target
         ->and($attributes['schema'][2]['target'])
         ->toBeNull()
         ->and($attributes['schema'][2]['transforms'])
-        ->toBe([['type' => 'cast', 'data' => ['type' => 'integer']]])
+        ->toBe([['type' => 'cast', 'data' => ['type' => 'int64']]])
         ->and($attributes['schema'][1]['transforms'])
-        ->toBe([['type' => 'cast', 'data' => ['type' => 'integer']]]);
+        ->toBe([['type' => 'cast', 'data' => ['type' => 'int64']]]);
 });
 
 it('validates destination columns directly for bindings and static values', function (array $bindings) {

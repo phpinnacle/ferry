@@ -135,7 +135,7 @@ it('prohibits all source primary-key transforms while allowing their removal in 
         ['condition' => "@ == 'blocked'", 'mode' => 'exclude', 'missing_or_null_behavior' => 'include'],
     ],
     'trim' => ['trim', []],
-    'cast' => ['cast', ['type' => 'integer']],
+    'cast' => ['cast', ['type' => 'int64']],
 ]);
 
 it('only connects static destination primary keys to source primary-key fields', function () {

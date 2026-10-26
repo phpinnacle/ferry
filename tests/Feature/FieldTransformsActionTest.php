@@ -48,7 +48,7 @@ it('builds parameter forms when opening a transform rather than rendering its me
 
 it('validates repeated numeric casts and offers transforms for the final type', function () {
     $settings = [
-        ['type' => 'cast', 'data' => ['type' => 'integer']],
+        ['type' => 'cast', 'data' => ['type' => 'int64']],
         ['type' => 'cast', 'data' => ['type' => 'boolean']],
     ];
     $this->field->state($settings);
@@ -235,13 +235,13 @@ it('offers only transforms that accept the output of the current chain', functio
         ['type' => 'trim', 'data' => []],
     ]);
 
-    ($this->action)(['block' => 'cast', 'index' => 0])->data(['data' => ['type' => 'integer']])->call();
+    ($this->action)(['block' => 'cast', 'index' => 0])->data(['data' => ['type' => 'int64']])->call();
     expect($this->field->getContainer()->getState(...))->toThrow(ValidationException::class);
     expect($this->field->getAvailableTransforms($registry))->toBe([]);
     expect(($this->action)([])->toHtml())->toContain('Remove Trim whitespace');
     ($this->action)(['block' => 'trim', 'index' => 1, 'remove' => true])->call();
     expect($this->field->getContainer()->getState()['transforms'])->toBe([
-        ['type' => 'cast', 'data' => ['type' => 'integer']],
+        ['type' => 'cast', 'data' => ['type' => 'int64']],
     ]);
     expect(array_keys($this->field->getAvailableTransforms($registry)))->toBe(['cast', 'filter']);
 });
@@ -396,13 +396,13 @@ it('lets a custom array transform participate in the same schema chain', functio
 it('preserves JSONPath predicates when a preceding cast changes type', function (string $type) {
     $params = ['mode' => 'exclude', 'condition' => '@ != null', 'missing_or_null_behavior' => 'fail'];
     $this->field->inputSchema(['type' => 'string'])->state([
-        ['type' => 'cast', 'data' => ['type' => 'integer']],
+        ['type' => 'cast', 'data' => ['type' => 'int64']],
         ['type' => 'filter', 'data' => $params],
     ]);
     ($this->action)(['block' => 'cast', 'index' => 0])->data(['data' => ['type' => $type]])->call();
 
     expect($this->field->getContainer()->getState()['transforms'][1]['data'])->toBe($params);
-})->with(['boolean', 'integer', 'number']);
+})->with(['boolean', 'int32', 'int64', 'float32', 'float64']);
 
 it('uses the preceding cast output for the filter example', function () {
     $this->field->inputSchema(['type' => 'boolean']);
@@ -413,23 +413,23 @@ it('uses the preceding cast output for the filter example', function () {
         ->first(fn ($component) => $component instanceof Textarea && $component->getName() === 'condition');
 
     expect($condition()->getPlaceholder())->toBe('@ == true');
-    $this->field->state([['type' => 'cast', 'data' => ['type' => 'number']]]);
+    $this->field->state([['type' => 'cast', 'data' => ['type' => 'float64']]]);
     expect($condition()->getPlaceholder())->toBe('@ >= 100.5');
 });
 
 it('rejects casting to the effective type after each preceding cast', function () {
-    ($this->action)(['block' => 'cast'])->data(['data' => ['type' => 'integer']])->call();
-    ($this->action)(['block' => 'cast'])->data(['data' => ['type' => 'integer']])->call();
+    ($this->action)(['block' => 'cast'])->data(['data' => ['type' => 'boolean']])->call();
+    ($this->action)(['block' => 'cast'])->data(['data' => ['type' => 'boolean']])->call();
     expect($this->field->getContainer()->getState(...))->toThrow(ValidationException::class);
     ($this->action)(['block' => 'cast', 'index' => 1, 'remove' => true])->call();
     ($this->action)(['block' => 'cast'])->data(['data' => [
-        'type' => 'boolean',
+        'type' => 'int32',
         'replace_null_with_default' => 'false',
     ]])->call();
 
     expect($this->field->getContainer()->getState()['transforms'])->toBe([
-        ['type' => 'cast', 'data' => ['type' => 'integer']],
-        ['type' => 'cast', 'data' => ['type' => 'boolean', 'replace_null_with_default' => 'false']],
+        ['type' => 'cast', 'data' => ['type' => 'boolean']],
+        ['type' => 'cast', 'data' => ['type' => 'int32', 'replace_null_with_default' => 'false']],
     ]);
 });
 
@@ -446,7 +446,7 @@ it('calculates allowed moves using the complete type chain and refreshes them af
     expect($this->field->getAllowedMoves())->toBe([[0, 1, 2], [0, 1], [2]]);
 
     $this->field->inputSchema(['type' => 'string'])->state([
-        ['type' => 'cast', 'data' => ['type' => 'integer']],
+        ['type' => 'cast', 'data' => ['type' => 'int64']],
         ['type' => 'trim', 'data' => []],
     ]);
     expect($this->field->getAllowedMoves())->toBe([[1], [0]]);

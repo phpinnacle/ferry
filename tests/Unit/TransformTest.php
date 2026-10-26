@@ -63,7 +63,7 @@ it('registers application transforms through the plugin', function () {
         ->toBe(['cast', 'filter', 'trim']);
 });
 
-it('casts a field to the selected column type', function (string $type, string $spec) {
+it('casts a field to the selected column type', function (string $type, string $schemaType) {
     $cast = new CastTransform;
 
     expect(
@@ -71,24 +71,29 @@ it('casts a field to the selected column type', function (string $type, string $
             ->getOutputSchema(JsonSchema::fromArray(['type' => 'string']), ['type' => $type])
             ?->toArray(),
     )
-        ->toBe(['type' => $type])
+        ->toBe(['type' => $schemaType])
         ->and($cast->connector('cast_price', '_fld1', ['type' => $type]))
         ->toBe([
             'cast_price' => [
                 'type' => 'org.apache.kafka.connect.transforms.Cast$Value',
-                'spec' => $spec,
+                'spec' => '_fld1:' . $type,
             ],
         ]);
 })->with([
-    'string' => ['string', '_fld1:string'],
-    'integer' => ['integer', '_fld1:int64'],
-    'decimal' => ['number', '_fld1:float64'],
-    'boolean' => ['boolean', '_fld1:boolean'],
+    'string' => ['string', 'string'],
+    'int8' => ['int8', 'integer'],
+    'int16' => ['int16', 'integer'],
+    'int32' => ['int32', 'integer'],
+    'int64' => ['int64', 'integer'],
+    'float32' => ['float32', 'number'],
+    'float64' => ['float64', 'number'],
+    'boolean' => ['boolean', 'boolean'],
 ]);
 
 it('uses each cast result as the input to the next cast without resolving handlers', function (
     string $intermediate,
     string $result,
+    string $schemaType,
 ) {
     config(['phpinnacle-ferry.kafka.transforms' => []]);
 
@@ -96,12 +101,12 @@ it('uses each cast result as the input to the next cast without resolving handle
         ['type' => 'cast', 'data' => ['type' => $intermediate]],
         ['type' => 'cast', 'data' => ['type' => $result]],
     ])?->toArray())
-        ->toBe(['type' => $result]);
+        ->toBe(['type' => $schemaType]);
 })->with([
-    'integer to boolean' => ['integer', 'boolean'],
-    'number to integer' => ['number', 'integer'],
-    'integer to number' => ['integer', 'number'],
-    'integer to integer' => ['integer', 'integer'],
+    'integer to boolean' => ['int64', 'boolean', 'boolean'],
+    'number to integer' => ['float64', 'int32', 'integer'],
+    'integer to number' => ['int32', 'float32', 'number'],
+    'integer to integer' => ['int32', 'int64', 'integer'],
 ]);
 
 it('clears reference metadata when explicitly casting to a string', function () {
@@ -129,10 +134,8 @@ it('disables and rejects the current cast type in the native form', function (ar
     expect($schema->getState(...))->toThrow(ValidationException::class);
 })->with([
     [['type' => 'string'], 'string'],
-    [['type' => 'integer'], 'integer'],
-    [['type' => 'number'], 'number'],
     [['type' => 'boolean'], 'boolean'],
-    [['type' => ['integer', 'null']], 'integer'],
+    [['type' => ['boolean', 'null']], 'boolean'],
 ]);
 
 it('keeps all cast targets available when the current type is unknown or a union', function (array $definition) {
@@ -142,8 +145,12 @@ it('keeps all cast targets available when the current type is unknown or a union
 
     expect(array_keys($schema->getComponent('type')->getEnabledOptions()))->toBe([
         'string',
-        'integer',
-        'number',
+        'int8',
+        'int16',
+        'int32',
+        'int64',
+        'float32',
+        'float64',
         'boolean',
     ]);
 })->with([
@@ -151,6 +158,32 @@ it('keeps all cast targets available when the current type is unknown or a union
     [['type' => ['string', 'number', 'null']]],
     [['type' => 'string', 'format' => 'uuid', 'x-ferry-reference' => true]],
 ]);
+
+it('validates numeric cast targets and preserves nullable output schemas', function (string $type, string $schemaType) {
+    $input = JsonSchema::fromArray(['type' => [$schemaType, 'null'], 'minimum' => 0]);
+    $schema = Schema::make(SchemaHost::make())
+        ->statePath('data')
+        ->components(Cast::make()->getSchema(null, $input));
+    $schema->fill(['type' => $type]);
+
+    expect($schema->getState())->toBe(['type' => $type]);
+    expect(Cast::make()->getOutputSchema($input, ['type' => $type])?->toArray())
+        ->toBe(['type' => [$schemaType, 'null']]);
+})->with([
+    ['int8', 'integer'],
+    ['int16', 'integer'],
+    ['int32', 'integer'],
+    ['int64', 'integer'],
+    ['float32', 'number'],
+    ['float64', 'number'],
+]);
+
+it('rejects unsupported cast targets in the native form', function (string $type) {
+    $schema = Schema::make(SchemaHost::make())->statePath('data')->components(Cast::make()->getSchema(null));
+    $schema->fill(['type' => $type]);
+
+    expect($schema->getState(...))->toThrow(ValidationException::class);
+})->with(['integer', 'number', 'bytes', 'array', 'object']);
 
 it('keeps the Kafka null replacement default implicit and persists disabling it', function (?string $setting) {
     $schema = Schema::make(SchemaHost::make())
@@ -492,7 +525,7 @@ it('persists and executes static chains on their destination without renaming', 
         'target' => 'discount',
         'static' => '10',
         'result' => ['type' => 'integer'],
-        'transforms' => [['type' => 'cast', 'data' => ['type' => 'integer']]],
+        'transforms' => [['type' => 'cast', 'data' => ['type' => 'int64']]],
     ];
     $mapping = FieldMapping::fromArray($row);
     expect($mapping->jsonSerialize())

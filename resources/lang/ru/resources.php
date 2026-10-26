@@ -184,8 +184,6 @@ return [
     'transform' => [
         'cast_types' => [
             'string' => 'Строка',
-            'integer' => 'Целое число',
-            'number' => 'Десятичное число',
             'boolean' => 'Флаг',
         ],
         'trim' => 'Убрать пробелы по краям',

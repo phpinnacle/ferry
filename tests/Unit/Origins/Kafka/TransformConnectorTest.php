@@ -54,7 +54,7 @@ it('orders source transforms and static values around the renames of a sink', fu
                 'size',
                 $object->field('_fld1'),
                 result: JsonSchema::fromArray(['type' => 'integer']),
-                transforms: [new TransformSetting('cast', ['type' => 'integer'])],
+                transforms: [new TransformSetting('cast', ['type' => 'int64'])],
             ),
             new FieldMapping(null, 'active', null, static: true, kind: FieldKind::Static),
         ],

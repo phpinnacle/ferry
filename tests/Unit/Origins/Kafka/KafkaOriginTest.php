@@ -408,7 +408,7 @@ it('rejects all saved primary-key transforms during assembly', function (
 })->with([DestinationType::Dynamic, DestinationType::Static])->with([
     'filter' => ['filter', ['condition' => '@ != null']],
     'trim' => ['trim', []],
-    'cast' => ['cast', ['type' => 'integer']],
+    'cast' => ['cast', ['type' => 'int64']],
 ]);
 
 it('blocks static connector assembly after the source key gains an unmapped component', function () {

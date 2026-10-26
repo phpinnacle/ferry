@@ -126,7 +126,7 @@ it('checks static source compatibility after transforms and validates connected 
     $schema
         ->getComponentByStatePath('mapping.sources.' . $key . '.transforms')
         ->state([
-            ['type' => 'cast', 'data' => ['type' => 'integer']],
+            ['type' => 'cast', 'data' => ['type' => 'int64']],
         ]);
     expect($field->getConnectionModes()[$source]['count'])->toBe('whole');
     $state = $field->getRawState();
@@ -138,7 +138,7 @@ it('checks static source compatibility after transforms and validates connected 
         'kind' => 'static',
         'target' => 'count',
         'static' => '10',
-        'transforms' => [['type' => 'cast', 'data' => ['type' => 'integer']]],
+        'transforms' => [['type' => 'cast', 'data' => ['type' => 'int64']]],
     ]]);
 });
 

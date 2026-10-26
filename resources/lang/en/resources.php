@@ -184,8 +184,6 @@ return [
     'transform' => [
         'cast_types' => [
             'string' => 'String',
-            'integer' => 'Integer',
-            'number' => 'Decimal',
             'boolean' => 'Boolean',
         ],
         'trim' => 'Trim whitespace',

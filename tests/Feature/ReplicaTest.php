@@ -51,7 +51,7 @@ it('pauses saved primary-key transforms during structure review without resolvin
             'condition' => "@ == 'blocked'",
             'missing_or_null_behavior' => 'include',
         ],
-        'cast' => ['type' => 'integer'],
+        'cast' => ['type' => 'int64'],
     ] as $transform => $parameters) {
         $replicas[$transform] = TestCase::makeReplica([
             'upstream_id' => $upstream->id,

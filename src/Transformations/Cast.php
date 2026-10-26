@@ -20,8 +20,12 @@ final class Cast
                     ->label(__('phpinnacle-ferry::resources.replica.fields.constant_type'))
                     ->options([
                         'string' => __('phpinnacle-ferry::resources.transform.cast_types.string'),
-                        'integer' => __('phpinnacle-ferry::resources.transform.cast_types.integer'),
-                        'number' => __('phpinnacle-ferry::resources.transform.cast_types.number'),
+                        'int8' => 'int8',
+                        'int16' => 'int16',
+                        'int32' => 'int32',
+                        'int64' => 'int64',
+                        'float32' => 'float32',
+                        'float64' => 'float64',
                         'boolean' => __('phpinnacle-ferry::resources.transform.cast_types.boolean'),
                     ])
                     ->disableOptionWhen(
@@ -51,7 +55,11 @@ final class Cast
                     return null;
                 }
 
-                $schema = ['type' => $params['type']];
+                $schema = ['type' => match ($params['type']) {
+                    'int8', 'int16', 'int32', 'int64' => 'integer',
+                    'float32', 'float64' => 'number',
+                    default => $params['type'],
+                }];
 
                 if ($input->types() === [] || in_array('null', $input->types(), true)) {
                     $schema['type'] = [$schema['type'], 'null'];
