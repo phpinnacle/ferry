@@ -1,6 +1,5 @@
 <?php
 
-use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Queue;
 use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Data\FieldMapping;
@@ -132,7 +131,6 @@ it('captures an unbound field filter without writing it or capturing unused fiel
     $builder = new SourceFactory;
     $source = $builder->source(
         $upstream,
-        new Collection([$replica]),
         config('phpinnacle-ferry.origins.kafka'),
     );
     $config = new SinkConfigFactory($factory)->make(
@@ -182,7 +180,6 @@ it('keeps building the shared source when a replica refers to a transform that i
 
     expect(new SourceFactory()->source(
         $upstream,
-        new Collection([$replica]),
         config('phpinnacle-ferry.origins.kafka'),
     ))
         ->toMatchArray(['column.include.list' => 'public._reference0._idrref']);
@@ -317,7 +314,6 @@ it('scopes and transforms independently selected reference components using thei
     $source = new SourceFactory;
     $config = $source->source(
         $upstream,
-        new Collection([$replica]),
         config('phpinnacle-ferry.origins.kafka'),
     );
     $sink = new SinkConfigFactory(app(TransformFactory::class))->make(

@@ -2,32 +2,24 @@
 
 namespace PHPinnacle\Ferry\Origins\Kafka;
 
-use Illuminate\Database\Eloquent\Collection;
 use PHPinnacle\Ferry\Models\Replica;
 use PHPinnacle\Ferry\Models\StructureItem;
 use PHPinnacle\Ferry\Models\Upstream;
 
 class SourceFactory
 {
-    private const array CONVERTERS = [
-        'key.converter' => 'org.apache.kafka.connect.json.JsonConverter',
-        'key.converter.schemas.enable' => 'true',
-        'value.converter' => 'org.apache.kafka.connect.json.JsonConverter',
-        'value.converter.schemas.enable' => 'true',
-    ];
-
     private const string DEFAULT_SCHEMA = 'public';
 
     private const int IDENTIFIER_LENGTH = 63;
 
     /**
-     * @param Collection<int, Replica> $replicas
      * @param array<string, mixed> $config
      *
      * @return array<string, string>
      */
-    public function source(Upstream $upstream, Collection $replicas, array $config): array
+    public function source(Upstream $upstream, array $config): array
     {
+        $replicas = $upstream->replicas()->get();
         $tables = [];
         $columns = [];
 
@@ -96,7 +88,6 @@ class SourceFactory
             'signal.kafka.bootstrap.servers' => $signal['bootstrap_servers'],
             'signal.kafka.groupId' => $signal['group_id'],
             ...$scope,
-            ...self::CONVERTERS,
         ];
     }
 

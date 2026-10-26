@@ -1,9 +1,10 @@
 <?php
 
-namespace PHPinnacle\Ferry\Jobs;
+namespace PHPinnacle\Ferry\Jobs\Connector;
 
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Support\Facades\Config;
 use PHPinnacle\Ferry\Enums\ConnectorStatus;
 use PHPinnacle\Ferry\Exceptions\ConnectorOperationFailed;
 use PHPinnacle\Ferry\Models\Connector;
@@ -20,7 +21,9 @@ class SynchronizeConnectorsJob implements ShouldQueue
     public function __construct(
         public readonly string $upstreamId,
     ) {
-        $this->onQueue('ferry')->afterCommit();
+        /** @var string|null $queue */
+        $queue = Config::get('phpinnacle-ferry.queue');
+        $this->onQueue($queue)->afterCommit();
     }
 
     /** @return list<int> */

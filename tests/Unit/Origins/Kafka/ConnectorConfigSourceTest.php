@@ -34,7 +34,6 @@ it('builds a debezium postgres connector config scoped to the tracked replicas',
     $builder = new SourceFactory;
     $config = $builder->source(
         $upstream,
-        $upstream->trackedReplicas(),
         config('phpinnacle-ferry.origins.kafka'),
     );
 
@@ -68,9 +67,6 @@ it('builds a debezium postgres connector config scoped to the tracked replicas',
             'signal.kafka.topic' => 'ferry-signal',
             'signal.kafka.bootstrap.servers' => 'kafka.test:9092',
             'signal.kafka.groupId' => 'ferry-signal',
-            'key.converter.schemas.enable' => 'true',
-            'value.converter.schemas.enable' => 'true',
-            'value.converter' => 'org.apache.kafka.connect.json.JsonConverter',
         ]);
 });
 
@@ -106,7 +102,6 @@ it('unions tables and columns across the tracked replicas of one upstream', func
     $upstream = $upstream->fresh();
     $config = new SourceFactory()->source(
         $upstream,
-        $upstream->trackedReplicas(),
         config('phpinnacle-ferry.origins.kafka'),
     );
 
@@ -121,7 +116,6 @@ it('never lets an unscoped source connector capture the whole database', functio
 
     $config = new SourceFactory()->source(
         $upstream,
-        $upstream->trackedReplicas(),
         config('phpinnacle-ferry.origins.kafka'),
     );
 
@@ -155,7 +149,6 @@ it('uses the key and column names supplied by a non-Rosetta adapter', function (
     ], ['status' => ReplicaStatus::Active]);
     $config = new SourceFactory()->source(
         $upstream,
-        $upstream->trackedReplicas(),
         config('phpinnacle-ferry.origins.kafka'),
     );
     $pipeline = new \PHPinnacle\Ferry\Origins\Kafka\TransformFactory()->pipeline($replica, $object);

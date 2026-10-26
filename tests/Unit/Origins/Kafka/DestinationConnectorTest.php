@@ -111,9 +111,7 @@ it('builds a confluent jdbc sink connector config with field renames', function 
         ->and($config['transforms'])
         ->toBe('unwrap,rename_keys,rename_values')
         ->and($config['transforms.unwrap.type'])
-        ->toBe('io.debezium.transforms.ExtractNewRecordState')
-        ->and($config['value.converter.schemas.enable'])
-        ->toBe('true');
+        ->toBe('io.debezium.transforms.ExtractNewRecordState');
 });
 
 it('keeps each sink limited to the fields of its own mapping when several replicas share a source table', function () {
@@ -268,7 +266,6 @@ it('keeps configured sink hosts and environment ports while applying the default
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
     $object = TestCase::makeItem($upstream);
     $replica = TestCase::makeReplica(['upstream_id' => $upstream->id]);
-    config(['phpinnacle-ferry.kafka.target_host' => $host]);
 
     if ($port === null) {
         $target = config('database.connections.sqlite');
@@ -286,6 +283,7 @@ it('keeps configured sink hosts and environment ports while applying the default
             $replica,
             $object,
             $builder->topic($upstream, $object),
+            targetHost: $host,
         )['connection.url'],
     )
         ->toBe(sprintf('jdbc:postgresql://%s:%d/:memory:', $expectedHost, $expectedPort));

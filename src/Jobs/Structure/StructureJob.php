@@ -1,6 +1,6 @@
 <?php
 
-namespace PHPinnacle\Ferry\Jobs;
+namespace PHPinnacle\Ferry\Jobs\Structure;
 
 use Illuminate\Contracts\Queue\ShouldBeEncrypted;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -24,6 +24,9 @@ abstract class StructureJob implements ShouldBeEncrypted, ShouldQueue
         public readonly string $upstreamId,
         public readonly string $runId,
     ) {
+        /** @var string|null $queue */
+        $queue = Config::get('phpinnacle-ferry.queue');
+        $this->onQueue($queue);
         $this->timeout = Config::integer('phpinnacle-ferry.structure.timeout');
     }
 

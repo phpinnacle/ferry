@@ -7,7 +7,7 @@ use PHPinnacle\Ferry\Enums\ConnectorStatus;
 use PHPinnacle\Ferry\Enums\DestinationType;
 use PHPinnacle\Ferry\Enums\ReplicaStatus;
 use PHPinnacle\Ferry\Exceptions\ConnectorOperationFailed;
-use PHPinnacle\Ferry\Jobs\SynchronizeConnectorsJob;
+use PHPinnacle\Ferry\Jobs\Connector\SynchronizeConnectorsJob;
 use PHPinnacle\Ferry\Models\Connector;
 use PHPinnacle\Ferry\Models\Replica;
 use PHPinnacle\Ferry\Models\Upstream;

@@ -21,7 +21,6 @@ use PHPinnacle\Ferry\Data\FieldMapping as SchemaMapping;
 use PHPinnacle\Ferry\Destinations\StaticDestination;
 use PHPinnacle\Ferry\Enums\DestinationType;
 use PHPinnacle\Ferry\Enums\FieldKind;
-use PHPinnacle\Ferry\Enums\StructureStatus;
 use PHPinnacle\Ferry\Forms\FieldTransforms;
 use PHPinnacle\Ferry\Models\Replica;
 use PHPinnacle\Ferry\Models\StructureItem;
@@ -409,9 +408,7 @@ class ReplicaForm
     private static function upstreamOptions(): array
     {
         /** @var array<string, string> */
-        return Upstream::query()
-            ->where('is_active', true)
-            ->whereRelation('structure', 'status', StructureStatus::Ready->value)
+        return Upstream::availableForReplication()
             ->orderBy('name')
             ->pluck('name', 'id')
             ->all();

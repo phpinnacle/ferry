@@ -4,7 +4,7 @@ use Carbon\CarbonImmutable;
 use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\Queue;
 use PHPinnacle\Ferry\Enums\StructureStatus;
-use PHPinnacle\Ferry\Jobs\PrepareStructureJob;
+use PHPinnacle\Ferry\Jobs\Structure\PrepareStructureJob;
 use PHPinnacle\Ferry\Resources\Upstreams\Actions\PrepareStructureAction;
 use PHPinnacle\Ferry\Tests\TestCase;
 

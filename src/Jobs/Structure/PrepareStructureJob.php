@@ -1,6 +1,6 @@
 <?php
 
-namespace PHPinnacle\Ferry\Jobs;
+namespace PHPinnacle\Ferry\Jobs\Structure;
 
 use PHPinnacle\Ferry\Services\StructureAdapterRegistry;
 

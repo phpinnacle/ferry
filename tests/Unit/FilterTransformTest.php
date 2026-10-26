@@ -6,17 +6,21 @@ use Filament\Schemas\Schema;
 use Illuminate\Support\ViewErrorBag;
 use Illuminate\Validation\ValidationException;
 use PHPinnacle\Eidos\Forms\JsonSchema;
+use PHPinnacle\Ferry\FerryPlugin;
 use PHPinnacle\Ferry\Origins\Kafka\TransformFactory;
 use PHPinnacle\Ferry\Origins\Kafka\Transforms\FilterTransform;
 use PHPinnacle\Ferry\Services\TransformRegistry;
 use PHPinnacle\Ferry\Tests\Fixtures\SchemaHost;
-use PHPinnacle\Ferry\Tests\TestCase as FerryTestCase;
 use PHPinnacle\Ferry\Transformations\Filter;
+use Tests\TestCase;
 
-require_once __DIR__ . '/../TestCase.php';
 require_once __DIR__ . '/../Fixtures/SchemaHost.php';
 
-uses(FerryTestCase::class);
+uses(TestCase::class);
+
+beforeEach(function () {
+    FerryPlugin::make();
+});
 
 it('registers the built-in field filter', function () {
     expect(app(TransformFactory::class)->handler('filter'))

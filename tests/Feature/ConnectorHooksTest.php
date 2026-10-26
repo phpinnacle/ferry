@@ -9,7 +9,10 @@ use PHPinnacle\Ferry\Data\FieldMapping;
 use PHPinnacle\Ferry\Enums\ConnectorStatus;
 use PHPinnacle\Ferry\Enums\ReplicaStatus;
 use PHPinnacle\Ferry\Exceptions\ConnectorOperationFailed;
-use PHPinnacle\Ferry\Jobs\SynchronizeConnectorsJob;
+use PHPinnacle\Ferry\Jobs\Connector\SynchronizeConnectorsJob;
+use PHPinnacle\Ferry\Jobs\Structure\FetchStructureChunkJob;
+use PHPinnacle\Ferry\Jobs\Structure\FinishStructureJob;
+use PHPinnacle\Ferry\Jobs\Structure\PrepareStructureJob;
 use PHPinnacle\Ferry\Models\Connector;
 use PHPinnacle\Ferry\Models\Replica;
 use PHPinnacle\Ferry\Models\Upstream;
@@ -32,11 +35,11 @@ function ferry_use_origin(Origin $origin): void
 function ferry_drain_connectors(): void
 {
     $queue = Queue::getFacadeRoot()->queue->connection();
-    $job = $queue->pop('ferry');
+    $job = $queue->pop(config('phpinnacle-ferry.queue'));
     while ($job !== null) {
         $job->fire();
         $job->delete();
-        $job = $queue->pop('ferry');
+        $job = $queue->pop(config('phpinnacle-ferry.queue'));
     }
 }
 
@@ -48,6 +51,26 @@ it('does nothing for an upstream without replicas', function () {
     TestCase::makeUpstream();
     expect(Connector::query()->count())->toBe(0)->and(DB::table('jobs')->count())->toBe(0);
 });
+
+it('routes every Ferry job to the configured queue or the Laravel default', function (?string $queue) {
+    config([
+        'phpinnacle-ferry.queue' => $queue,
+        'queue.connections.database.queue' => 'application',
+    ]);
+    Queue::fake()->except([
+        PrepareStructureJob::class,
+        FetchStructureChunkJob::class,
+        FinishStructureJob::class,
+        SynchronizeConnectorsJob::class,
+    ]);
+
+    PrepareStructureJob::dispatch('upstream-id', 'run-id');
+    FetchStructureChunkJob::dispatch('upstream-id', 'run-id', 0);
+    FinishStructureJob::dispatch('upstream-id', 'run-id');
+    SynchronizeConnectorsJob::dispatch('upstream-id');
+
+    expect(DB::table('jobs')->pluck('queue')->all())->toBe(array_fill(0, 4, $queue ?? 'application'));
+})->with(['named queue' => ['ferry-imports'], 'Laravel default' => [null]]);
 
 it('queues connector jobs only after the owner transaction commits', function (bool $commit) {
     $upstream = TestCase::makeUpstream();

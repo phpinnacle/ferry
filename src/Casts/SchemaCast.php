@@ -26,16 +26,11 @@ class SchemaCast implements CastsAttributes, SerializesCastableAttributes
 
     /**
      * @param  list<FieldMapping>  $value
-     * @return list<array<string, mixed>>
+     * @return list<MappingData>
      */
     public function serialize(Model $model, string $key, mixed $value, array $attributes): array
     {
-        /** @var list<array<string, mixed>> */
-        return json_decode(
-            json_encode($value, JSON_THROW_ON_ERROR | JSON_PRESERVE_ZERO_FRACTION),
-            true,
-            flags: JSON_THROW_ON_ERROR,
-        );
+        return array_map(static fn (FieldMapping $mapping) => $mapping->jsonSerialize(), $value);
     }
 
     /** @param list<FieldMapping>|list<MappingData> $value */

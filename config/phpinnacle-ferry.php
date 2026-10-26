@@ -2,13 +2,13 @@
 
 return [
     'connection' => null,
+    'queue' => null,
     'tenancy' => null,
     //    'tenancy' => [
     //        'model' => 'App\\Models\\Tenant',
     //        'default' => 'App\\Models\\Tenant::DEFAULT'
     //    ],
     'kafka' => [
-        'target_host' => null,
         'transforms' => [
             'cast' => \PHPinnacle\Ferry\Origins\Kafka\Transforms\CastTransform::class,
             'filter' => \PHPinnacle\Ferry\Origins\Kafka\Transforms\FilterTransform::class,
@@ -32,6 +32,13 @@ return [
             'driver' => 'kafka',
             'base_uri' => env('FERRY_KAFKA_CONNECT_URL'),
             'headers' => [],
+            'target_host' => null,
+            'converters' => [
+                'key.converter' => 'org.apache.kafka.connect.json.JsonConverter',
+                'key.converter.schemas.enable' => 'true',
+                'value.converter' => 'org.apache.kafka.connect.json.JsonConverter',
+                'value.converter.schemas.enable' => 'true',
+            ],
             'signal' => [
                 'topic' => env('FERRY_KAFKA_SIGNAL_TOPIC'),
                 'bootstrap_servers' => env('FERRY_KAFKA_BOOTSTRAP_SERVERS'),

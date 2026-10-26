@@ -5,12 +5,14 @@ namespace PHPinnacle\Ferry\Models;
 use Carbon\CarbonImmutable;
 use Filament\Support\Contracts\HasLabel;
 use Illuminate\Database\Eloquent\Attributes\ObservedBy;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use PHPinnacle\Ferry\Enums\Driver;
+use PHPinnacle\Ferry\Enums\StructureStatus;
 use PHPinnacle\Ferry\Models\Concerns\HasConnector;
 use PHPinnacle\Ferry\Observers\UpstreamObserver;
 
@@ -64,10 +66,12 @@ class Upstream extends Model implements HasLabel
         'is_active',
     ];
 
-    /** @return Collection<int, Replica> */
-    public function trackedReplicas(): Collection
+    /** @return Builder<static> */
+    public static function availableForReplication(): Builder
     {
-        return $this->replicas()->get();
+        return static::query()
+            ->where('is_active', true)
+            ->whereRelation('structure', 'status', StructureStatus::Ready);
     }
 
     /** @param array{touch?: bool|null} $options */

@@ -203,14 +203,8 @@ class Replica extends Model
 
         /** @var list<FieldMapping> $original */
         $original = $this->getOriginal('schema');
-        $previous = array_values(array_filter(
-            $original,
-            static fn (FieldMapping $mapping) => $mapping->target !== null,
-        ));
-        $schema = array_values(array_filter(
-            $this->schema,
-            static fn (FieldMapping $mapping) => $mapping->target !== null,
-        ));
+        $previous = array_filter($original, static fn (FieldMapping $mapping) => $mapping->target !== null);
+        $schema = array_filter($this->schema, static fn (FieldMapping $mapping) => $mapping->target !== null);
         $next = array_combine(
             array_map(static fn (FieldMapping $mapping) => $mapping->identity(), $schema),
             $schema,
@@ -237,12 +231,12 @@ class Replica extends Model
 
         foreach ($schema as $mapping) {
             $existing = $previous[$mapping->identity()] ?? null;
+            $previousType = ReplicaTableManager::columnType($existing?->outputSchema());
+            $nextType = ReplicaTableManager::columnType($mapping->outputSchema());
 
             if (
                 $existing === null
-                || ReplicaTableManager::columnType($existing->outputSchema()) !== ReplicaTableManager::columnType(
-                    $mapping->outputSchema(),
-                )
+                || $previousType !== $nextType
             ) {
                 $changes['columns'][] = ['mapping' => $mapping, 'from' => null];
             } elseif ($existing->target !== $mapping->target) {
@@ -251,8 +245,8 @@ class Replica extends Model
 
             if (
                 $existing !== null
-                && ReplicaTableManager::columnType($existing->outputSchema()) === 'string'
-                && ReplicaTableManager::columnType($mapping->outputSchema()) === 'string'
+                && $previousType === 'string'
+                && $nextType === 'string'
                 && $existing->stringLength() !== $mapping->stringLength()
             ) {
                 $changes['alter'][] = $mapping;

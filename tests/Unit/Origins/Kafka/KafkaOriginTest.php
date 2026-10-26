@@ -184,6 +184,52 @@ it('builds source configuration matching no tables after the last replica is rem
     expect($connector->config['table.include.list'])->toBe('(?!)');
 });
 
+it('applies the named origin converters to both source and sink connectors', function (array $converters) {
+    $replica = ferry_replica();
+    $settings = config('phpinnacle-ferry.origins.kafka');
+    $origins = new OriginFactory(app(), [
+        'kafka' => $settings,
+        'analytics' => [...$settings, 'converters' => $converters],
+    ]);
+
+    foreach (['kafka' => $settings['converters'], 'analytics' => $converters] as $name => $expected) {
+        $origin = $origins->create($name);
+
+        foreach ([$replica->upstream, $replica] as $owner) {
+            $config = $origin->make($owner)->config;
+            $actual = array_filter($config, fn (string $key) => str_contains($key, '.converter'), ARRAY_FILTER_USE_KEY);
+
+            expect($actual)->toBe($expected);
+        }
+    }
+})->with([
+    'custom converters and properties' => [[
+        'key.converter' => 'io.confluent.connect.avro.AvroConverter',
+        'key.converter.schema.registry.url' => 'http://registry.test:8081',
+        'value.converter' => 'io.confluent.connect.avro.AvroConverter',
+        'value.converter.schema.registry.url' => 'http://registry.test:8081',
+    ]],
+    'worker defaults' => [[]],
+]);
+
+it('uses each named origin target host only for its sink', function () {
+    $replica = ferry_replica();
+    $settings = config('phpinnacle-ferry.origins.kafka');
+    $origins = new OriginFactory(app(), [
+        'kafka' => $settings,
+        'analytics' => [...$settings, 'target_host' => 'analytics-db.internal'],
+    ]);
+
+    foreach (['kafka' => 'db.internal', 'analytics' => 'analytics-db.internal'] as $name => $host) {
+        $origin = $origins->create($name);
+
+        expect($origin->make($replica)->config['connection.url'])
+            ->toBe(sprintf('jdbc:postgresql://%s:5432/:memory:', $host))
+            ->and($origin->make($replica->upstream)->config['database.hostname'])
+            ->toBe('localhost');
+    }
+});
+
 it('builds sink configuration through the destination registry', function (?string $destination) {
     $replica = ferry_replica();
     $destinations = app(DestinationFactory::class);
@@ -462,7 +508,7 @@ it('deploys Kafka configurations through the service and job without persisting 
     $manager = app(\PHPinnacle\Ferry\Services\ConnectorManager::class);
     $manager->activate($replica);
     expect($http->requests)->toBe([])->and($replica->fresh()->status)->toBe(ReplicaStatus::Pending);
-    new \PHPinnacle\Ferry\Jobs\SynchronizeConnectorsJob($replica->upstream_id)->handle($manager);
+    new \PHPinnacle\Ferry\Jobs\Connector\SynchronizeConnectorsJob($replica->upstream_id)->handle($manager);
     expect($http->routes())
         ->toBe([
             ['PUT', '/connectors/ferry-source-test-upstream/config'],

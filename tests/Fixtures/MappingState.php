@@ -7,8 +7,6 @@ use PHPinnacle\Eidos\Forms\FieldMapping;
 /**
  * @phpstan-import-type SourceEntry from FieldMapping
  * @phpstan-import-type ValueEntry from FieldMapping
- * @phpstan-import-type Targets from FieldMapping
- * @phpstan-import-type State from FieldMapping
  */
 final class MappingState
 {
@@ -69,26 +67,5 @@ final class MappingState
         }
 
         return $rows;
-    }
-
-    public static function encode(FieldMapping $field, mixed $targets, array $sources = []): mixed
-    {
-        if (!is_array($targets)) {
-            return $targets;
-        }
-
-        $keys = $field->getStateKeys();
-        $sourceKeys = $field->getSourceStateKeys();
-
-        return [
-            'sources' => array_combine(
-                array_map(fn ($id) => $sourceKeys[$id] ?? $id, array_keys($sources)),
-                array_values($sources),
-            ),
-            'targets' => array_combine(
-                array_map(fn ($id) => $keys[$id] ?? $id, array_keys($targets)),
-                array_values($targets),
-            ),
-        ];
     }
 }

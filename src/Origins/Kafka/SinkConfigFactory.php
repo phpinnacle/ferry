@@ -19,6 +19,7 @@ class SinkConfigFactory
         Replica $replica,
         StructureItem $object,
         string $topic,
+        ?string $targetHost = null,
     ): array {
         $dynamic = $replica->type === DestinationType::Dynamic;
         $keyColumn = $dynamic ? $destination->getPrimaryKey() : null;
@@ -34,6 +35,7 @@ class SinkConfigFactory
             ],
             transforms: $this->transforms->pipeline($replica, $object, $keyColumn, $dynamic, $fixedValues),
             connection: $destination->getConnectionName(),
+            targetHost: $targetHost,
             deletes: $dynamic,
             primaryKey: $dynamic ? null : $destination->getPrimaryKey(),
         )->toArray();

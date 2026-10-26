@@ -19,7 +19,14 @@ use PHPinnacle\Franz\Request\ConnectorConfigRequest;
 
 class KafkaOrigin implements Origin
 {
-    /** @param array<string, mixed> $config */
+    /**
+     * @param array{
+     *     target_host: ?string,
+     *     converters: array<string, string>,
+     *     signal: array{topic: string, ...},
+     *     ...
+     * } $config
+     */
     public function __construct(
         private readonly string $name,
         private readonly array $config,
@@ -40,7 +47,7 @@ class KafkaOrigin implements Origin
         $this->assertPgsqlDriver($upstream);
 
         if ($source instanceof Upstream) {
-            $config = $this->sources->source($source, $source->trackedReplicas(), $this->config);
+            $config = $this->sources->source($source, $this->config);
         } else {
             $object = $this->sourceObject($source);
             $config = $this->sinks->make(
@@ -48,13 +55,14 @@ class KafkaOrigin implements Origin
                 $source,
                 $object,
                 $this->sources->topic($upstream, $object),
+                $this->config['target_host'],
             );
         }
 
         return ($source->connector ?? new Connector)->fill([
             'name' => $source->connector->name ?? $this->sources->name($source),
             'origin' => $this->name,
-            'config' => $config,
+            'config' => [...$config, ...$this->config['converters']],
         ]);
     }
 

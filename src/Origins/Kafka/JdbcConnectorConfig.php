@@ -18,6 +18,7 @@ final readonly class JdbcConnectorConfig
         private ?string $connection = null,
         private bool $deletes = false,
         private ?string $primaryKey = null,
+        private ?string $targetHost = null,
     ) {}
 
     /** @return array<string, string> */
@@ -40,10 +41,6 @@ final readonly class JdbcConnectorConfig
             'auto.create' => 'false',
             'fields.whitelist' => implode(',', $this->columns),
             ...$this->transforms,
-            'key.converter' => 'org.apache.kafka.connect.json.JsonConverter',
-            'key.converter.schemas.enable' => 'true',
-            'value.converter' => 'org.apache.kafka.connect.json.JsonConverter',
-            'value.converter.schemas.enable' => 'true',
         ];
     }
 
@@ -52,11 +49,9 @@ final readonly class JdbcConnectorConfig
     {
         /** @var string $name */
         $name = $this->connection ?? Config::get('phpinnacle-ferry.connection') ?? Config::string('database.default');
-        /** @var string|null $targetHost */
-        $targetHost = Config::get('phpinnacle-ferry.kafka.target_host');
         $host =
-            $targetHost !== null && $targetHost !== ''
-                ? $targetHost
+            $this->targetHost !== null && $this->targetHost !== ''
+                ? $this->targetHost
                 : Config::string(sprintf('database.connections.%s.host', $name));
         /** @var int|numeric-string $port */
         $port = Config::get(sprintf('database.connections.%s.port', $name), 5432);

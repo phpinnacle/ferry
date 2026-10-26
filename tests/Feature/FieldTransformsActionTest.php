@@ -7,21 +7,22 @@ use Filament\Schemas\Schema;
 use Illuminate\Validation\ValidationException;
 use PHPinnacle\Common\Forms\InlineBuilder\BuilderAction;
 use PHPinnacle\Eidos\Forms\JsonSchema;
+use PHPinnacle\Ferry\FerryPlugin;
 use PHPinnacle\Ferry\Forms\FieldTransforms;
 use PHPinnacle\Ferry\Services\TransformRegistry;
 use PHPinnacle\Ferry\Tests\Fixtures\SchemaHost;
-use PHPinnacle\Ferry\Tests\TestCase;
 use PHPinnacle\Ferry\Transformation;
 use PHPinnacle\Ferry\Transformations\MaskField;
 use PHPinnacle\Ferry\Transformations\Substring;
 use PHPinnacle\Ferry\Transformations\Trim;
+use Tests\TestCase;
 
-require_once __DIR__ . '/../TestCase.php';
 require_once __DIR__ . '/../Fixtures/SchemaHost.php';
 
 uses(TestCase::class);
 
 beforeEach(function () {
+    FerryPlugin::make();
     config(['phpinnacle-ferry.kafka.transforms' => []]);
     $transforms = app(TransformRegistry::class);
     $transforms->register(Trim::make()->color('success'), MaskField::make()->color('warning'));

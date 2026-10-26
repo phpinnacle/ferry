@@ -2,7 +2,7 @@
 
 namespace PHPinnacle\Ferry\Observers;
 
-use PHPinnacle\Ferry\Jobs\SynchronizeConnectorsJob;
+use PHPinnacle\Ferry\Jobs\Connector\SynchronizeConnectorsJob;
 use PHPinnacle\Ferry\Models\Connector;
 
 class ConnectorObserver
