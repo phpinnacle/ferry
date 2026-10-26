@@ -412,7 +412,7 @@ Both `Upstream` and `Replica` store a nullable `connector_id`. A new upstream wi
 
 A source connector failure concerns all replicas of its upstream, while a sink connector failure concerns its replica alone. A connector that reports itself as running while one of its tasks has failed is recorded as failed together with the trace of that task, so a stalled transfer stays visible. Both states are shown as badges in the Filament tables and can be refreshed from there.
 
-Source and sink connectors apply the `source` and `sink` settings declared by their named origin. The shipped origin pins JSON converters with schemas enabled in both maps; empty maps leave converter selection to the worker defaults. The source always unwraps Debezium envelopes and preserves tombstones for deletions. The sink applies the configured transform pipeline and renames fields. Its `fields.whitelist` includes only its own mapped columns, constants and fixed values, so replicas reading the same source table do not write each other's columns.
+Source and sink connectors apply the `source` and `sink` settings declared by their named origin. The shipped origin leaves both maps empty, so converter selection uses the worker defaults. JSON converter settings with schemas enabled remain commented examples. The source always unwraps Debezium envelopes and preserves tombstones for deletions. The sink applies the configured transform pipeline and renames fields. Its `fields.whitelist` includes only its own mapped columns, constants and fixed values, so replicas reading the same source table do not write each other's columns.
 
 Widening an existing connector's `table.include.list`/`column.include.list` does not back-fill existing rows. Ferry configures `read.only=true` and `signal.enabled.channels=kafka`; updates compare `applied_config` with the desired captured columns. New columns, including those of a newly captured table or an unbound field filter, trigger an `execute-snapshot` signal for each affected table, keyed by the connector's `topic.prefix`. A new source connector needs no signal because Debezium's initial snapshot covers its capture scope. A retry may repeat a snapshot signal; sinks use upserts, so repeated records update the same destination keys.
 
@@ -432,16 +432,16 @@ Widening an existing connector's `table.include.list`/`column.include.list` does
         'headers' => [],
         'target_host' => null,
         'source' => [
-            'key.converter' => 'org.apache.kafka.connect.json.JsonConverter',
-            'key.converter.schemas.enable' => 'true',
-            'value.converter' => 'org.apache.kafka.connect.json.JsonConverter',
-            'value.converter.schemas.enable' => 'true',
+            // 'key.converter' => 'org.apache.kafka.connect.json.JsonConverter',
+            // 'key.converter.schemas.enable' => 'true',
+            // 'value.converter' => 'org.apache.kafka.connect.json.JsonConverter',
+            // 'value.converter.schemas.enable' => 'true',
         ],
         'sink' => [
-            'key.converter' => 'org.apache.kafka.connect.json.JsonConverter',
-            'key.converter.schemas.enable' => 'true',
-            'value.converter' => 'org.apache.kafka.connect.json.JsonConverter',
-            'value.converter.schemas.enable' => 'true',
+            // 'key.converter' => 'org.apache.kafka.connect.json.JsonConverter',
+            // 'key.converter.schemas.enable' => 'true',
+            // 'value.converter' => 'org.apache.kafka.connect.json.JsonConverter',
+            // 'value.converter.schemas.enable' => 'true',
         ],
         'signal' => [
             'topic' => env('FERRY_KAFKA_SIGNAL_TOPIC'),
@@ -456,16 +456,16 @@ Widening an existing connector's `table.include.list`/`column.include.list` does
         'headers' => [],
         'target_host' => null,
         'source' => [
-            'key.converter' => 'org.apache.kafka.connect.json.JsonConverter',
-            'key.converter.schemas.enable' => 'true',
-            'value.converter' => 'org.apache.kafka.connect.json.JsonConverter',
-            'value.converter.schemas.enable' => 'true',
+            // 'key.converter' => 'org.apache.kafka.connect.json.JsonConverter',
+            // 'key.converter.schemas.enable' => 'true',
+            // 'value.converter' => 'org.apache.kafka.connect.json.JsonConverter',
+            // 'value.converter.schemas.enable' => 'true',
         ],
         'sink' => [
-            'key.converter' => 'org.apache.kafka.connect.json.JsonConverter',
-            'key.converter.schemas.enable' => 'true',
-            'value.converter' => 'org.apache.kafka.connect.json.JsonConverter',
-            'value.converter.schemas.enable' => 'true',
+            // 'key.converter' => 'org.apache.kafka.connect.json.JsonConverter',
+            // 'key.converter.schemas.enable' => 'true',
+            // 'value.converter' => 'org.apache.kafka.connect.json.JsonConverter',
+            // 'value.converter.schemas.enable' => 'true',
         ],
         'signal' => [
             'topic' => env('ANALYTICS_KAFKA_SIGNAL_TOPIC'),
