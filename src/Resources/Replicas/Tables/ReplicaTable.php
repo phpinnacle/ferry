@@ -43,10 +43,6 @@ class ReplicaTable
                     ->label(__('phpinnacle-ferry::resources.replica.fields.upstream'))
                     ->searchable()
                     ->sortable(),
-                TextColumn::make('status')
-                    ->label(__('phpinnacle-ferry::resources.replica.fields.status'))
-                    ->badge()
-                    ->sortable(),
                 TextColumn::make('destination')
                     ->label(__('phpinnacle-ferry::resources.replica.fields.destination'))
                     ->state(fn (Replica $record, DestinationFactory $destinations) => $destinations->resolve($record))
@@ -54,6 +50,10 @@ class ReplicaTable
                     ->searchable(),
                 TextColumn::make('connector.status')
                     ->label(__('phpinnacle-ferry::resources.replica.fields.sink_connector_status'))
+                    ->badge()
+                    ->sortable(),
+                TextColumn::make('status')
+                    ->label(__('phpinnacle-ferry::resources.replica.fields.status'))
                     ->badge()
                     ->sortable(),
                 CreatedColumn::make(),

@@ -38,7 +38,7 @@ return [
             'status' => 'Статус',
             'objects' => 'Объектов',
             'progress' => 'Прогресс',
-            'source_connector_status' => 'Статус Source Connector',
+            'source_connector_status' => 'Подключение',
         ],
         'placeholders' => ['adapter' => 'Не читать структуру'],
         'pages' => [
@@ -104,7 +104,7 @@ return [
             'uuid_sources' => 'Поля первичного ключа источника',
             'transform' => 'Трансформация',
             'add_transform' => 'Добавить трансформацию',
-            'sink_connector_status' => 'Статус Sink Connector',
+            'sink_connector_status' => 'Подключение',
         ],
         'components' => [
             'type' => 'Тип значения',

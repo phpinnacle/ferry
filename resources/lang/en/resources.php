@@ -38,7 +38,7 @@ return [
             'status' => 'Status',
             'objects' => 'Objects',
             'progress' => 'Progress',
-            'source_connector_status' => 'Source Connector Status',
+            'source_connector_status' => 'Connector',
         ],
         'placeholders' => ['adapter' => 'Do not read structure'],
         'pages' => [
@@ -104,7 +104,7 @@ return [
             'uuid_sources' => 'Source primary-key fields',
             'transform' => 'Transform',
             'add_transform' => 'Add transform',
-            'sink_connector_status' => 'Sink Connector Status',
+            'sink_connector_status' => 'Connector',
         ],
         'components' => [
             'type' => 'Value type',
