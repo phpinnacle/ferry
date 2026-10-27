@@ -10,7 +10,6 @@ use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Forms\FieldTransforms;
 use PHPinnacle\Ferry\Services\TransformRegistry;
 use PHPinnacle\Ferry\Tests\Fixtures\SchemaHost;
-use PHPinnacle\Ferry\Transformations\Cast;
 use PHPinnacle\Ferry\Transformations\MaskField;
 use PHPinnacle\Ferry\Transformations\Trim;
 use Tests\TestCase;
@@ -21,7 +20,6 @@ require_once __DIR__ . '/../Fixtures/SchemaHost.php';
 uses(TestCase::class);
 
 it('keeps schema form translations independent of replica labels', function (
-    bool $binding,
     string $locale,
     string $valueLabel,
     string $addLabel,
@@ -37,12 +35,7 @@ it('keeps schema form translations independent of replica labels', function (
         'phpinnacle-ferry',
     );
     $source = ['properties' => ['name' => ['type' => 'string']]];
-    $field = $binding
-        ? FieldBinding::make('mapping')->jsonSchema($source)->simple(TextInput::make('destination'))
-        : FieldMapping::make('mapping')->jsonSchema(source: $source, dest: [
-            'properties' => ['name' => ['type' => 'string'], 'constant' => ['type' => 'string']],
-        ]);
-    $field->staticValues();
+    $field = FieldBinding::make('mapping')->jsonSchema($source)->simple(TextInput::make('destination'))->staticValues();
     $schema = Schema::make(SchemaHost::make())->statePath('data')->components([$field]);
     $schema->fill([
         'mapping' => [
@@ -56,7 +49,7 @@ it('keeps schema form translations independent of replica labels', function (
     expect($html)
         ->toContain('placeholder="' . $valueLabel . '"', $addLabel)
         ->not->toContain('Replica-only value', 'phpinnacle-eidos::schema-forms.');
-})->with([true, false])->with([
+})->with([
     'English' => ['en', 'Value', 'Add static value'],
     'Russian' => ['ru', 'Значение', 'Добавить статическое значение'],
 ]);
@@ -94,52 +87,6 @@ it('validates transform settings on unconnected sources', function (
     'incompatible transform' => ['boolean', [['type' => 'trim', 'data' => []]]],
     'missing parameters' => ['string', [['type' => 'mask', 'data' => []]]],
 ]);
-
-it('checks static source compatibility after transforms and validates connected values', function () {
-    app(TransformRegistry::class)->register(Cast::make());
-    $field = FieldMapping::make('mapping')
-        ->staticValues()
-        ->jsonSchema(dest: ['properties' => ['count' => ['type' => 'integer']]])
-        ->sourceSettings(fn (Closure $inputSchema) => [
-            FieldTransforms::make('transforms')->inputSchema(fn () => $inputSchema()->toArray()),
-        ])
-        ->outputSchema(function (FieldMapping $component, TransformRegistry $registry) {
-            $schema = $component->getSourceSchema();
-            foreach ($component->getSourceSettings() as $source => $settings) {
-                $schema['properties'][$source] = $registry
-                    ->resultSchema(
-                        JsonSchema::fromArray($schema['properties'][$source]),
-                        $settings['transforms'] ?? [],
-                    )
-                    ?->toArray() ?? [];
-            }
-
-            return $schema;
-        });
-    $schema = Schema::make(SchemaHost::make())->statePath('data')->components([$field]);
-    $schema->fill();
-    $field->getAction('addConstant')->call();
-    $source = array_key_first($field->getConstants());
-    expect($field->getConnectionModes())->toBe([]);
-    $key = $field->getSourceRowIndexes()[$source];
-    $schema
-        ->getComponentByStatePath('mapping.' . $key . '.options.transforms')
-        ->state([
-            ['type' => 'cast', 'data' => ['type' => 'int64']],
-        ]);
-    expect($field->getConnectionModes()[$source]['count'])->toBe('whole');
-    $state = $field->getRawState();
-    $state[$field->getSourceRowIndex($source)]['target'] = 'count';
-    $field->rawState($state);
-    expect($schema->getState(...))->toThrow(ValidationException::class);
-    $field->getConstantValueSchema($source)->getComponent('static')->state('10');
-    expect($schema->getState()['mapping'])->toBe([[
-        'kind' => 'static',
-        'target' => 'count',
-        'static' => '10',
-        'options' => ['transforms' => [['type' => 'cast', 'data' => ['type' => 'int64']]]],
-    ]]);
-});
 
 it('uses a generic value label independently of replica labels', function () {
     __('phpinnacle-ferry::resources.replica.fields.constant_value');

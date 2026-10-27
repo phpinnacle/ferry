@@ -726,7 +726,6 @@ it('edits a Boolean constant through the built-in form without a cast', function
     ]);
     $mapping = $form->getComponentByStatePath('mapping');
     expect($mapping->hasStaticForms())->toBeTrue();
-    expect($mapping->hasStaticValues())->toBeFalse();
     $mapping->getStaticFormSchema('is_active')->getComponent('value')->state(false);
     $state = $form->getState();
     $constant = collect($state['mapping'])->firstWhere('kind', 'static');
@@ -737,41 +736,6 @@ it('edits a Boolean constant through the built-in form without a cast', function
     $edit = ReplicaForm::configure(FormSchema::make($livewire)->statePath('data')->record($replica)->operation('edit'));
     $edit->fill(ReplicaForm::fill($replica->fresh()->toArray()));
     expect($edit->getState()['mapping'])->toEqual($state['mapping']);
-});
-
-it('preserves existing transformed constants when editing a static replica', function () {
-    $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
-    TestCase::makeItem($upstream, ['fields' => [
-        '_description' => JsonSchema::fromArray(['type' => 'string', 'maxLength' => 100]),
-        '_code' => JsonSchema::fromArray(['type' => 'string', 'maxLength' => 11, 'minLength' => 11]),
-    ]]);
-    $replica = TestCase::makeReplica([
-        'upstream_id' => $upstream->id,
-        'type' => DestinationType::Static,
-        'destination' => 'customers',
-        'mapping' => [
-            new FieldMapping(source: '_description', target: 'name'),
-            new FieldMapping(source: '_code', target: 'tax_number'),
-            new FieldMapping(
-                source: null,
-                target: 'is_active',
-                options: ['transforms' => [['type' => 'cast', 'data' => ['type' => 'boolean']]]],
-                static: 'false',
-                kind: FieldKind::Static,
-            ),
-            new FieldMapping(source: '_idrref', target: 'customer_id'),
-        ],
-    ]);
-    $original = $replica->mapping[2];
-    $form = ReplicaForm::configure(
-        FormSchema::make(SchemaHost::make())->statePath('data')->record($replica)->operation('edit'),
-    );
-    $form->fill(ReplicaForm::fill($replica->toArray()));
-
-    $replica->update(ReplicaForm::forUpdate($form->getState(), $replica, app(DestinationFactory::class)));
-
-    expect($form->getComponentByStatePath('mapping')->hasStaticValues())->toBeTrue();
-    expect(collect($replica->fresh()->mapping)->firstWhere('kind', FieldKind::Static))->toEqual($original);
 });
 
 it('creates an unmapped pending replica from only its identifying fields', function (DestinationType $type) {

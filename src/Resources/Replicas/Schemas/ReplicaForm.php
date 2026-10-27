@@ -21,7 +21,6 @@ use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Data\FieldMapping as SchemaMapping;
 use PHPinnacle\Ferry\Destinations\StaticDestination;
 use PHPinnacle\Ferry\Enums\DestinationType;
-use PHPinnacle\Ferry\Enums\FieldKind;
 use PHPinnacle\Ferry\Enums\TransformTarget;
 use PHPinnacle\Ferry\Forms\FieldTransforms;
 use PHPinnacle\Ferry\Models\Replica;
@@ -255,7 +254,6 @@ class ReplicaForm
         return Group::make()
             ->schema(function (
                 Get $get,
-                ?Replica $record,
                 DestinationFactory $destinations,
             ) {
                 $upstreamId = $get->string('upstream_id', isNullable: true);
@@ -283,7 +281,7 @@ class ReplicaForm
                 $mapping = match ($selectedDestination) {
                     DestinationType::Dynamic->value => self::dynamicMapping($sourceSchema),
                     null => null,
-                    default => self::staticMapping($sourceSchema, $destination, $record),
+                    default => self::staticMapping($sourceSchema, $destination),
                 };
 
                 if ($mapping === null) {
@@ -392,7 +390,6 @@ class ReplicaForm
     private static function staticMapping(
         array $sourceSchema,
         ?StaticDestination $destination,
-        ?Replica $record,
     ): FieldMapping {
         $mapping = FieldMapping::make('mapping');
 
@@ -406,13 +403,6 @@ class ReplicaForm
             )
                     ? null
                     : BuiltinStaticForms::make($property, in_array($target, $component->getRequiredTargets(), true)))
-            ->staticValues(array_any(
-                $record->mapping ?? [],
-                static fn (SchemaMapping $mapping) => (
-                    $mapping->kind === FieldKind::Static
-                    && $mapping->transforms() !== []
-                ),
-            ))
             ->label(__('phpinnacle-ferry::resources.replica.fields.schema'))
             ->required()
             ->jsonSchema(

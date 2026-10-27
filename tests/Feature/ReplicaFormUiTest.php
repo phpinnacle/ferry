@@ -755,7 +755,6 @@ it('binds dynamic fields and connects static fields to the declared destination 
     /** @var FieldMapping $mapping */
     $mapping = $form('customers')->getComponentByStatePath('mapping');
 
-    expect($mapping->hasStaticValues())->toBeFalse();
     expect($mapping->hasStaticForms())->toBeTrue();
 
     expect(array_column($binding->getSources(), 'label', 'id'))

@@ -49,11 +49,6 @@ final class InsertUuidAction
             ->action(function (array $data, FieldMapping|FieldBinding $component, Set $set) use ($primaryKey) {
                 /** @var array{field: string, sources: list<string>} $data */
                 $sourceSchema = $component->getSourceSchema();
-                if ($component instanceof FieldMapping) {
-                    foreach (array_keys($component->getConstants()) as $constant) {
-                        unset($sourceSchema['properties'][$constant]);
-                    }
-                }
                 $sourceSchema['properties'] =
                     [
                         $data['field'] => [

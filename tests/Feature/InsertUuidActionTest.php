@@ -198,22 +198,14 @@ it('creates and persists one UUID key through the native header action for both 
     }
 })->with([DestinationType::Dynamic, DestinationType::Static]);
 
-it('keeps synthetic static cards out of the saved input schema when adding a UUID key', function () {
+it('preserves destination constants when adding a UUID key', function () {
     $replica = TestCase::makeReplica([
         'upstream_id' => $this->upstream->id,
         'type' => DestinationType::Static,
         'destination' => 'keyed',
         'mapping' => [
             new FieldMapping('name', 'name'),
-            new FieldMapping(
-                null,
-                'tenant',
-                [
-                    'transforms' => [['type' => 'cast', 'data' => ['type' => 'int64']]],
-                ],
-                '4',
-                FieldKind::Static,
-            ),
+            new FieldMapping(null, 'tenant', [], 4, FieldKind::Static),
         ],
     ]);
     $livewire = SchemaHost::make();
@@ -222,20 +214,22 @@ it('keeps synthetic static cards out of the saved input schema when adding a UUI
     );
     $form->fill(ReplicaForm::fill($replica->toArray()));
     $mapping = $form->getComponentByStatePath('mapping');
-    expect($mapping->getConstants())->toHaveCount(1);
-    $constant = array_key_first($mapping->getConstants());
-    expect($mapping->getSourceSchema()['properties'])->toHaveKey($constant);
+    $properties = $mapping->getSourceSchema()['properties'];
+    expect(array_keys($properties))->toBe(array_keys($replica->schema->toArray()['properties']));
     $mapping
         ->getAction('insertUuid')
         ->data(['field' => 'record_id', 'sources' => ['tenant_id', 'row_id']])
         ->call();
-    expect($livewire->data['schema']['properties'])->toHaveKey('record_id')->not->toHaveKey($constant);
+    expect(array_keys($livewire->data['schema']['properties']))->toBe(['record_id', ...array_keys($properties)]);
     $rows = $mapping->getState();
     $rows[$mapping->getSourceRowIndex('record_id')]['target'] = 'id';
     $mapping->state($rows);
     $replica->fill(ReplicaForm::forUpdate($form->getState(), $replica, app(DestinationFactory::class)))->save();
-    expect($replica->fresh()->schema->toArray()['properties'])->not->toHaveKey($constant);
-    expect(collect($replica->fresh()->mapping)->firstWhere('target', 'tenant')->static)->toBe('4');
+    expect(array_keys($replica->fresh()->schema->toArray()['properties']))->toBe([
+        'record_id',
+        ...array_keys($properties),
+    ]);
+    expect(collect($replica->fresh()->mapping)->firstWhere('target', 'tenant')->static)->toBe(4);
 });
 
 it('validates generated field names and requires every physical key part in its native modal', function (
