@@ -156,6 +156,27 @@ class Structure extends Model
         return $this->publishedItems()->where('external_id', $source)->first();
     }
 
+    /** @return array<string, string> */
+    public function sourceOptions(string $search = ''): array
+    {
+        return $this
+            ->publishedItems()
+            ->select(['external_id', 'title', 'label', 'name'])
+            ->where(function (Builder $query) use ($search) {
+                $query
+                    ->whereLike('title', '%' . $search . '%')
+                    ->orWhereLike('label', '%' . $search . '%')
+                    ->orWhereLike('name', '%' . $search . '%');
+            })
+            ->reorder('priority')
+            ->orderByRaw("lower(coalesce(nullif(title, ''), nullif(label, ''), name))")
+            ->orderBy('external_id')
+            ->limit(20)
+            ->get()
+            ->mapWithKeys(fn (StructureItem $item) => [$item->external_id => $item->displayTitle()])
+            ->all();
+    }
+
     public function publish(): void
     {
         $revision = $this->draftRevision();

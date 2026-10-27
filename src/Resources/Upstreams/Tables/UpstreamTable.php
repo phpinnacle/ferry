@@ -13,7 +13,6 @@ use PHPinnacle\Common\Tables\ActiveColumn;
 use PHPinnacle\Common\Tables\CreatedColumn;
 use PHPinnacle\Common\Tables\UpdatedColumn;
 use PHPinnacle\Ferry\Models\Upstream;
-use PHPinnacle\Ferry\Resources\Actions\CheckStatusAction;
 use PHPinnacle\Ferry\Resources\Upstreams\Actions\PrepareStructureAction;
 use PHPinnacle\Ferry\Resources\Upstreams\Actions\TestUpstreamAction;
 use PHPinnacle\Ferry\Resources\Upstreams\UpstreamResource;
@@ -64,10 +63,6 @@ class UpstreamTable
             ->recordActions([
                 TestUpstreamAction::table(),
                 PrepareStructureAction::table(),
-                CheckStatusAction::table(
-                    'check_source_status',
-                    __('phpinnacle-ferry::resources.upstream.actions.check_source_status'),
-                ),
                 EditAction::make()
                     ->label(__('phpinnacle-ferry::resources.upstream.actions.update'))
                     ->iconButton(),

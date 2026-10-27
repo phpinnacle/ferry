@@ -7,9 +7,9 @@ use PHPinnacle\Ferry\Models\Replica;
 use PHPinnacle\Ferry\Models\Upstream;
 use PHPinnacle\Ferry\Policies\ReplicaPolicy;
 use PHPinnacle\Ferry\Policies\UpstreamPolicy;
-use PHPinnacle\Ferry\Resources\Replicas\Actions\ActivateReplicaAction;
+use PHPinnacle\Ferry\Resources\Actions\RefreshConnectorStatusesAction;
 use PHPinnacle\Ferry\Resources\Replicas\Actions\PauseReplicaAction;
-use PHPinnacle\Ferry\Resources\Replicas\Actions\RestartReplicaAction;
+use PHPinnacle\Ferry\Resources\Replicas\Actions\StartReplicaAction;
 use PHPinnacle\Ferry\Resources\Upstreams\Actions\PrepareStructureAction;
 use Tests\TestCase;
 
@@ -53,9 +53,8 @@ it('authorizes table actions against update permission', function (string $actio
 
     expect($action->isAuthorized())->toBeTrue();
 })->with([
-    'activate' => ActivateReplicaAction::class,
+    'start' => StartReplicaAction::class,
     'pause' => PauseReplicaAction::class,
-    'restart' => RestartReplicaAction::class,
 ]);
 
 it('authorizes structure preparation against update permission', function (string $context) {
@@ -69,3 +68,18 @@ it('authorizes structure preparation against update permission', function (strin
 
     expect($action->isAuthorized())->toBeTrue();
 })->with(['table', 'form']);
+
+it('requires access to both resource lists to refresh all connector statuses', function (
+    bool $replicas,
+    bool $upstreams,
+) {
+    $this->user->testPermissions['view_any_replica'] = $replicas;
+    $this->user->testPermissions['view_any_upstream'] = $upstreams;
+
+    expect(RefreshConnectorStatusesAction::table()->isAuthorized())->toBe($replicas && $upstreams);
+})->with([
+    'both lists' => [true, true],
+    'replicas only' => [true, false],
+    'upstreams only' => [false, true],
+    'neither list' => [false, false],
+]);

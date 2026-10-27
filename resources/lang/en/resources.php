@@ -9,7 +9,6 @@ return [
             'update' => 'Edit',
             'delete' => 'Delete',
             'test_upstream' => 'Test Upstream',
-            'check_source_status' => 'Check Source Connector Status',
             'structure' => [
                 'pending' => 'Fetch Structure',
                 'preparing' => 'Preparing Structure',
@@ -79,11 +78,10 @@ return [
             'create' => 'Create Replica',
             'update' => 'Edit',
             'delete' => 'Delete',
-            'activate' => 'Activate',
+            'start' => 'Start',
             'insert_uuid' => 'Generate UUID key',
             'pause' => 'Pause',
-            'restart' => 'Restart',
-            'check_status' => 'Check Sink Connector Status',
+            'refresh_statuses' => 'Refresh statuses',
         ],
         'empty' => [
             'heading' => 'No replicas',
@@ -93,7 +91,7 @@ return [
             'name' => 'Name',
             'code' => 'Code',
             'upstream' => 'Upstream',
-            'source' => 'Object',
+            'source' => 'Source',
             'status' => 'Status',
             'destination' => 'Destination',
             'type' => 'Type',
@@ -178,9 +176,10 @@ return [
             'invalid_mapping' => 'Replica ":code" cannot be activated: its field mapping is out of date',
         ],
         'messages' => [
-            'activated' => 'Replica activation queued',
+            'statuses_refreshed' => 'Connector statuses refreshed',
+            'status_refresh_failed' => 'Some connector statuses could not be refreshed',
+            'started' => 'Replica start queued',
             'paused' => 'Replica pause queued',
-            'restarted' => 'Replica connector restart queued',
         ],
     ],
     'transform' => [

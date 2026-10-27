@@ -7,15 +7,16 @@ use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use PHPinnacle\Common\Tables\CreatedColumn;
 use PHPinnacle\Common\Tables\UpdatedColumn;
 use PHPinnacle\Ferry\Enums\DestinationType;
+use PHPinnacle\Ferry\Enums\ReplicaStatus;
 use PHPinnacle\Ferry\Models\Replica;
-use PHPinnacle\Ferry\Resources\Actions\CheckStatusAction;
-use PHPinnacle\Ferry\Resources\Replicas\Actions\ActivateReplicaAction;
+use PHPinnacle\Ferry\Resources\Actions\RefreshConnectorStatusesAction;
 use PHPinnacle\Ferry\Resources\Replicas\Actions\PauseReplicaAction;
-use PHPinnacle\Ferry\Resources\Replicas\Actions\RestartReplicaAction;
+use PHPinnacle\Ferry\Resources\Replicas\Actions\StartReplicaAction;
 use PHPinnacle\Ferry\Resources\Replicas\ReplicaResource;
 use PHPinnacle\Ferry\Resources\Replicas\Schemas\ReplicaForm;
 use PHPinnacle\Ferry\Services\DestinationFactory;
@@ -59,6 +60,7 @@ class ReplicaTable
                 UpdatedColumn::make(),
             ])
             ->headerActions([
+                RefreshConnectorStatusesAction::table(),
                 CreateAction::make()
                     ->label(__('phpinnacle-ferry::resources.replica.actions.create'))
                     ->modalIcon(ReplicaResource::getNavigationIcon())
@@ -78,13 +80,8 @@ class ReplicaTable
                     ->modalDescription(__('phpinnacle-ferry::resources.replica.modals.delete.description_bulk')),
             ])
             ->recordActions([
-                ActivateReplicaAction::table(),
+                StartReplicaAction::table(),
                 PauseReplicaAction::table(),
-                RestartReplicaAction::table(),
-                CheckStatusAction::table(
-                    'check_sink_status',
-                    __('phpinnacle-ferry::resources.replica.actions.check_status'),
-                ),
                 EditAction::make()
                     ->label(__('phpinnacle-ferry::resources.replica.actions.update'))
                     ->iconButton(),
@@ -100,6 +97,29 @@ class ReplicaTable
                         },
                     ))
                     ->modalSubmitActionLabel(__('phpinnacle-ferry::resources.replica.actions.delete')),
+            ])
+            ->filters([
+                SelectFilter::make('status')
+                    ->label(__('phpinnacle-ferry::resources.replica.fields.status'))
+                    ->options(ReplicaStatus::class),
+                SelectFilter::make('upstream')
+                    ->label(__('phpinnacle-ferry::resources.replica.fields.upstream'))
+                    ->relationship('upstream', 'name')
+                    ->searchable()
+                    ->preload(),
+                SelectFilter::make('destination')
+                    ->label(__('phpinnacle-ferry::resources.replica.fields.destination'))
+                    ->options(
+                        fn (DestinationFactory $destinations) => Replica::query()
+                            ->distinct()
+                            ->orderBy('destination')
+                            ->get(['type', 'destination'])
+                            ->mapWithKeys(fn (Replica $replica) => [
+                                $replica->destination => $destinations->resolve($replica)->getLabel(),
+                            ])
+                            ->all(),
+                    )
+                    ->searchable(),
             ])
             ->defaultSort('name');
     }

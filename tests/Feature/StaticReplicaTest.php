@@ -751,6 +751,10 @@ it('creates an unmapped pending replica from only its identifying fields', funct
     ]);
 
     expect(array_keys($form->getFlatFields()))->toBe(['name', 'code', 'upstream_id', 'source', 'destination']);
+    foreach (['upstream_id', 'source', 'destination'] as $name) {
+        $field = $form->getComponentByStatePath($name);
+        expect($field->isNative())->toBeFalse()->and($field->isPreloaded())->toBeTrue();
+    }
     $state = $form->getState();
     expect($state)->not->toHaveKey('schema');
     $replica = Replica::create(ReplicaForm::forCreate($state, app(DestinationFactory::class)));

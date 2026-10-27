@@ -14,6 +14,7 @@ use PHPinnacle\Ferry\Casts\MappingCast;
 use PHPinnacle\Ferry\Casts\TransformsCast;
 use PHPinnacle\Ferry\Data\FieldMapping;
 use PHPinnacle\Ferry\Data\TransformSetting;
+use PHPinnacle\Ferry\Enums\ConnectorStatus;
 use PHPinnacle\Ferry\Enums\DestinationType;
 use PHPinnacle\Ferry\Enums\ReplicaStatus;
 use PHPinnacle\Ferry\Models\Concerns\HasConnector;
@@ -104,6 +105,11 @@ class Replica extends Model
 
             return parent::delete();
         });
+    }
+
+    public function isRunning(): bool
+    {
+        return $this->status === ReplicaStatus::Active && $this->connector?->status === ConnectorStatus::Running;
     }
 
     /** @internal  */

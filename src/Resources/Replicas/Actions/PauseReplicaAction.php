@@ -4,7 +4,6 @@ namespace PHPinnacle\Ferry\Resources\Replicas\Actions;
 
 use Filament\Actions\Action;
 use Filament\Notifications\Notification;
-use PHPinnacle\Ferry\Enums\ReplicaStatus;
 use PHPinnacle\Ferry\Models\Replica;
 use PHPinnacle\Ferry\Services\ConnectorManager;
 use Throwable;
@@ -19,7 +18,7 @@ class PauseReplicaAction
             ->icon('phosphor-pause-circle')
             ->iconButton()
             ->color('warning')
-            ->visible(fn (Replica $record) => $record->status === ReplicaStatus::Active)
+            ->visible(fn (Replica $record) => $record->isRunning())
             ->action(function (ConnectorManager $connectors, Replica $record) {
                 try {
                     $connectors->pause($record);

@@ -118,6 +118,34 @@ it('applies source before sinks and activates the replica after success', functi
         ->toBe(0);
 });
 
+it('starts new replicas, resumes paused replicas and retries failed connectors', function (
+    bool $deployed,
+    ReplicaStatus $status,
+    ?ConnectorStatus $connectorStatus,
+) {
+    $replica = TestCase::makeReplica();
+    if ($deployed) {
+        ferry_drain_connectors();
+    }
+    $replica->refresh()->forceFill(['status' => $status])->saveQuietly();
+    if ($connectorStatus !== null) {
+        $replica->connector->recordStatus($connectorStatus);
+    }
+
+    app(ConnectorManager::class)->start($replica);
+    ferry_drain_connectors();
+
+    expect($replica->fresh()->status)
+        ->toBe(ReplicaStatus::Active)
+        ->and($replica->fresh()->connector->status)
+        ->toBe(ConnectorStatus::Running);
+})->with([
+    'initial deployment' => [false, ReplicaStatus::Pending, null],
+    'resume' => [true, ReplicaStatus::Pause, ConnectorStatus::Paused],
+    'retry failure' => [true, ReplicaStatus::Active, ConnectorStatus::Failed],
+    'resume after failure' => [true, ReplicaStatus::Pause, ConnectorStatus::Failed],
+]);
+
 it('does not enqueue updates for unchanged config or status checks', function () {
     $replica = TestCase::makeReplica();
     ferry_drain_connectors();
@@ -125,7 +153,7 @@ it('does not enqueue updates for unchanged config or status checks', function ()
     $replica->update(['name' => 'Renamed']);
     $replica->connector->recordStatus(ConnectorStatus::Running);
     $replica->connector->save();
-    app(ConnectorManager::class)->checkStatus($replica);
+    app(ConnectorManager::class)->checkStatus($replica->connector);
     expect(DB::table('jobs')->count())->toBe(0);
 });
 

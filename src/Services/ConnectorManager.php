@@ -49,6 +49,15 @@ class ConnectorManager
         }
     }
 
+    public function start(Replica $replica): void
+    {
+        if ($replica->status !== ReplicaStatus::Pause && $replica->connector?->status === ConnectorStatus::Failed) {
+            $this->restart($replica);
+        } else {
+            $this->activate($replica);
+        }
+    }
+
     public function activate(Replica $replica): void
     {
         $replica
@@ -74,13 +83,9 @@ class ConnectorManager
         SynchronizeConnectorsJob::dispatch($replica->upstream_id);
     }
 
-    public function checkStatus(Upstream|Replica $owner): void
+    public function checkStatus(Connector $connector): void
     {
-        $connector = $owner->connector;
-
-        if ($connector !== null) {
-            $this->check($this->origins->create($connector->origin), $connector);
-        }
+        $this->check($this->origins->create($connector->origin), $connector);
     }
 
     public function removed(Replica $replica): void
@@ -211,7 +216,11 @@ class ConnectorManager
 
     private function check(Origin $origin, Connector $connector): void
     {
-        $status = $origin->status($connector);
+        try {
+            $status = $origin->status($connector);
+        } catch (Throwable $exception) {
+            throw new ConnectorOperationFailed($connector->id, $exception);
+        }
         $connector->recordStatus($status, $connector->error);
     }
 

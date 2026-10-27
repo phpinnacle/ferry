@@ -205,7 +205,9 @@ class ReplicaForm
                     ->label(__('phpinnacle-ferry::resources.replica.fields.upstream'))
                     ->options(self::upstreamOptions(...))
                     ->default(fn (Select $component) => array_key_first($component->getOptions()))
-                    ->native()
+                    ->native(false)
+                    ->preload()
+                    ->optionsLimit(0)
                     ->selectablePlaceholder(false)
                     ->required()
                     ->live()
@@ -228,9 +230,23 @@ class ReplicaForm
                             isNullable: true,
                         )),
                     )
+                    ->getSearchResultsUsing(fn (string $search, Get $get) => self::sourceOptions(
+                        $get->string('upstream_id', isNullable: true),
+                        $search,
+                    ))
+                    ->getOptionLabelUsing(
+                        fn (string $value, Get $get) => Upstream::query()
+                            ->find($get->string('upstream_id', isNullable: true))
+                            ?->structure
+                            ->publishedItem($value)
+                            ?->displayTitle(),
+                    )
                     ->placeholder(__('phpinnacle-ferry::resources.replica.values.no_objects'))
                     ->default(fn (Select $component) => array_key_first($component->getOptions()))
-                    ->native()
+                    ->native(false)
+                    ->preload()
+                    ->searchable()
+                    ->optionsLimit(20)
                     ->selectablePlaceholder(false)
                     ->required()
                     ->live()
@@ -240,7 +256,9 @@ class ReplicaForm
                     ->label(__('phpinnacle-ferry::resources.replica.fields.destination'))
                     ->options(self::destinationOptions(...))
                     ->default(DestinationType::Dynamic->value)
-                    ->native()
+                    ->native(false)
+                    ->preload()
+                    ->optionsLimit(0)
                     ->selectablePlaceholder(false)
                     ->required()
                     ->live()
@@ -513,30 +531,9 @@ class ReplicaForm
     }
 
     /** @return array<string, string> */
-    private static function sourceOptions(?string $upstreamId): array
+    private static function sourceOptions(?string $upstreamId, string $search = ''): array
     {
-        $upstream = $upstreamId !== null ? Upstream::query()->find($upstreamId) : null;
-
-        if (!$upstream instanceof Upstream) {
-            return [];
-        }
-
-        return $upstream
-            ->structure
-            ->publishedItems()
-            ->select(['external_id', 'priority', 'title', 'label', 'name'])
-            ->get()
-            ->sort(static function (StructureItem $a, StructureItem $b) {
-                $byRank = $a->priority <=> $b->priority;
-
-                if ($byRank !== 0) {
-                    return $byRank;
-                }
-
-                return strnatcmp(mb_strtolower($a->displayTitle()), mb_strtolower($b->displayTitle()));
-            })
-            ->mapWithKeys(static fn (StructureItem $object) => [$object->external_id => $object->displayTitle()])
-            ->all();
+        return Upstream::query()->find($upstreamId)?->structure->sourceOptions($search) ?? [];
     }
 
     /** @return array<string, string|\Illuminate\Contracts\Support\Htmlable|null> */

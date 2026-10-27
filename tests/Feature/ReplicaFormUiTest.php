@@ -5,6 +5,7 @@ use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Schemas\Schema as FilamentSchema;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
@@ -16,6 +17,7 @@ use PHPinnacle\Ferry\Destinations\StaticDestination;
 use PHPinnacle\Ferry\Enums\DestinationType;
 use PHPinnacle\Ferry\Enums\StructureStatus;
 use PHPinnacle\Ferry\Models\Replica;
+use PHPinnacle\Ferry\Models\StructureItem;
 use PHPinnacle\Ferry\Resources\Replicas\Schemas\ReplicaForm;
 use PHPinnacle\Ferry\Services\DestinationFactory;
 use PHPinnacle\Ferry\Services\TransformRegistry;
@@ -945,18 +947,16 @@ it('creates every parameter of a chosen transform so that live inputs can bind t
         ->toBeFalse();
 });
 
-it('orders source objects with references first, obsolete ones last and titles case-insensitively', function () use (
-    $selects,
-) {
+it('orders sources by priority and alphabetical title in the database', function () use ($selects) {
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
 
     $objects = [
-        [0, 'Контрагенты'],
-        [0, 'авансы'],
-        [1, 'Заказ'],
-        [2, '(Не используется) Старое'],
-        [0, 'Номенклатура 10'],
-        [0, 'Номенклатура 2'],
+        [0, 'Customers'],
+        [0, 'advances'],
+        [1, 'Order'],
+        [2, '(Obsolete) Old'],
+        [0, 'Product 10'],
+        [0, 'Product 2'],
     ];
 
     foreach ($objects as $index => [$priority, $title]) {
@@ -979,13 +979,70 @@ it('orders source objects with references first, obsolete ones last and titles c
     $options = $selects(['upstream_id' => $upstream->id])->get('source')?->getOptions();
 
     expect(array_values($options ?? []))->toBe([
-        'авансы',
-        'Контрагенты',
-        'Номенклатура 2',
-        'Номенклатура 10',
-        'Заказ',
-        '(Не используется) Старое',
+        'advances',
+        'Customers',
+        'Product 10',
+        'Product 2',
+        'Order',
+        '(Obsolete) Old',
     ]);
+});
+
+it('loads at most twenty sources and searches beyond the initial options without losing selected labels', function () use (
+    $selects,
+) {
+    $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
+    for ($index = 0; $index < 35; $index++) {
+        TestCase::makeItem($upstream, [
+            'external_id' => 'source-' . $index,
+            'title' => sprintf('Source %02d', $index),
+            'position' => $index,
+        ]);
+    }
+    TestCase::makeItem($upstream, ['external_id' => 'draft', 'title' => 'Source draft', 'revision' => 2]);
+    TestCase::makeItem($upstream, [
+        'external_id' => 'child',
+        'title' => 'Source child',
+        'parent_id' => $upstream->structure->publishedItem('source-0')->id,
+    ]);
+    $otherUpstream = TestCase::makeUpstream(['code' => 'other'], ['generation' => 1]);
+    TestCase::makeItem($otherUpstream, ['title' => 'Source foreign']);
+
+    $fields = $selects(['upstream_id' => $upstream->id, 'source' => 'source-34']);
+    $source = $fields->get('source');
+    $retrieved = 0;
+    Event::listen(
+        'eloquent.retrieved: ' . StructureItem::class,
+        function () use (&$retrieved) {
+            $retrieved++;
+        },
+    );
+    expect($source->getOptions())->toHaveCount(20)->not->toHaveKey('source-34');
+    expect($retrieved)->toBe(20);
+    expect($source->getSearchResults('SOURCE 3'))
+        ->toBe([
+            'source-30' => 'Source 30',
+            'source-31' => 'Source 31',
+            'source-32' => 'Source 32',
+            'source-33' => 'Source 33',
+            'source-34' => 'Source 34',
+        ])
+        ->and($source->getSearchResults('Source'))
+        ->toHaveCount(20)
+        ->and($source->getSearchResults('draft'))
+        ->toBe([])
+        ->and($source->getSearchResults('child'))
+        ->toBe([])
+        ->and($source->getSearchResults('foreign'))
+        ->toBe([])
+        ->and($source->getOptionLabel())
+        ->toBe('Source 34')
+        ->and($source->getLabel())
+        ->toBe('Source')
+        ->and($fields->get('upstream_id')->getOptionsLimit())
+        ->toBe(0)
+        ->and($fields->get('destination')->getOptionsLimit())
+        ->toBe(0);
 });
 
 it('offers dynamic and every registered static destination in one select', function () use ($selects) {
