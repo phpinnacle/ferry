@@ -568,7 +568,7 @@ it('confirms removed and retyped dynamic columns when saving the form', function
 
     if ($change === 'removed') {
         $field = $page->form->getComponentByStatePath('mapping');
-        $field->getAction('unbind')(['source' => '_description'])->call();
+        $page->data['mapping'][$field->getSourceRowIndex('_description')]['target'] = null;
     }
 
     if ($change === 'renamed') {
