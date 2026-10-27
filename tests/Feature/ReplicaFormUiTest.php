@@ -466,6 +466,47 @@ it('accepts UUID transform outputs for reference destinations', function () {
     expect($mapping->getOutputSchema()['properties']['_description'])->toBe(['type' => 'string', 'format' => 'uuid']);
 });
 
+it('keeps timestamp settings and output types after Livewire updates and editing repeated instances', function () {
+    $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
+    TestCase::makeItem($upstream, ['fields' => ['epoch' => JsonSchema::fromArray(['type' => 'integer'])]]);
+    $page = Livewire::test(\PHPinnacle\Ferry\Tests\Fixtures\ReplicaForm::class, ['state' => [
+        'upstream_id' => $upstream->id,
+        'source' => 'object-0',
+        'destination' => DestinationType::Dynamic->value,
+    ]]);
+    $field = $page->instance()->form->getComponentByStatePath('mapping');
+    $path = 'mapping.' . $field->getSourceRowIndex('epoch') . '.options.transforms';
+    $action = TestAction::make('fieldTransforms')->schemaComponent($path, 'form');
+    $page->callAction($action->arguments(['block' => 'timestamp_converter']), ['data' => [
+        'target_type' => 'Timestamp',
+        'unix_precision' => 'microseconds',
+    ]])->assertHasNoActionErrors();
+    $page->call('$refresh');
+    expect($page->instance()->form->getComponentByStatePath($path)->getInputSchema()->format())->toBe('date-time');
+    $page->callAction($action->arguments(['block' => 'timestamp_converter']), ['data' => [
+        'target_type' => 'string',
+        'format' => 'yyyy-MM-dd',
+        'unix_precision' => 'milliseconds',
+    ]])->assertHasNoActionErrors();
+    $page->callAction($action->arguments(['block' => 'timestamp_converter', 'index' => 1]), ['data' => [
+        'target_type' => 'string',
+        'format' => 'HH:mm:ss',
+        'unix_precision' => 'milliseconds',
+    ]])->assertHasNoActionErrors();
+    $page->call('$refresh');
+    $editor = $page->instance()->form->getComponentByStatePath($path);
+    expect($editor->getContainer()->getState()['transforms'])->toBe([
+        ['type' => 'timestamp_converter', 'data' => ['target_type' => 'Timestamp', 'unix_precision' => 'microseconds']],
+        [
+            'type' => 'timestamp_converter',
+            'data' => ['target_type' => 'string', 'format' => 'HH:mm:ss', 'unix_precision' => 'milliseconds'],
+        ],
+    ]);
+    expect($editor->getInputSchema()->toArray())->toBe([
+        'type' => 'string',
+    ]);
+});
+
 it('updates only static cards and the changed transform editor in a large dynamic form', function () {
     app(TransformRegistry::class)->register(Trim::make());
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);

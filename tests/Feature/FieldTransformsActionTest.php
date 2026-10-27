@@ -81,7 +81,7 @@ it('validates repeated numeric casts and offers transforms for the final type', 
     expect($this->field->getContainer()->getState()['transforms'])
         ->toBe($settings)
         ->and(array_keys($this->field->getAvailableTransforms(app(TransformRegistry::class))))
-        ->toBe(['cast', 'filter', 'trim', 'mask']);
+        ->toBe(['cast', 'filter', 'timestamp_converter', 'trim', 'mask']);
 });
 
 it('uses block colors for configurable and settings-free badges', function () {
@@ -242,6 +242,7 @@ it('offers only transforms that accept the output of the current chain', functio
     expect(array_keys($this->field->getAvailableTransforms($registry)))->toBe([
         'cast',
         'filter',
+        'timestamp_converter',
         'trim',
         'mask',
         'substring',
@@ -260,7 +261,11 @@ it('offers only transforms that accept the output of the current chain', functio
     expect($this->field->getContainer()->getState()['transforms'])->toBe([
         ['type' => 'cast', 'data' => ['type' => 'int64']],
     ]);
-    expect(array_keys($this->field->getAvailableTransforms($registry)))->toBe(['cast', 'filter']);
+    expect(array_keys($this->field->getAvailableTransforms($registry)))->toBe([
+        'cast',
+        'filter',
+        'timestamp_converter',
+    ]);
 });
 
 it('rejects incompatible reordering and validates removal of a preceding cast', function () {
@@ -287,6 +292,7 @@ it('offers and validates string transforms for formatted strings', function (arr
     expect(array_keys($this->field->getAvailableTransforms($registry)))->toBe([
         'cast',
         'filter',
+        'timestamp_converter',
         'trim',
         'mask',
         'substring',
@@ -303,20 +309,24 @@ it('offers and validates string transforms for formatted strings', function (arr
     'email' => [['type' => 'string', 'format' => 'email']],
     'nullable email' => [['type' => ['string', 'null'], 'format' => 'email']],
     'uuid' => [['type' => 'string', 'format' => 'uuid']],
-    'date' => [['type' => 'string', 'format' => 'date']],
     'uri' => [['type' => 'string', 'format' => 'uri']],
 ]);
 
-it('preserves dedicated logical types from their schemas', function (array $definition) {
+it('preserves dedicated logical types from their schemas', function (array $definition, array $available) {
     $this->field->inputSchema($definition);
 
     expect(array_keys($this->field->getAvailableTransforms(app(TransformRegistry::class))))
-        ->toBe(['cast', 'filter']);
+        ->toBe($available);
     $this->field->state([['type' => 'trim', 'data' => []]]);
     expect($this->field->getContainer()->getState(...))->toThrow(ValidationException::class);
 })->with([
-    'date-time' => [['type' => ['string', 'null'], 'format' => 'date-time']],
-    'reference' => [['type' => ['string', 'null'], 'format' => 'uuid', 'x-ferry-reference' => true]],
+    'date-time' => [['type' => ['string', 'null'], 'format' => 'date-time'], ['cast', 'filter', 'timestamp_converter']],
+    'date' => [['type' => 'string', 'format' => 'date'], ['cast', 'filter', 'timestamp_converter']],
+    'time' => [['type' => 'string', 'format' => 'time'], ['cast', 'filter', 'timestamp_converter']],
+    'reference' => [
+        ['type' => ['string', 'null'], 'format' => 'uuid', 'x-ferry-reference' => true],
+        ['cast', 'filter'],
+    ],
 ]);
 
 it('offers JSONPath filtering for array and object inputs', function (array $input) {
@@ -408,7 +418,13 @@ it('lets a custom array transform participate in the same schema chain', functio
     expect(array_keys($field->getAvailableTransforms($registry)))->toBe(['filter', 'join']);
 
     $action(['block' => 'join'])->data([])->call();
-    expect(array_keys($field->getAvailableTransforms($registry)))->toBe(['cast', 'filter', 'trim', 'mask']);
+    expect(array_keys($field->getAvailableTransforms($registry)))->toBe([
+        'cast',
+        'filter',
+        'timestamp_converter',
+        'trim',
+        'mask',
+    ]);
     $action(['block' => 'trim'])->data([])->call();
     expect($field->getContainer()->getState()['transforms'])->toBe([
         ['type' => 'join', 'data' => []],

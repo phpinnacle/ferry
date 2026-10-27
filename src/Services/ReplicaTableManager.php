@@ -69,7 +69,7 @@ class ReplicaTableManager
             });
     }
 
-    /** @return 'boolean'|'bigInteger'|'decimal'|'text'|'dateTime'|'string'|null */
+    /** @return 'boolean'|'bigInteger'|'decimal'|'text'|'date'|'time'|'dateTime'|'string'|null */
     public static function columnType(?JsonSchema $schema): ?string
     {
         return match ($schema?->singleType()) {
@@ -78,6 +78,8 @@ class ReplicaTableManager
             'number' => 'decimal',
             'string' => match (true) {
                 $schema->annotation('x-ferry-reference') === true => 'text',
+                $schema->format() === 'date' => 'date',
+                $schema->format() === 'time' => 'time',
                 $schema->format() === 'date-time' => 'dateTime',
                 default => 'string',
             },
@@ -106,6 +108,8 @@ class ReplicaTableManager
         return match ($type) {
             'boolean' => $table->boolean($target),
             'dateTime' => $table->dateTime($target),
+            'date' => $table->date($target),
+            'time' => $table->time($target),
             'bigInteger' => $table->bigInteger($target),
             'decimal' => $table->decimal(
                 $target,

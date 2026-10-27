@@ -406,6 +406,42 @@ it('creates decimal columns from the effective output schema', function (?array 
     'cast without numeric bounds' => [['type' => 'number'], '"amount" decimal(15, 2) null'],
 ]);
 
+it('creates SQL columns from timestamp conversion output', function (string $target, string $sql) {
+    config([
+        'phpinnacle-ferry.connection' => 'timestamp-preview',
+        'database.connections.timestamp-preview' => ['driver' => 'pgsql', 'database' => 'preview'],
+    ]);
+    $object = StructureItems::make(['fields' => [
+        '_idrref' => TestCase::keySchema(),
+        'created' => JsonSchema::fromArray(['type' => 'integer']),
+    ]]);
+    $replica = Mockery::mock(Replica::class)->makePartial();
+    $replica->shouldReceive('sourceObject')->andReturn($object);
+    $replica->fill([
+        'schema' => $object->schema,
+        'destination' => 'timestamp_columns',
+        'mapping' => [
+            TestCase::keyMapping(),
+            new FieldMapping('created', 'created', [
+                'transforms' => [[
+                    'type' => 'timestamp_converter',
+                    'data' => ['target_type' => $target, 'format' => 'yyyy-MM-dd'],
+                ]],
+            ]),
+        ],
+    ]);
+
+    $queries = $replica->getConnection()->pretend(fn () => app(ReplicaTableManager::class)->create($replica));
+
+    expect($queries[0]['query'])->toContain($sql);
+})->with([
+    'date' => ['Date', '"created" date null'],
+    'time' => ['Time', '"created" time(0) without time zone null'],
+    'timestamp' => ['Timestamp', '"created" timestamp(0) without time zone null'],
+    'epoch' => ['unix', '"created" bigint null'],
+    'text' => ['string', '"created" varchar null'],
+]);
+
 it('copies the complete input schema on creation and keeps its own snapshot after source changes', function () {
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
     $object = TestCase::makeItem($upstream, [

@@ -63,7 +63,7 @@ it('registers application transforms through the shared registry', function () {
         ->not
         ->toBeNull()
         ->and(array_keys($registry->all()))
-        ->toBe(['cast', 'filter', 'insert_uuid', 'trim']);
+        ->toBe(['cast', 'filter', 'insert_uuid', 'timestamp_converter', 'trim']);
 });
 
 it('keeps key and value transformation chains on their declared record targets', function () {
@@ -317,6 +317,7 @@ it('registers optional installed field transforms through the shared registry', 
         'cast',
         'filter',
         'insert_uuid',
+        'timestamp_converter',
         'trim',
         'substring',
         'mask',
@@ -364,6 +365,8 @@ it('only applies text transforms to native string inputs', function (array $defi
     'ordinary UUID' => [['type' => 'string', 'format' => 'uuid'], true],
     'reference' => [['type' => 'string', 'format' => 'uuid', 'x-ferry-reference' => true], false],
     'date-time' => [['type' => 'string', 'format' => 'date-time'], false],
+    'date' => [['type' => 'string', 'format' => 'date'], false],
+    'time' => [['type' => 'string', 'format' => 'time'], false],
     'integer' => [['type' => 'integer'], false],
     'number' => [['type' => 'number'], false],
     'boolean' => [['type' => 'boolean'], false],

@@ -13,6 +13,7 @@ return [
             \PHPinnacle\Ferry\Transformations\Cast::class,
             \PHPinnacle\Ferry\Transformations\Filter::class,
             \PHPinnacle\Ferry\Transformations\InsertUuid::class,
+            \PHPinnacle\Ferry\Transformations\TimestampConverter::class,
         ],
         'converters' => [
             'uuid' => 'org.alpaka.kafka.UuidConverter',

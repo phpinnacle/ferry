@@ -29,7 +29,7 @@ final class Trim implements Transform
     {
         return (
             $input->singleType() === 'string'
-            && $input->format() !== 'date-time'
+            && !in_array($input->format(), ['date', 'time', 'date-time'], true)
             && $input->annotation('x-ferry-reference') !== true
         );
     }
