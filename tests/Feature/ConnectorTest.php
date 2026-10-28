@@ -1,6 +1,8 @@
 <?php
 
 use Filament\Notifications\Notification;
+use Filament\Schemas\Components\Callout;
+use Filament\Schemas\Schema as FormSchema;
 use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Model;
@@ -18,17 +20,21 @@ use PHPinnacle\Ferry\Models\Replica;
 use PHPinnacle\Ferry\Models\Upstream;
 use PHPinnacle\Ferry\Resources\Actions\RefreshConnectorStatusesAction;
 use PHPinnacle\Ferry\Resources\Replicas\Actions\StartReplicaAction;
+use PHPinnacle\Ferry\Resources\Replicas\Schemas\ReplicaForm;
 use PHPinnacle\Ferry\Resources\Replicas\Tables\ReplicaTable;
+use PHPinnacle\Ferry\Resources\Upstreams\Schemas\UpstreamForm;
 use PHPinnacle\Ferry\Resources\Upstreams\Tables\UpstreamTable;
 use PHPinnacle\Ferry\Services\DestinationFactory;
 use PHPinnacle\Ferry\Services\OriginFactory;
 use PHPinnacle\Ferry\Tests\Fakes\Origin as FakeOrigin;
+use PHPinnacle\Ferry\Tests\Fixtures\SchemaHost;
 use PHPinnacle\Ferry\Tests\TestCase;
 
 use function PHPinnacle\Ferry\Tests\Fakes\customers_destination;
 
 require_once __DIR__ . '/../TestCase.php';
 require_once __DIR__ . '/../Fakes/CustomersDestination.php';
+require_once __DIR__ . '/../Fixtures/SchemaHost.php';
 
 uses(TestCase::class);
 
@@ -36,18 +42,104 @@ beforeEach(function () {
     Queue::fake();
 });
 
-it('offers one status refresh action before replica creation and no per-record status actions', function () {
+it('offers one status refresh action before creation on both lists and no per-record status actions', function () {
     $livewire = Mockery::mock(HasTable::class);
     $replicas = ReplicaTable::configure(Table::make($livewire));
     $upstreams = UpstreamTable::configure(Table::make($livewire));
 
     expect(array_map(fn ($action) => $action->getName(), $replicas->getHeaderActions()))
         ->toBe(['refresh_connector_statuses', 'create'])
+        ->and(array_map(fn ($action) => $action->getName(), $upstreams->getHeaderActions()))
+        ->toBe(['refresh_connector_statuses', 'create'])
         ->and($replicas->getAction('check_sink_status'))
         ->toBeNull()
         ->and($upstreams->getAction('check_source_status'))
+        ->toBeNull()
+        ->and($upstreams->getAction('start_source_connector'))
         ->toBeNull();
 });
+
+it('shows saved connector errors only in failed status tooltips', function (
+    ?ConnectorStatus $status,
+    ?string $error,
+    ?string $tooltip,
+    string $tableClass,
+    string $modelClass,
+) {
+    $record = new $modelClass;
+    $record->setRelation(
+        'connector',
+        $status === null
+            ? null
+            : new Connector()->forceFill([
+                'status' => $status,
+                'error' => $error,
+            ]),
+    );
+    $table = $tableClass::configure(Table::make(Mockery::mock(HasTable::class)));
+
+    expect($table->getColumn('connector.status')->record($record)->getTooltip())->toBe($tooltip);
+})->with([
+    'failed with error' => [
+        ConnectorStatus::Failed,
+        "Task failed\nConnection refused",
+        "Task failed\nConnection refused",
+    ],
+    'failed without error' => [ConnectorStatus::Failed, null, null],
+    'running with old error' => [ConnectorStatus::Running, 'Old failure', null],
+    'paused with old error' => [ConnectorStatus::Paused, 'Old failure', null],
+    'unknown with old error' => [ConnectorStatus::Unknown, 'Old failure', null],
+    'missing connector' => [null, null, null],
+])->with([
+    'upstreams' => [UpstreamTable::class, Upstream::class],
+    'replicas' => [ReplicaTable::class, Replica::class],
+]);
+
+it('shows connector error callouts only for failed connectors with a saved error', function (
+    ?ConnectorStatus $status,
+    ?string $error,
+    bool $visible,
+    string $formClass,
+    string $modelClass,
+) {
+    $record = new $modelClass;
+    $record->setRelation(
+        'connector',
+        $status === null
+            ? null
+            : new Connector()->forceFill([
+                'status' => $status,
+                'error' => $error,
+            ]),
+    );
+    $schema = $formClass::configure(FormSchema::make(SchemaHost::make())->model($record)->operation('edit'));
+    $callout = $schema->getComponent('connectorError', withHidden: true);
+
+    expect($callout)->toBeInstanceOf(Callout::class);
+    expect($callout->isVisible())->toBe($visible);
+    if ($visible) {
+        expect($callout->getDescription())->toBe($error);
+        expect($callout->toHtml())->toContain(e($error))->not->toContain('<script>');
+    }
+})->with([
+    'failed with error' => [ConnectorStatus::Failed, "Task failed\n<script>alert('trace')</script>", true],
+    'failed without error' => [ConnectorStatus::Failed, null, false],
+    'running with old error' => [ConnectorStatus::Running, 'Old failure', false],
+    'paused with old error' => [ConnectorStatus::Paused, 'Old failure', false],
+    'missing connector' => [null, null, false],
+])->with([
+    'upstreams' => [UpstreamForm::class, Upstream::class],
+    'replicas' => [ReplicaForm::class, Replica::class],
+]);
+
+it('omits connector error callouts from forms without a saved owner', function (string $formClass, string $modelClass) {
+    $schema = $formClass::configure(FormSchema::make(SchemaHost::make())->model($modelClass)->operation('create'));
+
+    expect($schema->getComponent('connectorError', withHidden: true)->isVisible())->toBeFalse();
+})->with([
+    'upstreams' => [UpstreamForm::class, Upstream::class],
+    'replicas' => [ReplicaForm::class, Replica::class],
+]);
 
 it('refreshes every connector and continues after an external status check fails', function (bool $fails) {
     $replica = TestCase::makeReplica();
@@ -77,7 +169,7 @@ it('refreshes every connector and continues after an external status check fails
     RefreshConnectorStatusesAction::table()->call();
 
     expect($checked)
-        ->toBe($connectors->modelKeys())
+        ->toEqualCanonicalizing($connectors->modelKeys())
         ->and($withoutConnector->fresh()->connector)
         ->toBeNull()
         ->and(Connector::query()->count())

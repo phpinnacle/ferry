@@ -146,6 +146,34 @@ it('starts new replicas, resumes paused replicas and retries failed connectors',
     'resume after failure' => [true, ReplicaStatus::Pause, ConnectorStatus::Failed],
 ]);
 
+it('retries the source connector without rebuilding configuration or resuming paused replicas', function () {
+    $replica = TestCase::makeReplica();
+    ferry_drain_connectors();
+    $replica->refresh()->pause();
+    ferry_drain_connectors();
+    $upstream = $replica->upstream->fresh();
+    $source = $upstream->connector;
+    $config = $source->config;
+    $source->recordStatus(ConnectorStatus::Failed, 'Failed source task');
+    $origin = app(OriginFactory::class)->create('kafka');
+    $origin->operations = [];
+
+    app(ConnectorManager::class)->restart($upstream);
+    expect(DB::table('jobs')->count())->toBe(1);
+    expect($source->fresh()->status)->toBe(ConnectorStatus::Failed);
+    ferry_drain_connectors();
+
+    expect($origin->operations)->toBe([
+        ['pause', 'ferry-sink-test-replica'],
+        ['start', 'ferry-source-test-upstream'],
+    ]);
+    expect($source->fresh()->status)->toBe(ConnectorStatus::Running);
+    expect($source->fresh()->config)->toBe($config);
+    expect($source->fresh()->error)->toBeNull();
+    expect($replica->fresh()->status)->toBe(ReplicaStatus::Pause);
+    expect($replica->fresh()->connector->status)->toBe(ConnectorStatus::Paused);
+});
+
 it('does not enqueue updates for unchanged config or status checks', function () {
     $replica = TestCase::makeReplica();
     ferry_drain_connectors();

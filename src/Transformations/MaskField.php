@@ -35,6 +35,7 @@ final class MaskField implements Transform
         );
     }
 
+    /** @param array<string, string> $params */
     public function output(JsonSchema $input, array $params): JsonSchema
     {
         return JsonSchema::fromArray([
@@ -53,10 +54,12 @@ final class MaskField implements Transform
                 TextInput::make('replacement')
                     ->label(__('phpinnacle-ferry::resources.transform.mask_replacement'))
                     ->default('***')
+                    ->rules(['string'])
                     ->required(),
             ]);
     }
 
+    /** @param array<string, string> $params */
     public function connector(string $field, array $params): array
     {
         return [

@@ -11,6 +11,7 @@ use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use PHPinnacle\Common\Tables\CreatedColumn;
 use PHPinnacle\Common\Tables\UpdatedColumn;
+use PHPinnacle\Ferry\Enums\ConnectorStatus;
 use PHPinnacle\Ferry\Enums\DestinationType;
 use PHPinnacle\Ferry\Enums\ReplicaStatus;
 use PHPinnacle\Ferry\Models\Replica;
@@ -51,6 +52,9 @@ class ReplicaTable
                 TextColumn::make('connector.status')
                     ->label(__('phpinnacle-ferry::resources.replica.fields.sink_connector_status'))
                     ->badge()
+                    ->tooltip(fn (Replica $record) => $record->connector?->status === ConnectorStatus::Failed
+                        ? $record->connector->error
+                        : null)
                     ->sortable(),
                 TextColumn::make('status')
                     ->label(__('phpinnacle-ferry::resources.replica.fields.status'))

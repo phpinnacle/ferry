@@ -24,7 +24,7 @@ final class SchemaHost extends Component implements HasSchemas
         $field = FieldTransforms::make('transforms')->inputSchema($input?->toArray() ?? []);
         Schema::make(self::make())->components([$field])->fill();
 
-        return $transform->block()->getSchema($field, null);
+        return $transform->block()->getSchema($field, null, ['input' => $input ?? JsonSchema::fromArray([])]);
     }
 
     public static function make(): self

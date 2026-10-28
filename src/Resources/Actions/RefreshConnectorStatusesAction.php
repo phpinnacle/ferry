@@ -10,6 +10,7 @@ use PHPinnacle\Ferry\Models\Connector;
 use PHPinnacle\Ferry\Models\Replica;
 use PHPinnacle\Ferry\Models\Upstream;
 use PHPinnacle\Ferry\Services\ConnectorManager;
+use Throwable;
 
 class RefreshConnectorStatusesAction
 {
@@ -22,13 +23,13 @@ class RefreshConnectorStatusesAction
             ->authorize(fn () => Gate::allows('viewAny', Replica::class) && Gate::allows('viewAny', Upstream::class))
             ->action(function (ConnectorManager $connectors) {
                 $errors = [];
-                foreach (Connector::query()->lazyById() as $connector) {
-                    try {
-                        $connectors->checkStatus($connector);
-                    } catch (ConnectorOperationFailed $exception) {
-                        $errors[] = $connector->name . ': ' . $exception->getMessage();
+                $connectors->refreshStatuses(function (Connector $connector, Throwable $exception) use (&$errors) {
+                    if (!$exception instanceof ConnectorOperationFailed) {
+                        throw $exception;
                     }
-                }
+
+                    $errors[] = $connector->name . ': ' . $exception->getMessage();
+                });
 
                 if ($errors !== []) {
                     Notification::make()

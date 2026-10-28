@@ -52,7 +52,7 @@ final readonly class FieldMapping implements JsonSerializable
     /** @return list<TransformSetting> */
     public function transforms(): array
     {
-        /** @var list<array{type: string, data?: array<string, string>}> $settings */
+        /** @var list<array{type: string, data?: array<string, mixed>}> $settings */
         $settings = $this->options['transforms'] ?? [];
 
         return array_map(TransformSetting::fromArray(...), $settings);

@@ -219,7 +219,7 @@ it('applies arbitrary origin settings only to their source or sink and overrides
     $sourceSettings = [
         'tasks.max' => '2',
         'converters' => 'uuid',
-        'uuid.type' => 'org.alpaka.kafka.UuidConverter',
+        'uuid.type' => 'org.phpinnacle.toblerone.UuidConverter',
         'uuid.columns' => 'public._reference0._idrref',
         'include.unknown.datatypes' => 'true',
     ];
@@ -481,10 +481,10 @@ it('sends generated source converters to Kafka Connect without adding them to th
     expect(ferry_sent_config($http, 0))
         ->toMatchArray([
             'converters' => 'uuid,integer,mchar',
-            'uuid.type' => 'org.alpaka.kafka.UuidConverter',
+            'uuid.type' => 'org.phpinnacle.toblerone.UuidConverter',
             'uuid.columns' => 'public._reference0._idrref',
-            'integer.type' => 'org.alpaka.kafka.IntegerConverter',
-            'mchar.type' => 'org.alpaka.kafka.MCharConverter',
+            'integer.type' => 'org.phpinnacle.toblerone.IntegerConverter',
+            'mchar.type' => 'org.phpinnacle.toblerone.MCharConverter',
             'include.unknown.datatypes' => 'true',
         ]);
 
@@ -535,8 +535,9 @@ it('does not request source snapshots when updating a sink', function () {
     expect($signals->published)->toBe([]);
 });
 
-it('resumes processing and restarts failed tasks when needed', function (bool $failed) {
-    $connector = ferry_replica()->connector;
+it('resumes processing and restarts failed tasks when needed', function (bool $failed, bool $source) {
+    $replica = ferry_replica();
+    $connector = $source ? $replica->upstream->connector : $replica->connector;
     $connector->status = $failed ? ConnectorStatus::Failed : ConnectorStatus::Paused;
     $http = new RecordingConnectClient(...$failed ? [new Response(202), new Response(202)] : [new Response(202)]);
     ferry_kafka_origin($http)->start($connector);
@@ -544,14 +545,14 @@ it('resumes processing and restarts failed tasks when needed', function (bool $f
         ->toBe(
             $failed
                 ? [
-                    ['POST', '/connectors/ferry-sink-test-replica/restart'],
-                    ['PUT',  '/connectors/ferry-sink-test-replica/resume'],
-                ] : [['PUT', '/connectors/ferry-sink-test-replica/resume']],
+                    ['POST', '/connectors/' . $connector->name . '/restart'],
+                    ['PUT', '/connectors/' . $connector->name . '/resume'],
+                ] : [['PUT', '/connectors/' . $connector->name . '/resume']],
         );
     if ($failed) {
         expect($http->requests[0]->getUri()->getQuery())->toBe('includeTasks=true&onlyFailed=true');
     }
-})->with([true, false]);
+})->with(['failed' => true, 'paused' => false])->with(['source' => true, 'sink' => false]);
 
 it('treats missing resources as successful pause or removal', function (string $operation) {
     $connector = ferry_replica()->connector;

@@ -10,7 +10,6 @@ use PHPinnacle\Common\Forms\InlineBuilder\Block;
 use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Contracts\Transform;
 use PHPinnacle\Ferry\Enums\TransformTarget;
-use PHPinnacle\Ferry\Forms\FieldTransforms;
 
 final class Filter implements Transform
 {
@@ -34,6 +33,7 @@ final class Filter implements Transform
         return true;
     }
 
+    /** @param array<string, string> $params */
     public function output(JsonSchema $input, array $params): JsonSchema
     {
         return $input;
@@ -45,8 +45,7 @@ final class Filter implements Transform
             ->label(fn () => __('phpinnacle-ferry::resources.transform.filter'))
             ->icon(Heroicon::Funnel)
             ->description(fn () => __('phpinnacle-ferry::resources.transform.filter_description'))
-            ->schema(function (FieldTransforms $component, ?int $index) {
-                $input = $component->getInputSchema($index);
+            ->schema(function (?JsonSchema $input) {
                 $example = match ($input?->singleType()) {
                     'string' => "@ == 'value'",
                     'integer' => '@ >= 100',
@@ -93,6 +92,7 @@ final class Filter implements Transform
             });
     }
 
+    /** @param array<string, string> $params */
     public function connector(string $field, array $params): array
     {
         return [

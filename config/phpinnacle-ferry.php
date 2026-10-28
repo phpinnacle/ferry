@@ -3,6 +3,9 @@
 return [
     'connection' => null,
     'queue' => null,
+    'scheduler' => [
+        'refresh' => 1, // Seconds; non-positive values disable status refresh.
+    ],
     'tenancy' => null,
     //    'tenancy' => [
     //        'model' => 'App\\Models\\Tenant',
@@ -14,11 +17,14 @@ return [
             \PHPinnacle\Ferry\Transformations\Filter::class,
             \PHPinnacle\Ferry\Transformations\InsertUuid::class,
             \PHPinnacle\Ferry\Transformations\TimestampConverter::class,
+            \PHPinnacle\Ferry\Transformations\BooleanToString::class,
+            \PHPinnacle\Ferry\Transformations\StringMap::class,
+            \PHPinnacle\Ferry\Transformations\Toggle::class,
         ],
         'converters' => [
-            'uuid' => 'org.alpaka.kafka.UuidConverter',
-            'integer' => 'org.alpaka.kafka.IntegerConverter',
-            'mchar' => 'org.alpaka.kafka.MCharConverter',
+            'uuid' => 'org.phpinnacle.toblerone.UuidConverter',
+            'integer' => 'org.phpinnacle.toblerone.IntegerConverter',
+            'mchar' => 'org.phpinnacle.toblerone.MCharConverter',
         ],
     ],
     'timeout' => 5,

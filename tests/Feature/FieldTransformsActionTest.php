@@ -10,6 +10,7 @@ use PHPinnacle\Common\Forms\InlineBuilder\BuilderAction;
 use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Contracts\Transform;
 use PHPinnacle\Ferry\Data\FieldMapping;
+use PHPinnacle\Ferry\Data\TransformSetting;
 use PHPinnacle\Ferry\Enums\TransformTarget;
 use PHPinnacle\Ferry\Forms\FieldTransforms;
 use PHPinnacle\Ferry\Models\Replica;
@@ -20,6 +21,7 @@ use PHPinnacle\Ferry\Tests\Fakes\Transform as FakeTransform;
 use PHPinnacle\Ferry\Tests\Fixtures\SchemaHost;
 use PHPinnacle\Ferry\Transformations\MaskField;
 use PHPinnacle\Ferry\Transformations\Substring;
+use PHPinnacle\Ferry\Transformations\Toggle;
 use PHPinnacle\Ferry\Transformations\Trim;
 use Tests\TestCase;
 
@@ -63,6 +65,20 @@ it('preserves the registered block availability condition', function () {
     expect($this->field->getBlocks())->toHaveKey('custom');
 });
 
+it('uses the supplied registry for the preceding output and available transformations', function () {
+    app(TransformRegistry::class)->register(new FakeTransform('custom', output: fn () => JsonSchema::fromArray([
+        'type' => 'string',
+    ])));
+    $registry = new TransformRegistry;
+    $registry->register(
+        new FakeTransform('custom', output: fn () => JsonSchema::fromArray(['type' => 'boolean'])),
+        Toggle::make(),
+    );
+    $this->field->state([['type' => 'custom']]);
+
+    expect(array_keys($this->field->getAvailableTransforms($registry)))->toBe(['custom', 'toggle']);
+});
+
 it('validates repeated numeric casts and offers transforms for the final type', function () {
     $settings = [
         ['type' => 'cast', 'data' => ['type' => 'int64']],
@@ -73,7 +89,7 @@ it('validates repeated numeric casts and offers transforms for the final type', 
     expect($this->field->getContainer()->getState()['transforms'])
         ->toBe($settings)
         ->and(array_keys($this->field->getAvailableTransforms(app(TransformRegistry::class))))
-        ->toBe(['cast', 'filter']);
+        ->toBe(['cast', 'filter', 'boolean_to_string', 'toggle']);
 
     $settings[] = ['type' => 'cast', 'data' => ['type' => 'string']];
     $this->field->state($settings);
@@ -81,7 +97,7 @@ it('validates repeated numeric casts and offers transforms for the final type', 
     expect($this->field->getContainer()->getState()['transforms'])
         ->toBe($settings)
         ->and(array_keys($this->field->getAvailableTransforms(app(TransformRegistry::class))))
-        ->toBe(['cast', 'filter', 'timestamp_converter', 'trim', 'mask']);
+        ->toBe(['cast', 'filter', 'timestamp_converter', 'string_map', 'trim', 'mask']);
 });
 
 it('uses block colors for configurable and settings-free badges', function () {
@@ -232,7 +248,12 @@ it('offers only transforms that accept the output of the current chain', functio
     $registry->register(Substring::make());
     $this->field->inputSchema(['type' => 'boolean']);
 
-    expect(array_keys($this->field->getAvailableTransforms($registry)))->toBe(['cast', 'filter']);
+    expect(array_keys($this->field->getAvailableTransforms($registry)))->toBe([
+        'cast',
+        'filter',
+        'boolean_to_string',
+        'toggle',
+    ]);
     expect(($this->action)([])->toHtml())->not->toContain('Trim whitespace', 'Extract substring', 'Mask field');
     expect(($this->action)(['block' => 'trim'])->isDisabled())->toBeTrue();
     expect(fn () => ($this->action)(['block' => 'trim'])->data([])->call())->toThrow(ValidationException::class);
@@ -243,6 +264,7 @@ it('offers only transforms that accept the output of the current chain', functio
         'cast',
         'filter',
         'timestamp_converter',
+        'string_map',
         'trim',
         'mask',
         'substring',
@@ -293,6 +315,7 @@ it('offers and validates string transforms for formatted strings', function (arr
         'cast',
         'filter',
         'timestamp_converter',
+        'string_map',
         'trim',
         'mask',
         'substring',
@@ -361,6 +384,7 @@ it('identifies the failing transform when its input or output schema is unavaila
     $this->field->state([
         ['type' => 'trim', 'data' => []],
         ['type' => 'unavailable', 'data' => []],
+        ['type' => 'trim', 'data' => []],
     ]);
 
     expect($this->field->getContainer()->getState(...))
@@ -422,6 +446,7 @@ it('lets a custom array transform participate in the same schema chain', functio
         'cast',
         'filter',
         'timestamp_converter',
+        'string_map',
         'trim',
         'mask',
     ]);
@@ -430,9 +455,9 @@ it('lets a custom array transform participate in the same schema chain', functio
         ['type' => 'join', 'data' => []],
         ['type' => 'trim', 'data' => []],
     ]);
-    expect($registry->resultSchema(JsonSchema::fromArray(['type' => 'array', 'items' => ['type' => 'string']]), [[
-        'type' => 'join',
-    ]])?->toArray())->toBe(['type' => 'string', 'maxLength' => 20]);
+    expect($registry->resultSchema(JsonSchema::fromArray(['type' => 'array', 'items' => ['type' => 'string']]), [
+        new TransformSetting('join'),
+    ])?->toArray())->toBe(['type' => 'string', 'maxLength' => 20]);
 });
 
 it('preserves JSONPath predicates when a preceding cast changes type', function (string $type) {
@@ -599,8 +624,8 @@ it('passes the selected object and preceding schema to each settings form', func
     $this->field->object($object);
     app(TransformRegistry::class)->register(
         new FakeTransform('custom', block: Block::make('custom')->schema(
-            function (FieldTransforms $component, ?int $index) use (&$context) {
-                $context = [$component->getObject(), $component->getInputSchema($index)->singleType()];
+            function (FieldTransforms $component, ?JsonSchema $input) use (&$context) {
+                $context = [$component->getObject(), $input->singleType()];
 
                 return [TextInput::make('value')];
             },

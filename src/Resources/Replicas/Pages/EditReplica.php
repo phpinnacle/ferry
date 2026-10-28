@@ -9,6 +9,8 @@ use Illuminate\Contracts\Support\Htmlable;
 use PHPinnacle\Ferry\Enums\DestinationType;
 use PHPinnacle\Ferry\Models\Replica;
 use PHPinnacle\Ferry\Resources\Replicas\Actions\ConfirmSchemaChangesAction;
+use PHPinnacle\Ferry\Resources\Replicas\Actions\PauseReplicaAction;
+use PHPinnacle\Ferry\Resources\Replicas\Actions\StartReplicaAction;
 use PHPinnacle\Ferry\Resources\Replicas\ReplicaResource;
 use PHPinnacle\Ferry\Resources\Replicas\Schemas\ReplicaForm;
 use PHPinnacle\Ferry\Services\DestinationFactory;
@@ -43,6 +45,8 @@ class EditReplica extends EditRecord
     protected function getHeaderActions(): array
     {
         return [
+            StartReplicaAction::table()->button(),
+            PauseReplicaAction::table()->button(),
             DeleteAction::make()
                 ->label(__('phpinnacle-ferry::resources.replica.actions.delete'))
                 ->requiresConfirmation()

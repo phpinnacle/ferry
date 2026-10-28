@@ -32,6 +32,7 @@ final class InsertUuid implements Transform
         return $input->compatible(JsonSchema::fromArray(['type' => 'string', 'format' => 'uuid']));
     }
 
+    /** @param array<string, string> $params */
     public function output(JsonSchema $input, array $params): JsonSchema
     {
         return $input;
@@ -48,6 +49,7 @@ final class InsertUuid implements Transform
             ]);
     }
 
+    /** @param array<string, string> $params */
     public function connector(string $field, array $params): array
     {
         return [

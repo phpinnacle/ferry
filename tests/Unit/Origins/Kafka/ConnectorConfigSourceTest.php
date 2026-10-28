@@ -74,9 +74,9 @@ it('builds a debezium postgres connector config scoped to the tracked replicas',
             'signal.kafka.groupId' => 'ferry-signal',
             'include.unknown.datatypes' => 'true',
             'converters' => 'uuid,integer,mchar',
-            'uuid.type' => 'org.alpaka.kafka.UuidConverter',
-            'integer.type' => 'org.alpaka.kafka.IntegerConverter',
-            'mchar.type' => 'org.alpaka.kafka.MCharConverter',
+            'uuid.type' => 'org.phpinnacle.toblerone.UuidConverter',
+            'integer.type' => 'org.phpinnacle.toblerone.IntegerConverter',
+            'mchar.type' => 'org.phpinnacle.toblerone.MCharConverter',
         ]);
 });
 

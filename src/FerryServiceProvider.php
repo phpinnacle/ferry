@@ -2,6 +2,7 @@
 
 namespace PHPinnacle\Ferry;
 
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Container\Container;
 use Illuminate\Support\Facades\Config;
 use PHPinnacle\Ferry\Contracts\Transform;
@@ -18,6 +19,21 @@ class FerryServiceProvider extends PackageServiceProvider
     public const string PACKAGE = 'phpinnacle/ferry';
 
     public static string $name = 'phpinnacle-ferry';
+
+    public function packageBooted(): void
+    {
+        $this->app->afterResolving(Schedule::class, function (Schedule $schedule) {
+            $refresh = Config::integer('phpinnacle-ferry.scheduler.refresh');
+
+            if ($refresh > 0) {
+                $schedule
+                    ->call(Services\ConnectorManager::class . '@refreshStatuses')
+                    ->name('ferry:refresh-statuses')
+                    ->everySecond()
+                    ->when(fn () => (now()->getTimestamp() % $refresh) === 0);
+            }
+        });
+    }
 
     public function packageRegistered(): void
     {
@@ -54,6 +70,7 @@ class FerryServiceProvider extends PackageServiceProvider
             ->discoversMigrations()
             ->hasConfigFile()
             ->hasTranslations()
+            ->hasCommand(Commands\RefreshConnectorStatuses::class)
             ->hasInstallCommand(function (InstallCommand $command) {
                 $command
                     ->publishConfigFile()

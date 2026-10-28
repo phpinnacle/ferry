@@ -7,12 +7,10 @@ use LogicException;
 use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Contracts\Transform;
 use PHPinnacle\Ferry\Data\FieldMapping;
+use PHPinnacle\Ferry\Data\TransformSetting;
 use PHPinnacle\Ferry\Enums\FieldKind;
 use PHPinnacle\Ferry\Enums\TransformTarget;
 
-/**
- * @phpstan-type TransformInput array{type: string, data?: array<string, string>}
- */
 #[Singleton]
 class TransformRegistry
 {
@@ -41,19 +39,18 @@ class TransformRegistry
         );
     }
 
-    /** @param array<array-key, TransformInput> $settings */
+    /** @param list<TransformSetting> $settings */
     public function resultSchema(
         JsonSchema $input,
         array $settings,
         TransformTarget $target = TransformTarget::Value,
     ): ?JsonSchema {
-        foreach ($settings as $row) {
-            $params = $row['data'] ?? [];
-            $transform = $this->getOrFail($row['type']);
+        foreach ($settings as $setting) {
+            $transform = $this->getOrFail($setting->type);
             if ($transform->getTarget() !== $target || !$transform->accepts($input)) {
                 return null;
             }
-            $input = $transform->output($input, $params);
+            $input = $transform->output($input, $setting->data);
             if ($input === null) {
                 return null;
             }
@@ -74,7 +71,7 @@ class TransformRegistry
 
         return $this->resultSchema(
             $input,
-            array_map(static fn ($setting) => $setting->jsonSerialize(), $mapping->transforms()),
+            $mapping->transforms(),
             in_array($source, $primaryKey, true)
                 ? TransformTarget::Key
                 : TransformTarget::Value,

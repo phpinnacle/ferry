@@ -6,6 +6,7 @@ use PHPinnacle\Common\Forms\InlineBuilder\Block;
 use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Contracts\Transform;
 use PHPinnacle\Ferry\Data\FieldMapping;
+use PHPinnacle\Ferry\Data\TransformSetting;
 use PHPinnacle\Ferry\Enums\FieldKind;
 use PHPinnacle\Ferry\Enums\KafkaType;
 use PHPinnacle\Ferry\Enums\TransformTarget;
@@ -63,7 +64,16 @@ it('registers application transforms through the shared registry', function () {
         ->not
         ->toBeNull()
         ->and(array_keys($registry->all()))
-        ->toBe(['cast', 'filter', 'insert_uuid', 'timestamp_converter', 'trim']);
+        ->toBe([
+            'cast',
+            'filter',
+            'insert_uuid',
+            'timestamp_converter',
+            'boolean_to_string',
+            'string_map',
+            'toggle',
+            'trim',
+        ]);
 });
 
 it('keeps key and value transformation chains on their declared record targets', function () {
@@ -74,7 +84,7 @@ it('keeps key and value transformation chains on their declared record targets',
     $registry = new TransformRegistry;
     $registry->register($key);
     $schema = JsonSchema::fromArray(['type' => 'string']);
-    $settings = [['type' => 'custom']];
+    $settings = [new TransformSetting('custom')];
     expect($registry->resultSchema($schema, $settings))->toBeNull();
     expect($registry->resultSchema($schema, $settings, TransformTarget::Key)?->toArray())->toBe($schema->toArray());
 });
@@ -150,8 +160,8 @@ it('uses each cast result as the input to the next cast in the shared registry',
     string $schemaType,
 ) {
     expect(app(TransformRegistry::class)->resultSchema(JsonSchema::fromArray(['type' => 'string']), [
-        ['type' => 'cast', 'data' => ['type' => $intermediate]],
-        ['type' => 'cast', 'data' => ['type' => $result]],
+        new TransformSetting('cast', ['type' => $intermediate]),
+        new TransformSetting('cast', ['type' => $result]),
     ])?->toArray())
         ->toBe(['type' => $schemaType]);
 })->with([
@@ -318,17 +328,20 @@ it('registers optional installed field transforms through the shared registry', 
         'filter',
         'insert_uuid',
         'timestamp_converter',
+        'boolean_to_string',
+        'string_map',
+        'toggle',
         'trim',
         'substring',
         'mask',
     ]);
     expect($registry->resultSchema(JsonSchema::fromArray(['type' => 'string']), [
-        ['type' => 'trim', 'data' => []],
-        ['type' => 'substring', 'data' => ['start' => '0']],
-        ['type' => 'mask', 'data' => ['replacement' => '***']],
+        new TransformSetting('trim'),
+        new TransformSetting('substring', ['start' => '0']),
+        new TransformSetting('mask', ['replacement' => '***']),
     ])?->toArray())->toBe(['type' => 'string']);
     expect($registry->resultSchema(JsonSchema::fromArray(['type' => 'boolean']), [
-        ['type' => 'mask', 'data' => ['replacement' => '***']],
+        new TransformSetting('mask', ['replacement' => '***']),
     ]))->toBeNull();
 });
 
@@ -402,6 +415,7 @@ it('dehydrates native settings forms into string parameters and omits an empty e
     'invalid form indexes' => [Substring::make(), ['start' => 4, 'end' => 1], null],
     'default mask' => [MaskField::make(), [], ['replacement' => '***']],
     'invalid mask form' => [MaskField::make(), ['replacement' => ''], null],
+    'non-string mask form' => [MaskField::make(), ['replacement' => 123], null],
     'cleared start' => [Substring::make(), ['start' => null], null],
     'negative start' => [Substring::make(), ['start' => '-1'], null],
     'fractional start' => [Substring::make(), ['start' => '1.5'], null],
@@ -459,12 +473,12 @@ it('passes the complete preceding output schema to callbacks in an ordered chain
     expect(
         $registry
             ->resultSchema($input, [
-                ['type' => 'limit', 'data' => ['length' => '80']],
-                ['type' => 'limit', 'data' => ['length' => '40']],
+                new TransformSetting('limit', ['length' => '80']),
+                new TransformSetting('limit', ['length' => '40']),
             ])
             ?->toArray(),
     )->toBe(['type' => 'string', 'format' => 'email', 'maxLength' => 40]);
-    expect($registry->resultSchema($input, [['type' => 'cast']]))->toBeNull();
+    expect($registry->resultSchema($input, [new TransformSetting('cast')]))->toBeNull();
 });
 
 it('compiles a custom registered transform without building its settings form', function () {

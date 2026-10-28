@@ -291,7 +291,12 @@ it('offers Filter in the settings of an unbound source without a column selector
     $key = $mapping->getSourceRowIndexes()['_marked'];
     $field = $form->getComponentByStatePath('mapping.' . $key . '.options.transforms');
 
-    expect(array_keys($field->getAvailableTransforms(app(TransformRegistry::class))))->toBe(['cast', 'filter']);
+    expect(array_keys($field->getAvailableTransforms(app(TransformRegistry::class))))->toBe([
+        'cast',
+        'filter',
+        'boolean_to_string',
+        'toggle',
+    ]);
 });
 
 it('resets source settings with mappings when the destination or source changes', function (
@@ -319,10 +324,7 @@ it('resets source settings with mappings when the destination or source changes'
     ]);
     $mapping = $form->getComponentByStatePath('mapping');
     expect($mapping->isSourceUsed('_code'))->toBeTrue();
-    expect($mapping->getSourceSettings()['_code']['transforms'])->toBe([[
-        'type' => 'cast',
-        'data' => ['type' => 'string', 'replace_null_with_default' => 'true'],
-    ]]);
+    expect($mapping->getSourceSettings()['_code']['transforms'])->toBe($fieldTransforms);
 
     $form
         ->getComponent($changed)
@@ -416,18 +418,17 @@ it('persists and restores transforms on every source independently of its target
         'fieldTransforms',
     );
     $cast = ['type' => 'cast', 'data' => ['type' => 'int64']];
-    $hydratedCast = ['type' => 'cast', 'data' => ['type' => 'int64', 'replace_null_with_default' => 'true']];
 
     expect($form->toHtml())->toContain('data-binding-source-settings="_description"');
     $action(['block' => 'cast'])->data(['data' => $cast['data']])->call();
-    expect($mapping->getSourceSettings()['_code']['transforms'])->toBe([$hydratedCast]);
+    expect($mapping->getSourceSettings()['_code']['transforms'])->toBe([$cast]);
     $description = $form->getComponentByStatePath(
         'mapping.' . $keys['_description'] . '.options.transforms',
     )->getAction(
         'fieldTransforms',
     );
     $description(['block' => 'cast'])->data(['data' => $cast['data']])->call();
-    expect($mapping->getSourceSettings()['_description']['transforms'])->toBe([$hydratedCast]);
+    expect($mapping->getSourceSettings()['_description']['transforms'])->toBe([$cast]);
     $attributes = TestCase::mappedReplicaAttributes(
         $form->getState(),
         app(DestinationFactory::class),

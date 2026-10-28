@@ -6,6 +6,7 @@ use Closure;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
+use Filament\Schemas\Components\Callout;
 use Filament\Schemas\Components\Group;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
@@ -19,7 +20,9 @@ use PHPinnacle\Eidos\Forms\FieldBinding;
 use PHPinnacle\Eidos\Forms\FieldMapping;
 use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Data\FieldMapping as SchemaMapping;
+use PHPinnacle\Ferry\Data\TransformSetting;
 use PHPinnacle\Ferry\Destinations\StaticDestination;
+use PHPinnacle\Ferry\Enums\ConnectorStatus;
 use PHPinnacle\Ferry\Enums\DestinationType;
 use PHPinnacle\Ferry\Enums\TransformTarget;
 use PHPinnacle\Ferry\Forms\FieldTransforms;
@@ -32,7 +35,7 @@ use PHPinnacle\Ferry\Services\DestinationFactory;
 use PHPinnacle\Ferry\Services\TransformRegistry;
 
 /**
- * @phpstan-import-type TransformInput from TransformRegistry
+ * @phpstan-import-type TransformData from TransformSetting
  *
  * @phpstan-import-type Definition from JsonSchema
  *
@@ -149,6 +152,17 @@ class ReplicaForm
         return $schema
             ->columns(1)
             ->components([
+                Callout::make(__('phpinnacle-ferry::resources.replica.messages.connector_failed'))
+                    ->key('connectorError')
+                    ->danger()
+                    ->description(fn (?Replica $record) => $record?->connector?->error)
+                    ->visible(
+                        fn (?Replica $record) => (
+                            $record?->connector?->status === ConnectorStatus::Failed
+                            && filled($record->connector->error)
+                        ),
+                    )
+                    ->extraAttributes(['role' => 'alert']),
                 self::generalSection(),
                 Hidden::make('schema')
                     ->afterStateHydrated(function (Hidden $component, Get $get, ?array $state) {
@@ -349,7 +363,7 @@ class ReplicaForm
                                 ])
                                 ->inputSchema(fn () => $inputSchema()->toArray())
                                 ->dehydrated(
-                                    fn (FieldTransforms $component) => !$static || $component->getSettings() !== [],
+                                    fn (FieldTransforms $component) => !$static || $component->getItems() !== [],
                                 ),
                         ];
                     },
@@ -458,7 +472,7 @@ class ReplicaForm
                 );
             })
             ->outputSchema(function (FieldMapping $component, TransformRegistry $registry) {
-                /** @var array<string, array<array-key, TransformInput>> $fieldTransforms */
+                /** @var array<string, list<TransformData>> $fieldTransforms */
                 $fieldTransforms = array_map(
                     static fn (array $settings) => $settings['transforms'] ?? [],
                     $component->getSourceSettings(),
@@ -471,7 +485,7 @@ class ReplicaForm
                     $properties[$source] = $registry
                         ->resultSchema(
                             JsonSchema::fromArray($property),
-                            $fieldTransforms[$source] ?? [],
+                            array_map(TransformSetting::fromArray(...), $fieldTransforms[$source] ?? []),
                             in_array($source, $primaryKey, true)
                                 ? TransformTarget::Key
                                 : TransformTarget::Value,

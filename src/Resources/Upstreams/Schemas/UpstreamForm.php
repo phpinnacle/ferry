@@ -5,12 +5,14 @@ namespace PHPinnacle\Ferry\Resources\Upstreams\Schemas;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Infolists\Components\TextEntry;
+use Filament\Schemas\Components\Callout;
 use Filament\Schemas\Components\Group;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use PHPinnacle\Common\Concerns\FormSlug;
 use PHPinnacle\Common\Forms\ActiveSelect;
+use PHPinnacle\Ferry\Enums\ConnectorStatus;
 use PHPinnacle\Ferry\Enums\Driver;
 use PHPinnacle\Ferry\Models\Upstream;
 use PHPinnacle\Ferry\Resources\Upstreams\Actions\PrepareStructureAction;
@@ -28,6 +30,17 @@ class UpstreamForm
         return $schema
             ->columns(1)
             ->components([
+                Callout::make(__('phpinnacle-ferry::resources.upstream.messages.connector_failed'))
+                    ->key('connectorError')
+                    ->danger()
+                    ->description(fn (?Upstream $record) => $record?->connector?->error)
+                    ->visible(
+                        fn (?Upstream $record) => (
+                            $record?->connector?->status === ConnectorStatus::Failed
+                            && filled($record->connector->error)
+                        ),
+                    )
+                    ->extraAttributes(['role' => 'alert']),
                 Section::make(__('phpinnacle-ferry::resources.upstream.sections.general'))
                     ->columns(3)
                     ->schema([

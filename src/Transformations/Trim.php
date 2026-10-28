@@ -34,6 +34,7 @@ final class Trim implements Transform
         );
     }
 
+    /** @param array<string, string> $params */
     public function output(JsonSchema $input, array $params): JsonSchema
     {
         return JsonSchema::fromArray([
@@ -49,6 +50,7 @@ final class Trim implements Transform
             ->icon(Heroicon::ArrowsPointingIn);
     }
 
+    /** @param array<string, string> $params */
     public function connector(string $field, array $params): array
     {
         return [

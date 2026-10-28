@@ -2,6 +2,7 @@
 
 namespace PHPinnacle\Ferry\Services;
 
+use Closure;
 use PHPinnacle\Ferry\Contracts\Origin;
 use PHPinnacle\Ferry\Enums\ConnectorStatus;
 use PHPinnacle\Ferry\Enums\DestinationType;
@@ -78,14 +79,30 @@ class ConnectorManager
         $replica->pause();
     }
 
-    public function restart(Replica $replica): void
+    public function restart(Upstream|Replica $owner): void
     {
-        SynchronizeConnectorsJob::dispatch($replica->upstream_id);
+        SynchronizeConnectorsJob::dispatch($owner instanceof Upstream ? $owner->id : $owner->upstream_id);
     }
 
     public function checkStatus(Connector $connector): void
     {
         $this->check($this->origins->create($connector->origin), $connector);
+    }
+
+    /** @param (Closure(Connector, Throwable): void)|null $onFailure */
+    public function refreshStatuses(?Closure $onFailure = null): void
+    {
+        foreach (Connector::query()->lazyById() as $connector) {
+            try {
+                $this->checkStatus($connector);
+            } catch (Throwable $exception) {
+                if ($onFailure === null) {
+                    report($exception);
+                } else {
+                    $onFailure($connector, $exception);
+                }
+            }
+        }
     }
 
     public function removed(Replica $replica): void

@@ -12,7 +12,9 @@ use PHPinnacle\Common\Filters\ActiveFilter;
 use PHPinnacle\Common\Tables\ActiveColumn;
 use PHPinnacle\Common\Tables\CreatedColumn;
 use PHPinnacle\Common\Tables\UpdatedColumn;
+use PHPinnacle\Ferry\Enums\ConnectorStatus;
 use PHPinnacle\Ferry\Models\Upstream;
+use PHPinnacle\Ferry\Resources\Actions\RefreshConnectorStatusesAction;
 use PHPinnacle\Ferry\Resources\Upstreams\Actions\PrepareStructureAction;
 use PHPinnacle\Ferry\Resources\Upstreams\Actions\TestUpstreamAction;
 use PHPinnacle\Ferry\Resources\Upstreams\UpstreamResource;
@@ -46,6 +48,9 @@ class UpstreamTable
                 TextColumn::make('connector.status')
                     ->label(__('phpinnacle-ferry::resources.upstream.fields.source_connector_status'))
                     ->badge()
+                    ->tooltip(fn (Upstream $record) => $record->connector?->status === ConnectorStatus::Failed
+                        ? $record->connector->error
+                        : null)
                     ->sortable(),
                 ActiveColumn::make()
                     ->action(fn (Upstream $record) => $record->toggleActive()),
@@ -53,6 +58,7 @@ class UpstreamTable
                 UpdatedColumn::make(),
             ])
             ->headerActions([
+                RefreshConnectorStatusesAction::table(),
                 CreateAction::make()
                     ->label(__('phpinnacle-ferry::resources.upstream.actions.create')),
             ])

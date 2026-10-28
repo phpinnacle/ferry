@@ -10,7 +10,6 @@ use PHPinnacle\Common\Forms\InlineBuilder\Block;
 use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Contracts\Transform;
 use PHPinnacle\Ferry\Enums\TransformTarget;
-use PHPinnacle\Ferry\Forms\FieldTransforms;
 
 final class TimestampConverter implements Transform
 {
@@ -37,6 +36,7 @@ final class TimestampConverter implements Transform
         );
     }
 
+    /** @param array<string, string> $params */
     public function output(JsonSchema $input, array $params): ?JsonSchema
     {
         if (($params['target_type'] ?? null) === null) {
@@ -67,8 +67,7 @@ final class TimestampConverter implements Transform
             ->label(fn () => __('phpinnacle-ferry::resources.transform.timestamp_converter'))
             ->description(fn () => __('phpinnacle-ferry::resources.transform.timestamp_converter_description'))
             ->icon(Heroicon::Clock)
-            ->schema(function (FieldTransforms $component, ?int $index) {
-                $input = $component->getInputSchema($index);
+            ->schema(function (?JsonSchema $input) {
                 $stringInput =
                     in_array('string', $input?->types() ?? [], true)
                     && !in_array($input->format(), ['date', 'time', 'date-time'], true);
@@ -122,6 +121,7 @@ final class TimestampConverter implements Transform
             });
     }
 
+    /** @param array<string, string> $params */
     public function connector(string $field, array $params): array
     {
         return [
