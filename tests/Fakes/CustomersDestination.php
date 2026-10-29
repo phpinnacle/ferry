@@ -4,6 +4,7 @@ namespace PHPinnacle\Ferry\Tests\Fakes;
 
 use PHPinnacle\Ferry\Destinations\StaticDestination;
 use PHPinnacle\Jason\Schema;
+use PHPinnacle\Jason\SchemaBuilder;
 
 function customers_destination(?string $connectionName = null): StaticDestination
 {
@@ -12,12 +13,19 @@ function customers_destination(?string $connectionName = null): StaticDestinatio
         label: 'Customers',
         table: 'customers',
         primaryKey: ['customer_id'],
-        schema: Schema::object([
-            'customer_id' => Schema::string()->format('uuid')->with('x-ferry-reference', true)->title('Customer ID'),
-            'name' => Schema::string()->title('Name'),
-            'tax_number' => Schema::string()->title('Tax Number'),
-            'is_active' => Schema::boolean()->title('Is Active'),
-        ])->required(['customer_id', 'name', 'tax_number']),
+        schema: SchemaBuilder::make(Schema::object([
+            'customer_id' => SchemaBuilder::make()
+                ->type('string')
+                ->format('uuid')
+                ->with('x-ferry-reference', true)
+                ->title('Customer ID')
+                ->build(),
+            'name' => SchemaBuilder::make()->type('string')->title('Name')->build(),
+            'tax_number' => SchemaBuilder::make()->type('string')->title('Tax Number')->build(),
+            'is_active' => SchemaBuilder::make()->type('boolean')->title('Is Active')->build(),
+        ]))
+            ->required(['customer_id', 'name', 'tax_number'])
+            ->build(),
         connection: $connectionName,
         fixedValues: [
             'type' => 'Customer',

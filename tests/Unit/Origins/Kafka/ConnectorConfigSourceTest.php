@@ -11,6 +11,7 @@ use PHPinnacle\Ferry\Origins\Kafka\SourceFactory;
 use PHPinnacle\Ferry\Services\DestinationFactory;
 use PHPinnacle\Ferry\Tests\TestCase;
 use PHPinnacle\Jason\Schema;
+use PHPinnacle\Jason\SchemaBuilder;
 
 require_once __DIR__ . '/../../../TestCase.php';
 
@@ -220,7 +221,9 @@ it('captures every source primary-key column independently of the static value m
         label: 'Names',
         table: 'names',
         primaryKey: ['name'],
-        schema: Schema::object(['name' => Schema::string()])->required(['name']),
+        schema: SchemaBuilder::make(Schema::object(['name' => Schema::string()]))
+            ->required(['name'])
+            ->build(),
     ));
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
     $object = TestCase::makeItem($upstream, [

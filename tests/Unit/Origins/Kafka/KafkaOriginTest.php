@@ -25,6 +25,7 @@ use PHPinnacle\Ferry\Tests\TestCase;
 use PHPinnacle\Franz\Client;
 use PHPinnacle\Franz\Exception\ApiException;
 use PHPinnacle\Jason\Schema;
+use PHPinnacle\Jason\SchemaBuilder;
 use Psr\Http\Client\ClientInterface;
 use Psr\Http\Message\RequestFactoryInterface;
 use Psr\Http\Message\RequestInterface;
@@ -263,11 +264,13 @@ it('extracts new record state at the source and preserves deletes for every dest
         label: 'Customers',
         table: 'customers',
         primaryKey: ['customer_id'],
-        schema: Schema::object([
-            'customer_id' => Schema::string()->format('uuid'),
+        schema: SchemaBuilder::make(Schema::object([
+            'customer_id' => SchemaBuilder::make()->type('string')->format('uuid')->build(),
             'name' => Schema::string(),
             'tax_number' => Schema::string(),
-        ])->required(['customer_id', 'name', 'tax_number']),
+        ]))
+            ->required(['customer_id', 'name', 'tax_number'])
+            ->build(),
         fixedValues: customers_destination()->getFixedValues(),
     ));
     if ($static) {
@@ -400,9 +403,11 @@ it('rejects all saved primary-key transforms during assembly', function (
         'Keyed',
         'keyed',
         ['id'],
-        Schema::object([
+        SchemaBuilder::make(Schema::object([
             'id' => Schema::string(),
-        ])->required(['id']),
+        ]))
+            ->required(['id'])
+            ->build(),
     );
     $destinations = new DestinationFactory;
     $destinations->register($destination);

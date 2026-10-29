@@ -135,18 +135,32 @@ A replica writes either into a generated `{prefix}{code}` table (dynamic) or int
 ```php
 use PHPinnacle\Ferry\Destinations\StaticDestination;
 use PHPinnacle\Ferry\FerryPlugin;
-use PHPinnacle\Jason\Schema;
+use PHPinnacle\Jason\SchemaBuilder;
 
 FerryPlugin::make()->destinations(new StaticDestination(
     key: 'customers',
     label: 'Customers',
     table: 'customers',
     primaryKey: ['id'],
-    schema: Schema::object([
-        'id' => Schema::string()->format('uuid')->with('x-ferry-reference', true)->title('ID'),
-        'name' => Schema::string()->title('Name'),
-        'manager_id' => Schema::string()->format('uuid')->with('x-ferry-reference', true)->title('Manager'),
-    ])->required(['id', 'name']),
+    schema: SchemaBuilder::make()
+        ->type('object')
+        ->properties([
+            'id' => SchemaBuilder::make()
+                ->type('string')
+                ->format('uuid')
+                ->with('x-ferry-reference', true)
+                ->title('ID')
+                ->build(),
+            'name' => SchemaBuilder::make()->type('string')->title('Name')->build(),
+            'manager_id' => SchemaBuilder::make()
+                ->type('string')
+                ->format('uuid')
+                ->with('x-ferry-reference', true)
+                ->title('Manager')
+                ->build(),
+        ])
+        ->required(['id', 'name'])
+        ->build(),
     connection: 'sales',
     fixedValues: ['type' => 'customer'],
 ));

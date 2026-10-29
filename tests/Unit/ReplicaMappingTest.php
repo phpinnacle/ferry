@@ -13,6 +13,7 @@ use PHPinnacle\Ferry\Rules\ReplicaSchema;
 use PHPinnacle\Ferry\Services\DestinationFactory;
 use PHPinnacle\Ferry\Tests\Fixtures\StructureItems;
 use PHPinnacle\Jason\Schema;
+use PHPinnacle\Jason\SchemaBuilder;
 use Tests\TestCase;
 
 use function PHPinnacle\Ferry\Tests\Fakes\customers_destination;
@@ -55,10 +56,12 @@ it('uses JSON Schema compatibility when saving static replicas', function (
         'Totals',
         'totals',
         ['id'],
-        Schema::object([
+        SchemaBuilder::make(Schema::object([
             'id' => Schema::string(),
-            'amount' => Schema::fromArray($target)->title('Amount'),
-        ])->required(['id', 'amount']),
+            'amount' => SchemaBuilder::make(Schema::fromArray($target))->title('Amount')->build(),
+        ]))
+            ->required(['id', 'amount'])
+            ->build(),
     );
     $mappings = [
         new FieldMapping(source: 'amount', target: 'amount'),
@@ -130,10 +133,12 @@ it('compares native static values with destination enums and lengths', function 
         'Labels',
         'labels',
         ['id'],
-        Schema::object([
+        SchemaBuilder::make(Schema::object([
             'id' => Schema::string(),
             'label' => Schema::fromArray($target),
-        ])->required(['id']),
+        ]))
+            ->required(['id'])
+            ->build(),
     );
     $mapping = new FieldMapping(source: null, target: 'label', static: $value, kind: FieldKind::Static);
     $mappings = [$mapping, new FieldMapping(source: '_idrref', target: 'id')];
@@ -211,7 +216,9 @@ it('resolves label and schema callbacks in the current request locale', function
         label: fn () => app()->getLocale(),
         table: 'localized',
         primaryKey: ['id'],
-        schema: fn () => Schema::object(['name' => Schema::string()->title(app()->getLocale())]),
+        schema: fn () => Schema::object([
+            'name' => SchemaBuilder::make()->type('string')->title(app()->getLocale())->build(),
+        ]),
     );
     app()->setLocale('ru');
     expect($destination->getLabel())->toBe('ru');

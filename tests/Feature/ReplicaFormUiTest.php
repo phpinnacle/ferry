@@ -28,6 +28,7 @@ use PHPinnacle\Ferry\Tests\Fixtures\StructureItems;
 use PHPinnacle\Ferry\Tests\TestCase;
 use PHPinnacle\Ferry\Transformations\Trim;
 use PHPinnacle\Jason\Schema;
+use PHPinnacle\Jason\SchemaBuilder;
 
 use function PHPinnacle\Ferry\Tests\Fakes\customers_destination;
 
@@ -56,10 +57,12 @@ it('prohibits all source primary-key transforms while allowing their removal in 
         'Keyed',
         'keyed',
         ['id'],
-        Schema::object([
+        SchemaBuilder::make(Schema::object([
             'id' => Schema::string(),
             'name' => Schema::string(),
-        ])->required(['id']),
+        ]))
+            ->required(['id'])
+            ->build(),
     );
     app(DestinationFactory::class)->register($destination);
     app(TransformRegistry::class)->register(Trim::make());
@@ -141,11 +144,13 @@ it('only connects static destination primary keys to source primary-key fields',
         label: 'Keyed',
         table: 'keyed',
         primaryKey: ['id', 'tenant'],
-        schema: Schema::object([
+        schema: SchemaBuilder::make(Schema::object([
             'id' => Schema::string(),
             'tenant' => Schema::string(),
             'name' => Schema::string(),
-        ])->required(['id', 'tenant']),
+        ]))
+            ->required(['id', 'tenant'])
+            ->build(),
     );
     app(DestinationFactory::class)->register($destination);
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
@@ -230,7 +235,9 @@ it('requires the whole source key in static mappings at the form and save bounda
         'Keyed',
         'keyed',
         ['id'],
-        Schema::object(['id' => Schema::string(), 'name' => Schema::string()])->required(['id']),
+        SchemaBuilder::make(Schema::object(['id' => Schema::string(), 'name' => Schema::string()]))
+            ->required(['id'])
+            ->build(),
     ));
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
     $object = TestCase::makeItem($upstream, [
@@ -280,7 +287,9 @@ it('marks source keys required in both editors without replacing other required 
         'Keyed',
         'keyed',
         ['id'],
-        Schema::object(['id' => Schema::string()])->required(['id']),
+        SchemaBuilder::make(Schema::object(['id' => Schema::string()]))
+            ->required(['id'])
+            ->build(),
     ));
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
     $object = TestCase::makeItem($upstream, [
@@ -395,10 +404,17 @@ it('accepts UUID transform outputs for reference destinations', function () {
         label: 'Owners',
         table: 'owners',
         primaryKey: ['id'],
-        schema: Schema::object([
+        schema: SchemaBuilder::make(Schema::object([
             'id' => Schema::string(),
-            'owner' => Schema::string()->format('uuid')->with('x-ferry-reference', true)->title('Owner'),
-        ])->required(['id', 'owner']),
+            'owner' => SchemaBuilder::make()
+                ->type('string')
+                ->format('uuid')
+                ->with('x-ferry-reference', true)
+                ->title('Owner')
+                ->build(),
+        ]))
+            ->required(['id', 'owner'])
+            ->build(),
     ));
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
     TestCase::makeItem($upstream, ['fields' => [
@@ -1229,10 +1245,17 @@ it('shows each composite column as a separate source card and saves only its sel
         label: 'Owners',
         table: 'owners',
         primaryKey: ['id'],
-        schema: Schema::object([
+        schema: SchemaBuilder::make(Schema::object([
             'id' => Schema::string(),
-            'owner' => Schema::string()->format('uuid')->with('x-ferry-reference', true)->title('Owner'),
-        ])->required(['id', 'owner']),
+            'owner' => SchemaBuilder::make()
+                ->type('string')
+                ->format('uuid')
+                ->with('x-ferry-reference', true)
+                ->title('Owner')
+                ->build(),
+        ]))
+            ->required(['id', 'owner'])
+            ->build(),
     ));
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
     TestCase::makeItem($upstream, [
@@ -1315,10 +1338,17 @@ it('shows each composite column as a separate source card and saves only its sel
 })->with([DestinationType::Dynamic->value, 'static:owners']);
 
 it('uses destination JSON Schema titles, constraints and required mappings in the editor', function () {
-    $schema = Schema::object([
-        'name' => Schema::string()->title('Customer name')->description('Official name')->max(100),
-        'is_active' => Schema::boolean()->title('Active'),
-    ])->required(['name']);
+    $schema = SchemaBuilder::make(Schema::object([
+        'name' => SchemaBuilder::make()
+            ->type('string')
+            ->title('Customer name')
+            ->description('Official name')
+            ->max(100)
+            ->build(),
+        'is_active' => SchemaBuilder::make()->type('boolean')->title('Active')->build(),
+    ]))
+        ->required(['name'])
+        ->build();
     app(DestinationFactory::class)->register(new StaticDestination(
         key: 'schema_customers',
         label: 'Customers',
@@ -1364,13 +1394,15 @@ it('omits empty optional forms and validates static values against destination b
         label: 'Bounded',
         table: 'bounded',
         primaryKey: ['id'],
-        schema: Schema::object([
+        schema: SchemaBuilder::make(Schema::object([
             'id' => Schema::string(),
-            'name' => Schema::string()->max(3),
-            'description' => Schema::string()->nullable(),
+            'name' => SchemaBuilder::make()->type('string')->max(3)->build(),
+            'description' => SchemaBuilder::make()->type('string')->nullable()->build(),
             'active' => Schema::boolean(),
             'quantity' => Schema::integer(),
-        ])->required(['id', 'name']),
+        ]))
+            ->required(['id', 'name'])
+            ->build(),
     ));
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
     TestCase::makeItem($upstream);
@@ -1405,12 +1437,19 @@ it('maps UUID references into bounded strings while respecting target length and
         label: 'References',
         table: 'references',
         primaryKey: ['external_id'],
-        schema: Schema::object([
-            'external_id' => Schema::string()->max(255),
-            'exact_id' => Schema::string()->max(36)->nullable(),
-            'short_id' => Schema::string()->max(35)->nullable(),
-            'uuid_id' => Schema::string()->format('uuid')->with('x-ferry-reference', true)->nullable(),
-        ])->required(['external_id']),
+        schema: SchemaBuilder::make(Schema::object([
+            'external_id' => SchemaBuilder::make()->type('string')->max(255)->build(),
+            'exact_id' => SchemaBuilder::make()->type('string')->max(36)->nullable()->build(),
+            'short_id' => SchemaBuilder::make()->type('string')->max(35)->nullable()->build(),
+            'uuid_id' => SchemaBuilder::make()
+                ->type('string')
+                ->format('uuid')
+                ->with('x-ferry-reference', true)
+                ->nullable()
+                ->build(),
+        ]))
+            ->required(['external_id'])
+            ->build(),
     );
     app(DestinationFactory::class)->register($destination);
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);

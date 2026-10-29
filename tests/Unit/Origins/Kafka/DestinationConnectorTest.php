@@ -13,6 +13,7 @@ use PHPinnacle\Ferry\Origins\Kafka\TransformFactory;
 use PHPinnacle\Ferry\Services\DestinationFactory;
 use PHPinnacle\Ferry\Tests\TestCase;
 use PHPinnacle\Jason\Schema;
+use PHPinnacle\Jason\SchemaBuilder;
 
 use function PHPinnacle\Ferry\Tests\Fakes\customers_destination;
 
@@ -305,11 +306,17 @@ it('selects and renames only source key fields mapped to the static primary key'
         label: 'Explicit keys',
         table: 'explicit_keys',
         primaryKey: $primaryKey,
-        schema: Schema::object([
-            'id' => Schema::string()->format('uuid')->with('x-ferry-reference', true),
-            'source_id' => Schema::string()->format('uuid')->with('x-ferry-reference', true),
-            '_owner' => Schema::string()->format('uuid')->with('x-ferry-reference', true),
-        ])->required($primaryKey),
+        schema: SchemaBuilder::make(Schema::object([
+            'id' => SchemaBuilder::make()->type('string')->format('uuid')->with('x-ferry-reference', true)->build(),
+            'source_id' => SchemaBuilder::make()
+                ->type('string')
+                ->format('uuid')
+                ->with('x-ferry-reference', true)
+                ->build(),
+            '_owner' => SchemaBuilder::make()->type('string')->format('uuid')->with('x-ferry-reference', true)->build(),
+        ]))
+            ->required($primaryKey)
+            ->build(),
     );
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
     $object = TestCase::makeItem($upstream, [

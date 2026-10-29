@@ -19,6 +19,7 @@ use PHPinnacle\Ferry\Services\DestinationFactory;
 use PHPinnacle\Ferry\Tests\Fixtures\SchemaHost;
 use PHPinnacle\Ferry\Tests\TestCase;
 use PHPinnacle\Jason\Schema;
+use PHPinnacle\Jason\SchemaBuilder;
 
 require_once __DIR__ . '/../TestCase.php';
 require_once __DIR__ . '/../Fixtures/ReplicaForm.php';
@@ -34,11 +35,13 @@ beforeEach(function () {
         'Keyed',
         'keyed',
         ['id'],
-        Schema::object([
-            'id' => Schema::string()->format('uuid'),
+        SchemaBuilder::make(Schema::object([
+            'id' => SchemaBuilder::make()->type('string')->format('uuid')->build(),
             'tenant' => Schema::integer(),
             'name' => Schema::string(),
-        ])->required(['id', 'name']),
+        ]))
+            ->required(['id', 'name'])
+            ->build(),
     ));
     $this->upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
     $this->object = TestCase::makeItem($this->upstream, [
