@@ -4,6 +4,7 @@ namespace PHPinnacle\Ferry\Transformations;
 
 use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Components\Group;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use PHPinnacle\Common\Forms\TabbedBuilder\Block as TabbedBlock;
 use PHPinnacle\Eidos\Forms\JsonSchema;
@@ -60,6 +61,7 @@ final class InsertUuid implements Transform
             [
                 $params['output'] => [
                     'type' => 'string',
+                    'title' => Str::headline($params['output']),
                     'format' => 'uuid',
                     'minLength' => 36,
                     'maxLength' => 36,

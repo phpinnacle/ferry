@@ -107,6 +107,7 @@ it('creates and persists one UUID key through the tabbed record builder for both
     expect(array_keys($mapping->getSourceSchema()['properties']))
         ->toBe(['record_id', '_idrref', 'tenant_id', 'row_id', 'name', 'unused']);
     expect($mapping->getSources()[0]['id'])->toBe('record_id');
+    expect($mapping->getSources()[0]['label'])->toBe('Record Id');
     expect(collect($page->get('data.mapping'))->firstWhere('source', 'record_id'))->not->toBeNull();
     expect(array_slice($page->get('data.mapping'), 0, count($originalRows)))->toBe($originalRows);
     expect($form->getState(...))->toThrow(ValidationException::class);

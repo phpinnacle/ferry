@@ -87,7 +87,7 @@ it('derives nullable slug schemas without carrying source length or format const
 
     $output = Slug::make()->output($input, ['input' => "$['name']", 'output' => 'slug']);
 
-    expect($output->properties()['slug']->toArray())->toBe(['type' => ['string', 'null']]);
+    expect($output->properties()['slug']->toArray())->toBe(['type' => ['string', 'null'], 'title' => 'Slug']);
     expect($output->required())->toBe(['name', 'slug']);
     expect(Slug::make()->output($input, ['input' => "$['missing']", 'output' => 'slug']))->toBeNull();
 });

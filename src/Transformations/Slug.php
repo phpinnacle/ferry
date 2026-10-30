@@ -4,6 +4,7 @@ namespace PHPinnacle\Ferry\Transformations;
 
 use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Components\Group;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use InvalidArgumentException;
 use PHPinnacle\Common\Forms\TabbedBuilder\Block as TabbedBlock;
@@ -83,6 +84,7 @@ final class Slug implements Transform
             + [
                 $params['output'] => [
                     'type' => in_array('null', $source->types(), true) ? ['string', 'null'] : 'string',
+                    'title' => Str::headline($params['output']),
                 ],
             ]
             + array_slice($properties, $sourceOffset, preserve_keys: true);
