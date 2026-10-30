@@ -1,18 +1,18 @@
 <?php
 
 use Filament\Forms\Components\TextInput;
-use Filament\Schemas\Schema;
+use Filament\Schemas\Schema as FilamentSchema;
 use Illuminate\Support\ViewErrorBag;
 use Illuminate\Validation\ValidationException;
 use PHPinnacle\Eidos\Forms\FieldBinding;
 use PHPinnacle\Eidos\Forms\FieldMapping;
-use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Forms\FieldTransforms;
 use PHPinnacle\Ferry\Services\TransformRegistry;
 use PHPinnacle\Ferry\Tests\Fixtures\SchemaHost;
 use PHPinnacle\Ferry\Tests\TestCase;
 use PHPinnacle\Ferry\Transformations\MaskField;
 use PHPinnacle\Ferry\Transformations\Trim;
+use PHPinnacle\Jason\Schema;
 
 require_once __DIR__ . '/../TestCase.php';
 require_once __DIR__ . '/../Fixtures/SchemaHost.php';
@@ -56,18 +56,18 @@ it('validates transform settings on unconnected sources', function (
     $source = ['properties' => ['input' => ['type' => $type]]];
     $field = $binding
         ? FieldBinding::make('widget')
-            ->jsonSchema(JsonSchema::fromArray($source))
+            ->jsonSchema(Schema::fromArray($source))
             ->simple(TextInput::make('column')->default('output'))
         : FieldMapping::make('widget')->jsonSchema(
-            source: JsonSchema::fromArray($source),
-            target: JsonSchema::fromArray([
+            source: Schema::fromArray($source),
+            target: Schema::fromArray([
                 'properties' => ['output' => ['type' => $type]],
             ]),
         );
-    $field->sourceSettings([FieldTransforms::make('transforms')->inputSchema(JsonSchema::fromArray([
+    $field->sourceSettings([FieldTransforms::make('transforms')->inputSchema(Schema::fromArray([
         'type' => $type,
     ]))]);
-    $schema = Schema::make(SchemaHost::make())->statePath('data')->components([$field]);
+    $schema = FilamentSchema::make(SchemaHost::make())->statePath('data')->components([$field]);
     $schema->fill(['widget' => []]);
     $settingsKey = $field->getSourceRowIndexes()['input'];
     $schema->getComponentByStatePath('widget.' . $settingsKey . '.options.transforms')->state($transforms);

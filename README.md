@@ -57,7 +57,7 @@ use PHPinnacle\Ferry\Models\Upstream;
 $upstream = Upstream::availableForReplication()->firstOrFail();
 
 foreach ($upstream->structure->publishedItems()->get() as $object) {
-    $object->schema;     // PHPinnacle\Eidos\Forms\JsonSchema
+    $object->schema;     // PHPinnacle\Jason\Schema
     $object->primary_key; // ordered replication key columns
     $object->schema->annotation('x-primary-key'); // ordered physical primary-key columns
     $object->values;     // list<array{id: string, label: string, title: string}>
@@ -65,7 +65,7 @@ foreach ($upstream->structure->publishedItems()->get() as $object) {
 }
 ```
 
-Each `StructureItem` stores a ready object JSON Schema in `schema`. Its `properties` keys are physical source column names, used directly in mappings and connector configuration. Types, bounds, titles and descriptions are prepared by the adapter. `field($source)` returns the logical `JsonSchema` without presentation annotations. Source keys come from the ordered `primary_key` array, rather than a package-wide 1C constant. Optional `code`, `kind`, `reference_id` and `values` preserve source metadata as native scalar values and arrays. See [JSON Schema extensions](#json-schema-extensions) for the complete annotation contract.
+Each `StructureItem` stores a ready object JSON Schema in `schema`. Its `properties` keys are physical source column names, used directly in mappings and connector configuration. Types, bounds, titles and descriptions are prepared by the adapter. `field($source)` returns the logical `Schema` without presentation annotations. Source keys come from the ordered `primary_key` array, rather than a package-wide 1C constant. Optional `code`, `kind`, `reference_id` and `values` preserve source metadata as native scalar values and arrays. See [JSON Schema extensions](#json-schema-extensions) for the complete annotation contract.
 
 The Rosetta adapter reads each root and child table's primary index through Laravel's schema builder and stores its ordered column names in both `primary_key` and the object-level `x-primary-key` annotation, and marks those properties `required` in JSON Schema. A table without a declared primary key gets `[]`; unique indexes are not substituted. For example, a catalog can declare `['_idrref']`, while a tabular section can have a composite key. Source connectors include every key column in `column.include.list` and join them in their declared order for `message.key.columns`. An empty key adds no override for that table. Both static and dynamic destinations support composite source keys. By default, every destination requires an explicit mapping for every source key column; static destinations must bind them all to destination primary-key fields. The replica editor can instead assemble the complete source key into one UUID key.
 
@@ -297,9 +297,9 @@ The default list contains Cast, Filter, InsertUuid, Slug, TimestampConverter, Bo
 ];
 ```
 
-`Transform::block()` returns `InlineBlock|TabbedBlock`, using aliases for Common's `InlineBuilder\Block` and `TabbedBuilder\Block`. Field transforms return an `InlineBlock`; built-in record transforms return Ferry's `RecordTransformBlock`, a `TabbedBlock` subclass. Each call creates an independent block with its own label, icon and parameter form. A block's name must match the transformation's `getKey()`. Field parameter schema closures receive the preceding `?JsonSchema $input`, the owning `FieldTransforms $component` and optional `?int $index`. The input is null when a preceding transformation has no valid output. Field forms are built when opened, and their components are cloned for each instance. Record tabs use the native Filament builder lifecycle. For dependent record fields, the owning `RecordTransforms::getInputSchema($itemKey)` returns the schema before that item. Blank or partial live state is represented by a null transform output; the preview keeps the preceding valid schema.
+`Transform::block()` returns `InlineBlock|TabbedBlock`, using aliases for Common's `InlineBuilder\Block` and `TabbedBuilder\Block`. Field transforms return an `InlineBlock`; built-in record transforms return Ferry's `RecordTransformBlock`, a `TabbedBlock` subclass. Each call creates an independent block with its own label, icon and parameter form. A block's name must match the transformation's `getKey()`. Field parameter schema closures receive the preceding `?Schema $input`, the owning `FieldTransforms $component` and optional `?int $index`. The input is null when a preceding transformation has no valid output. Field forms are built when opened, and their components are cloned for each instance. Record tabs use the native Filament builder lifecycle. For dependent record fields, the owning `RecordTransforms::getInputSchema($itemKey)` returns the schema before that item. Blank or partial live state is represented by a null transform output; the preview keeps the preceding valid schema.
 
-`RecordTransformBlock::parameters()` accepts a callback such as `fn (JsonSchema $input) => [...]`. It supplies the schema before the current record transform, including preceding transform settings, without requiring the transform to navigate the component hierarchy. Use `$block->getInputSchema()` to read the current record preview in availability callbacks. Both transformation editors receive schemas without a `StructureItem` model. Native `TabbedBlock` schemas remain supported for record transforms that do not need this context.
+`RecordTransformBlock::parameters()` accepts a callback such as `fn (Schema $input) => [...]`. It supplies the schema before the current record transform, including preceding transform settings, without requiring the transform to navigate the component hierarchy. Use `$block->getInputSchema()` to read the current record preview in availability callbacks. Both transformation editors receive schemas without a `StructureItem` model. Native `TabbedBlock` schemas remain supported for record transforms that do not need this context.
 
 ### Custom transformations
 
@@ -308,7 +308,7 @@ Implement the same contract for an application transform. This example uses Kafk
 ```php
 use Filament\Forms\Components\TextInput;
 use PHPinnacle\Common\Forms\InlineBuilder\Block as InlineBlock;
-use PHPinnacle\Eidos\Forms\JsonSchema;
+use PHPinnacle\Jason\Schema;
 use PHPinnacle\Ferry\Contracts\Transform;
 use PHPinnacle\Ferry\Enums\TransformTarget;
 use PHPinnacle\Ferry\Enums\TransformScope;
@@ -335,15 +335,15 @@ final class Redact implements Transform
         return TransformTarget::Value;
     }
 
-    public function accepts(JsonSchema $input): bool
+    public function accepts(Schema $input): bool
     {
         return $input->singleType() === 'string';
     }
 
     /** @param array{replacement: string} $params */
-    public function output(JsonSchema $input, array $params): JsonSchema
+    public function output(Schema $input, array $params): Schema
     {
-        return JsonSchema::fromArray([
+        return Schema::fromArray([
             'type' => in_array('null', $input->types(), true) ? ['string', 'null'] : 'string',
         ]);
     }
@@ -376,11 +376,11 @@ final class Redact implements Transform
 // Add Redact::class to kafka.transforms in config/phpinnacle-ferry.php.
 ```
 
-`accepts()` receives the complete preceding JSON Schema. `output()` returns the resulting `JsonSchema`, or `null` when settings are incomplete and an output cannot yet be determined. Return the input unchanged only when the transform preserves all its constraints. Each transform declares its parameter array shape and validates it through the block's native Filament form. Parameters can contain structured values such as replacement dictionaries; saved settings preserve these arrays. FieldTransforms uses the forms' native dehydration for schema previews and reordering as well as submission. `getScope()` declares `TransformScope::Field` or `TransformScope::Record`; `getTarget()` declares key or value. `sourceFields()` lists physical or previously generated input dependencies for record transforms and returns an empty list for field transforms. `connector()` receives the saved parameters; for field transforms, the factory binds the owning field as the reserved `field` parameter and returns a flat Kafka Connect configuration for one transform. The pipeline factory assigns its alias. Configured transformations are available without booting a Filament panel and must not retain request or form state.
+`accepts()` receives the complete preceding JSON Schema. `output()` returns the resulting `Schema`, or `null` when settings are incomplete and an output cannot yet be determined. Return the input unchanged only when the transform preserves all its constraints. Each transform declares its parameter array shape and validates it through the block's native Filament form. Parameters can contain structured values such as replacement dictionaries; saved settings preserve these arrays. FieldTransforms uses the forms' native dehydration for schema previews and reordering as well as submission. `getScope()` declares `TransformScope::Field` or `TransformScope::Record`; `getTarget()` declares key or value. `sourceFields()` lists physical or previously generated input dependencies for record transforms and returns an empty list for field transforms. `connector()` receives the saved parameters; for field transforms, the factory binds the owning field as the reserved `field` parameter and returns a flat Kafka Connect configuration for one transform. The pipeline factory assigns its alias. Configured transformations are available without booting a Filament panel and must not retain request or form state.
 
 `FieldTransforms` filters its block catalog by field scope and the configured key/value target. `getAvailableBlocks()` then filters by native block availability and the current chain's output schema. Blocks for the configured target remain available for editing when the chain no longer accepts them as additions.
 
-`TransformRegistry::get($key)`, `getOrFail($key)` and `all()` read the catalog. `resultSchema(JsonSchema $input, array $settings, ?TransformTarget $target = TransformTarget::Value, TransformScope $scope = TransformScope::Field)` accepts a list of `Data\TransformSetting` objects, passes the schema through each transformation and returns null for an incompatible scope, target, input or unavailable output. A null target allows both key and value transforms in the replica list. Each step consumes the preceding output. Form and storage boundaries, including `FieldTransforms::getSettings()`, use ordered `type`/`data` arrays; convert those rows with `TransformSetting::fromArray()` before passing them to the registry.
+`TransformRegistry::get($key)`, `getOrFail($key)` and `all()` read the catalog. `resultSchema(Schema $input, array $settings, ?TransformTarget $target = TransformTarget::Value, TransformScope $scope = TransformScope::Field)` accepts a list of `Data\TransformSetting` objects, passes the schema through each transformation and returns null for an incompatible scope, target, input or unavailable output. A null target allows both key and value transforms in the replica list. Each step consumes the preceding output. Form and storage boundaries, including `FieldTransforms::getSettings()`, use ordered `type`/`data` arrays; convert those rows with `TransformSetting::fromArray()` before passing them to the registry.
 
 Cast replaces value constraints with the selected scalar type and preserves nullability; repeated casts use that result. Trim, Substring and Mask accept strings, including formatted and nullable strings, but reject `date`, `time`, `date-time` and schemas with `x-ferry-reference: true`. Ordinary UUID strings remain supported. Their outputs retain nullability and discard the source format, enum, pattern and length bounds.
 
@@ -436,7 +436,7 @@ The source connector captures fields with a target or transforms; unbound filter
 
 ### Source settings and transforms
 
-For the Ferry transformation editor, use the standalone `FieldTransforms` field with a source object schema represented by `JsonSchema`:
+For the Ferry transformation editor, use the standalone `FieldTransforms` field with a source object schema represented by `Schema`:
 
 ```php
 use PHPinnacle\Ferry\Forms\FieldTransforms;
@@ -448,7 +448,7 @@ use PHPinnacle\Ferry\Forms\FieldTransforms;
 ])
 ```
 
-Replica forms use the inherited `addable(false)` and native validation rules to prohibit field transforms on physical primary-key fields and generated key fields while keeping existing items visible and removable. Generated keys are produced by record transforms. `FieldTransforms::inputSchema(JsonSchema|Closure)` takes the source property schema after record transforms. A schema callback must return `JsonSchema` and supports native Filament utility injection. `RecordTransforms::inputSchema(JsonSchema)` takes the fixed record input schema. Configure the input schema before using either editor; arrays belong at serialization boundaries. The field passes this complete schema through `TransformRegistry::resultSchema()` to determine compatible additions. Mapping consumers use the same result in their `outputSchema()` callbacks for hints and connection checks. For `FieldBinding` static source settings, pass `$inputSchema` directly to `FieldTransforms::inputSchema()`; Eidos supplies this closure through the source-settings callback.
+Replica forms use the inherited `addable(false)` and native validation rules to prohibit field transforms on physical primary-key fields and generated key fields while keeping existing items visible and removable. Generated keys are produced by record transforms. `FieldTransforms::inputSchema(Schema|Closure)` takes the source property schema after record transforms. A schema callback must return `Schema` and supports native Filament utility injection. `RecordTransforms::inputSchema(Schema)` takes the fixed record input schema. Configure the input schema before using either editor; arrays belong at serialization boundaries. The field passes this complete schema through `TransformRegistry::resultSchema()` to determine compatible additions. Mapping consumers use the same result in their `outputSchema()` callbacks for hints and connection checks. For `FieldBinding` static source settings, pass `$inputSchema` directly to `FieldTransforms::inputSchema()`; Eidos supplies this closure through the source-settings callback.
 
 An empty editor shows a muted `+ Transform` aligned with the source title, without a frame, shadow, background, or hover tooltip. Hovering the enabled plus button or Transform label, or focusing the editor, emphasizes the text and plus icon together. Empty footer space leaves them muted. In `FieldMapping`, it can start or complete a connection in either direction, including inverse mode. Only `+ Transform` opens the catalog in an empty editor. With transforms, a native Filament input frame contains a persistent `+` button and compact chips; its free space also opens the catalog. One row is reserved so the first chip does not change the input height. Further chips wrap while the add button stays on the first row. The Add transform button stays visible but disabled when no compatible transforms are available.
 

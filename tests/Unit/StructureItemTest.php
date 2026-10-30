@@ -1,8 +1,8 @@
 <?php
 
 use Illuminate\Support\Facades\Lang;
-use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Models\StructureItem;
+use PHPinnacle\Jason\Schema;
 use Tests\TestCase;
 
 uses(TestCase::class);
@@ -25,7 +25,7 @@ it('falls back from the title to the label and then to the physical name', funct
 it('reads ready schemas by physical column name', function () {
     $item = new StructureItem([
         'primary_key' => ['tenant_id', 'record_id'],
-        'schema' => JsonSchema::fromArray([
+        'schema' => Schema::fromArray([
             'type' => 'object',
             'properties' => [
                 'tenant_id' => ['type' => 'integer', 'title' => 'Tenant'],
@@ -64,7 +64,7 @@ it('resolves the full translation key before the title in the current interface 
             ],
         ],
     ];
-    $item = new StructureItem(['primary_key' => ['id'], 'schema' => JsonSchema::fromArray($definition)]);
+    $item = new StructureItem(['primary_key' => ['id'], 'schema' => Schema::fromArray($definition)]);
     Lang::setLocale('en');
     $english = $item->mappableFields()['_description']['title'];
     expect($english)
@@ -81,7 +81,7 @@ it('resolves the full translation key before the title in the current interface 
         ->not->toBe($english);
 
     $definition['properties']['_description'] = ['type' => 'boolean', 'title' => 'Updated title'];
-    $item->schema = JsonSchema::fromArray($definition);
+    $item->schema = Schema::fromArray($definition);
 
     expect($item->field('_description')->singleType())
         ->toBe('boolean')

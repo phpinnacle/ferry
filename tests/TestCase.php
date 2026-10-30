@@ -2,10 +2,9 @@
 
 namespace PHPinnacle\Ferry\Tests;
 
-use Filament\Schemas\Schema;
+use Filament\Schemas\Schema as FilamentSchema;
 use Illuminate\Support\Facades\DB;
 use Mockery;
-use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Data\FieldMapping;
 use PHPinnacle\Ferry\Models\Connector;
 use PHPinnacle\Ferry\Models\Replica;
@@ -16,6 +15,7 @@ use PHPinnacle\Ferry\Services\OriginFactory;
 use PHPinnacle\Ferry\Tests\Fakes\Origin;
 use PHPinnacle\Ferry\Tests\Fixtures\SchemaHost;
 use PHPinnacle\Ferry\Tests\Fixtures\StructureItems;
+use PHPinnacle\Jason\Schema;
 use Tests\TestCase as ApplicationTestCase;
 
 require_once __DIR__ . '/Fakes/Origin.php';
@@ -27,11 +27,14 @@ abstract class TestCase extends ApplicationTestCase
     /**
      * @param array<string, mixed> $data
      */
-    public static function replicaForm(array $data, ?Replica $record = null, ?SchemaHost $livewire = null): Schema
-    {
+    public static function replicaForm(
+        array $data,
+        ?Replica $record = null,
+        ?SchemaHost $livewire = null,
+    ): FilamentSchema {
         $record ??= self::makeReplica([...$data, 'mapping' => [], 'transforms' => []]);
         $form = ReplicaForm::configure(
-            Schema::make($livewire ?? SchemaHost::make())
+            FilamentSchema::make($livewire ?? SchemaHost::make())
                 ->statePath('data')
                 ->record($record)
                 ->operation('edit'),
@@ -56,7 +59,7 @@ abstract class TestCase extends ApplicationTestCase
      */
     public static function replicaCreationState(array $data): array
     {
-        $form = ReplicaForm::creation(Schema::make(SchemaHost::make())->statePath('data')->operation('create'));
+        $form = ReplicaForm::creation(FilamentSchema::make(SchemaHost::make())->statePath('data')->operation('create'));
         $form->fill($data);
 
         return $form->getState();
@@ -150,9 +153,9 @@ abstract class TestCase extends ApplicationTestCase
         return new FieldMapping('_idrref', 'external_id');
     }
 
-    public static function keySchema(): JsonSchema
+    public static function keySchema(): Schema
     {
-        return JsonSchema::fromArray([
+        return Schema::fromArray([
             'type' => 'string',
             'format' => 'uuid',
             'x-ferry-reference' => true,

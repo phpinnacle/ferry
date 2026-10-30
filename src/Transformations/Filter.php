@@ -7,10 +7,10 @@ use Filament\Forms\Components\Textarea;
 use Filament\Schemas\Components\Group;
 use Filament\Support\Icons\Heroicon;
 use PHPinnacle\Common\Forms\InlineBuilder\Block as InlineBlock;
-use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Contracts\Transform;
 use PHPinnacle\Ferry\Enums\TransformScope;
 use PHPinnacle\Ferry\Enums\TransformTarget;
+use PHPinnacle\Jason\Schema;
 
 final class Filter implements Transform
 {
@@ -39,13 +39,13 @@ final class Filter implements Transform
         return TransformTarget::Value;
     }
 
-    public function accepts(JsonSchema $input): bool
+    public function accepts(Schema $input): bool
     {
         return true;
     }
 
     /** @param array<string, string> $params */
-    public function output(JsonSchema $input, array $params): JsonSchema
+    public function output(Schema $input, array $params): Schema
     {
         return $input;
     }
@@ -56,7 +56,7 @@ final class Filter implements Transform
             ->label(fn () => __('phpinnacle-ferry::transforms.filter'))
             ->icon(Heroicon::Funnel)
             ->description(fn () => __('phpinnacle-ferry::transforms.filter_description'))
-            ->schema(function (?JsonSchema $input) {
+            ->schema(function (?Schema $input) {
                 $example = match ($input?->singleType()) {
                     'string' => "@ == 'value'",
                     'integer' => '@ >= 100',

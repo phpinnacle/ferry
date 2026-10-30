@@ -4,17 +4,17 @@ namespace PHPinnacle\Ferry\Forms;
 
 use Closure;
 use Filament\Schemas\Components\Component;
-use Filament\Schemas\Schema;
+use Filament\Schemas\Schema as FilamentSchema;
 use Illuminate\Support\Str;
 use PHPinnacle\Common\Forms\TabbedBuilder\Block;
-use PHPinnacle\Eidos\Forms\JsonSchema;
+use PHPinnacle\Jason\Schema;
 
 final class RecordTransformBlock extends Block
 {
-    /** @param Closure(JsonSchema): array<Component> $components */
+    /** @param Closure(Schema): array<Component> $components */
     public function parameters(Closure $components): static
     {
-        return $this->schema(Schema::make()->components(function (Schema $schema) use ($components) {
+        return $this->schema(FilamentSchema::make()->components(function (FilamentSchema $schema) use ($components) {
             /** @var self $block */
             $block = $schema->getParentComponent();
             $builder = $block->getBuilder();
@@ -25,7 +25,7 @@ final class RecordTransformBlock extends Block
         }));
     }
 
-    public function getInputSchema(): JsonSchema
+    public function getInputSchema(): Schema
     {
         return $this->getBuilder()->getInputSchema();
     }

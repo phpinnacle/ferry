@@ -5,27 +5,27 @@ namespace PHPinnacle\Ferry\Forms;
 use Closure;
 use Illuminate\Translation\PotentiallyTranslatedString;
 use PHPinnacle\Common\Forms\TabbedBuilder;
-use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Contracts\Transform;
 use PHPinnacle\Ferry\Data\TransformSetting;
 use PHPinnacle\Ferry\Enums\TransformScope;
 use PHPinnacle\Ferry\Services\TransformRegistry;
+use PHPinnacle\Jason\Schema;
 
 /**
  * @phpstan-import-type TransformData from TransformSetting
  */
 class RecordTransforms extends TabbedBuilder
 {
-    protected JsonSchema $inputSchema;
+    protected Schema $inputSchema;
 
-    public function inputSchema(JsonSchema $schema): static
+    public function inputSchema(Schema $schema): static
     {
         $this->inputSchema = $schema;
 
         return $this;
     }
 
-    public function getInputSchema(?string $before = null): JsonSchema
+    public function getInputSchema(?string $before = null): Schema
     {
         $items = [];
         /** @var array<string, TransformData> $state */

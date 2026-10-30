@@ -1,12 +1,11 @@
 <?php
 
 use Filament\Forms\Components\TextInput;
-use Filament\Schemas\Schema;
+use Filament\Schemas\Schema as FilamentSchema;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Validation\ValidationException;
 use PHPinnacle\Common\Forms\TabbedBuilder;
 use PHPinnacle\Common\Forms\TabbedBuilder\Block as TabbedBlock;
-use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Data\FieldMapping;
 use PHPinnacle\Ferry\Data\TransformSetting;
 use PHPinnacle\Ferry\Enums\DestinationType;
@@ -18,6 +17,7 @@ use PHPinnacle\Ferry\Services\TransformRegistry;
 use PHPinnacle\Ferry\Tests\Fakes\Transform as FakeTransform;
 use PHPinnacle\Ferry\Tests\Fixtures\SchemaHost;
 use PHPinnacle\Ferry\Tests\TestCase;
+use PHPinnacle\Jason\Schema;
 
 require_once __DIR__ . '/../TestCase.php';
 require_once __DIR__ . '/../Fixtures/SchemaHost.php';
@@ -26,17 +26,17 @@ require_once __DIR__ . '/../Fakes/Transform.php';
 uses(TestCase::class);
 
 it('keeps input schemas and parameter state independent between record builders', function () {
-    $first = JsonSchema::fromArray([
+    $first = Schema::fromArray([
         'type' => 'object',
         'properties' => ['first_key' => ['type' => 'string']],
         'x-primary-key' => ['first_key'],
     ]);
-    $second = JsonSchema::fromArray([
+    $second = Schema::fromArray([
         'type' => 'object',
         'properties' => ['second_key' => ['type' => 'integer']],
         'x-primary-key' => ['second_key'],
     ]);
-    $form = Schema::make(SchemaHost::make())
+    $form = FilamentSchema::make(SchemaHost::make())
         ->statePath('data')
         ->components([
             RecordTransforms::make('first')->inputSchema($first),
@@ -60,7 +60,7 @@ it('keeps input schemas and parameter state independent between record builders'
 
 it('uses the current primary key after a preceding UUID transform', function () {
     app()->setLocale('ru');
-    $builder = RecordTransforms::make('transforms')->inputSchema(JsonSchema::fromArray([
+    $builder = RecordTransforms::make('transforms')->inputSchema(Schema::fromArray([
         'type' => 'object',
         'properties' => [
             'tenant_id' => ['type' => 'integer', 'title' => 'Tenant'],
@@ -72,7 +72,7 @@ it('uses the current primary key after a preceding UUID transform', function () 
         ],
         'x-primary-key' => ['tenant_id', 'row_id'],
     ]));
-    $form = Schema::make(SchemaHost::make())->statePath('data')->components([$builder]);
+    $form = FilamentSchema::make(SchemaHost::make())->statePath('data')->components([$builder]);
     $form->fill([
         'transforms' => [[
             'type' => 'insert_uuid',
@@ -103,11 +103,11 @@ it('uses the current primary key after a preceding UUID transform', function () 
 });
 
 it('omits the UUID transform when the input schema has no primary key', function () {
-    $builder = RecordTransforms::make('transforms')->inputSchema(JsonSchema::fromArray([
+    $builder = RecordTransforms::make('transforms')->inputSchema(Schema::fromArray([
         'type' => 'object',
         'properties' => ['name' => ['type' => 'string']],
     ]));
-    Schema::make(SchemaHost::make())->components([$builder])->fill();
+    FilamentSchema::make(SchemaHost::make())->components([$builder])->fill();
 
     expect(array_map(fn ($block) => $block->getName(), $builder->getBlockPickerBlocks()))
         ->not
@@ -120,10 +120,10 @@ it('offers every registered record transform as a native tab and persists custom
     $object = TestCase::makeItem($upstream, ['sources' => ['name' => ['type' => 'string']]]);
     app(TransformRegistry::class)->register(new FakeTransform(
         'custom_record',
-        output: fn (JsonSchema $schema, array $params) => (
+        output: fn (Schema $schema, array $params) => (
             blank($params['value'] ?? null)
                 ? null
-                : JsonSchema::fromArray([
+                : Schema::fromArray([
                     ...$schema->toArray(),
                     'properties' => [...$schema->toArray()['properties'], 'tag' => ['type' => 'string']],
                 ])
@@ -251,7 +251,7 @@ it('updates a dynamic table when only the record transform changes its column ty
     $object = TestCase::makeItem($upstream, ['sources' => ['name' => ['type' => 'string']]]);
     app(TransformRegistry::class)->register(new FakeTransform(
         'record_type',
-        output: fn (JsonSchema $schema, array $params) => JsonSchema::fromArray([
+        output: fn (Schema $schema, array $params) => Schema::fromArray([
             ...$schema->toArray(),
             'properties' => [...$schema->toArray()['properties'], 'name' => ['type' => $params['type']]],
         ]),

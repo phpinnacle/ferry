@@ -3,9 +3,9 @@
 namespace PHPinnacle\Ferry\Data;
 
 use JsonSerializable;
-use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Eidos\Forms\SchemaCompatibility;
 use PHPinnacle\Ferry\Enums\FieldKind;
+use PHPinnacle\Jason\Schema;
 
 /**
  * @phpstan-type MappingData array{kind: 'source', source: string, target: string|null, options?: array<string, mixed>}|array{kind: 'static', target: string|null, static: string|int|float|bool, options?: array<string, mixed>}
@@ -68,9 +68,9 @@ final readonly class FieldMapping implements JsonSerializable
         return $this->target !== null || $this->transforms() !== [];
     }
 
-    public function staticSchema(): JsonSchema
+    public function staticSchema(): Schema
     {
-        return JsonSchema::fromArray([
+        return Schema::fromArray([
             'type' => match (true) {
                 is_bool($this->static) => 'boolean',
                 is_int($this->static) => 'integer',
@@ -86,7 +86,7 @@ final readonly class FieldMapping implements JsonSerializable
         ]);
     }
 
-    public function canMapTo(JsonSchema $output, JsonSchema $target): bool
+    public function canMapTo(Schema $output, Schema $target): bool
     {
         $compatibility = SchemaCompatibility::make();
         if ($this->kind === FieldKind::Static && $this->transforms() === []) {
@@ -94,6 +94,6 @@ final readonly class FieldMapping implements JsonSerializable
             $compatibility = $compatibility->formats(false);
         }
 
-        return $output->compatible($target, $compatibility);
+        return $compatibility->accepts($output, $target);
     }
 }

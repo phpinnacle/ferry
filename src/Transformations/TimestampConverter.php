@@ -7,10 +7,11 @@ use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Support\Icons\Heroicon;
 use PHPinnacle\Common\Forms\InlineBuilder\Block as InlineBlock;
-use PHPinnacle\Eidos\Forms\JsonSchema;
+use PHPinnacle\Eidos\Forms\SchemaCompatibility;
 use PHPinnacle\Ferry\Contracts\Transform;
 use PHPinnacle\Ferry\Enums\TransformScope;
 use PHPinnacle\Ferry\Enums\TransformTarget;
+use PHPinnacle\Jason\Schema;
 
 final class TimestampConverter implements Transform
 {
@@ -39,16 +40,20 @@ final class TimestampConverter implements Transform
         return TransformTarget::Value;
     }
 
-    public function accepts(JsonSchema $input): bool
+    public function accepts(Schema $input): bool
     {
         return (
             $input->annotation('x-ferry-reference') !== true
-            && $input->compatible(JsonSchema::fromArray(['type' => ['string', 'integer', 'null']]))
+            && SchemaCompatibility::make()->accepts($input, Schema::fromArray(['type' => [
+                'string',
+                'integer',
+                'null',
+            ]]))
         );
     }
 
     /** @param array<string, string> $params */
-    public function output(JsonSchema $input, array $params): ?JsonSchema
+    public function output(Schema $input, array $params): ?Schema
     {
         if (($params['target_type'] ?? null) === null) {
             return null;
@@ -68,7 +73,7 @@ final class TimestampConverter implements Transform
             $schema['type'] = [$schema['type'], 'null'];
         }
 
-        return JsonSchema::fromArray($schema);
+        return Schema::fromArray($schema);
     }
 
     public function block(): InlineBlock
@@ -78,10 +83,10 @@ final class TimestampConverter implements Transform
             ->label(fn () => __('phpinnacle-ferry::transforms.timestamp_converter'))
             ->description(fn () => __('phpinnacle-ferry::transforms.timestamp_converter_description'))
             ->icon(Heroicon::Clock)
-            ->schema(function (?JsonSchema $input) {
+            ->schema(function (?Schema $input) {
                 $stringInput =
                     in_array('string', $input?->types() ?? [], true)
-                    && !in_array($input->format(), ['date', 'time', 'date-time'], true);
+                    && !in_array($input->effectiveFormat(), ['date', 'time', 'date-time'], true);
 
                 return [
                     Select::make('target_type')

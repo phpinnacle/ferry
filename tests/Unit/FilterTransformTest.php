@@ -1,11 +1,11 @@
 <?php
 
-use Filament\Schemas\Schema;
+use Filament\Schemas\Schema as FilamentSchema;
 use Illuminate\Support\ViewErrorBag;
 use Illuminate\Validation\ValidationException;
-use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Tests\Fixtures\SchemaHost;
 use PHPinnacle\Ferry\Transformations\Filter;
+use PHPinnacle\Jason\Schema;
 use Tests\TestCase;
 
 require_once __DIR__ . '/../Fixtures/SchemaHost.php';
@@ -81,7 +81,7 @@ it('preserves filter modes, explicit missing behavior and tombstones', function 
 })->with(['include', 'exclude'])->with(['include', 'exclude', 'fail']);
 
 it('preserves a complete input schema including nested constraints and nullability', function () {
-    $input = JsonSchema::fromArray([
+    $input = Schema::fromArray([
         'type' => ['object', 'null'],
         'required' => ['code'],
         'additionalProperties' => false,
@@ -96,7 +96,7 @@ it('preserves a complete input schema including nested constraints and nullabili
 });
 
 it('uses a JSONPath predicate editor and defaults the mode and missing behavior', function () {
-    $schema = Schema::make(SchemaHost::make())
+    $schema = FilamentSchema::make(SchemaHost::make())
         ->statePath('data')
         ->components(SchemaHost::transformSchema(Filter::make()));
     $schema->fill();
@@ -114,10 +114,10 @@ it('shows a predicate example for the input type in both the hint and placeholde
     array $definition,
     string $example,
 ) {
-    $schema = Schema::make(SchemaHost::make())
+    $schema = FilamentSchema::make(SchemaHost::make())
         ->statePath('data')
         ->components(
-            SchemaHost::transformSchema(Filter::make(), JsonSchema::fromArray($definition)),
+            SchemaHost::transformSchema(Filter::make(), Schema::fromArray($definition)),
         );
     $field = $schema->getComponent('condition');
     $schema->fill();
@@ -139,7 +139,7 @@ it('shows a predicate example for the input type in both the hint and placeholde
 ]);
 
 it('validates user filter settings through the native form', function (array $params) {
-    $schema = Schema::make(SchemaHost::make())
+    $schema = FilamentSchema::make(SchemaHost::make())
         ->statePath('data')
         ->components(SchemaHost::transformSchema(Filter::make()));
     $schema->fill($params);

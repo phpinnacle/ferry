@@ -6,11 +6,11 @@ use Closure;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Translation\PotentiallyTranslatedString;
 use Illuminate\Validation\ValidationException;
-use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Data\FieldMapping;
 use PHPinnacle\Ferry\Destinations\StaticDestination;
 use PHPinnacle\Ferry\Services\ReplicaTableManager;
 use PHPinnacle\Ferry\Services\TransformRegistry;
+use PHPinnacle\Jason\Schema;
 
 readonly class ReplicaSchema
 {
@@ -87,7 +87,7 @@ readonly class ReplicaSchema
         array $mappings,
         ?StaticDestination $destination,
         array $sourcePrimaryKey,
-        ?JsonSchema $sourceSchema,
+        ?Schema $sourceSchema,
     ): void {
         if ($sourceSchema === null) {
             throw ValidationException::withMessages([
@@ -109,8 +109,8 @@ readonly class ReplicaSchema
                 $fail,
             ),
         ]]);
-        $destinationSchema = JsonSchema::fromArray($destination?->getSchema()->keywords() ?? []);
-        $fields = $destinationSchema->properties();
+        $destinationSchema = $destination?->getSchema() ?? Schema::fromArray([]);
+        $fields = $destinationSchema->resolveReferences()->effectiveProperties();
         foreach ($mappings as $mapping) {
             $sourceIsKey = in_array($mapping->source, $sourcePrimaryKey, true);
             if ($mapping->target === null) {
@@ -150,12 +150,12 @@ readonly class ReplicaSchema
         }
     }
 
-    /** @param array<string, JsonSchema> $fields */
+    /** @param array<string, Schema> $fields */
     private static function assertCompatibleWithDestination(
         array $fields,
         string $column,
         FieldMapping $mapping,
-        JsonSchema $output,
+        Schema $output,
     ): void {
         $field = $fields[$column] ?? null;
 
@@ -177,12 +177,12 @@ readonly class ReplicaSchema
     }
 
     /** @param list<FieldMapping> $mappings */
-    private static function assertRequiredFieldsMapped(JsonSchema $schema, array $mappings): void
+    private static function assertRequiredFieldsMapped(Schema $schema, array $mappings): void
     {
         $mapped = array_map(static fn (FieldMapping $mapping) => $mapping->target, $mappings);
-        $fields = $schema->properties();
+        $fields = $schema->resolveReferences()->effectiveProperties();
 
-        foreach ($schema->required() as $column) {
+        foreach ($schema->effectiveRequired() as $column) {
             if (!in_array($column, $mapped, true)) {
                 throw ValidationException::withMessages([
                     'data.mapping' => __(

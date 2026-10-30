@@ -6,7 +6,6 @@ use Filament\Forms\Components\TextInput;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use InvalidArgumentException;
-use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Eidos\Forms\JsonSchemaPicker;
 use PHPinnacle\Ferry\Contracts\Transform;
 use PHPinnacle\Ferry\Enums\TransformScope;
@@ -37,7 +36,7 @@ final class Slug implements Transform
         return TransformTarget::Value;
     }
 
-    public function accepts(JsonSchema $input): bool
+    public function accepts(Schema $input): bool
     {
         return $input->singleType() === 'object';
     }
@@ -52,7 +51,7 @@ final class Slug implements Transform
     }
 
     /** @param array{input?: string|null, output?: string|null, separators?: string|null} $params */
-    public function output(JsonSchema $input, array $params): ?JsonSchema
+    public function output(Schema $input, array $params): ?Schema
     {
         if (blank($params['input'] ?? null) || blank($params['output'] ?? null)) {
             return null;
@@ -68,13 +67,13 @@ final class Slug implements Transform
             return null;
         }
 
-        $source = $input->properties()[$segments[0]] ?? null;
+        $source = $input->resolveReferences()->effectiveProperties()[$segments[0]] ?? null;
         if ($source?->singleType() !== 'string' || $source->annotation('x-ferry-target') === 'key') {
             return null;
         }
 
         /** @var array{properties: array<string, array<string, mixed>>, ...} $schema */
-        $schema = $input->toArray();
+        $schema = $input->keywords();
         $properties = $schema['properties'];
         $sourceOffset = array_search($segments[0], array_keys($properties), strict: true) + 1;
         $schema['properties'] =
@@ -86,11 +85,11 @@ final class Slug implements Transform
                 ],
             ]
             + array_slice($properties, $sourceOffset, preserve_keys: true);
-        if (in_array($segments[0], $input->required(), true)) {
-            $schema['required'] = [...$input->required(), $params['output']];
+        if (in_array($segments[0], $input->effectiveRequired(), true)) {
+            $schema['required'] = [...$input->effectiveRequired(), $params['output']];
         }
 
-        return JsonSchema::fromArray($schema);
+        return Schema::fromArray($schema);
     }
 
     public function block(): RecordTransformBlock
@@ -99,15 +98,15 @@ final class Slug implements Transform
             ->label(fn (?array $state) => filled($state['output'] ?? null)
                 ? $state['output']
                 : __('phpinnacle-ferry::transforms.slug'))
-            ->parameters(function (JsonSchema $input) {
+            ->parameters(function (Schema $input) {
                 $properties = [];
-                foreach ($input->properties() as $name => $property) {
+                foreach ($input->resolveReferences()->effectiveProperties() as $name => $property) {
                     if ($property->singleType() === 'string' && $property->annotation('x-ferry-target') !== 'key') {
                         /** @var string|null $translation */
                         $translation = $property->annotation('x-ferry-trans');
                         /** @var string $label */
                         $label = $translation !== null ? __($translation) : $property->annotation('title') ?? $name;
-                        $properties[$name] = Schema::fromArray([...$property->toArray(), 'title' => $label]);
+                        $properties[$name] = Schema::fromArray([...$property->keywords(), 'title' => $label]);
                     }
                 }
 
@@ -123,7 +122,7 @@ final class Slug implements Transform
                         ->required()
                         ->maxLength(255)
                         ->regex('/^[a-z][a-z0-9_]*$/')
-                        ->rules(['string', Rule::notIn(array_keys($input->properties()))])
+                        ->rules(['string', Rule::notIn(array_keys($input->resolveReferences()->effectiveProperties()))])
                         ->validationMessages(['not_in' => __('phpinnacle-ferry::validation.uuid_field_exists')])
                         ->lazy(),
                     TextInput::make('separators')

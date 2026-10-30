@@ -1,13 +1,14 @@
 <?php
 
 use Illuminate\Validation\ValidationException;
-use PHPinnacle\Eidos\Forms\JsonSchema;
+use PHPinnacle\Eidos\Forms\SchemaCompatibility;
 use PHPinnacle\Ferry\Data\FieldMapping;
 use PHPinnacle\Ferry\Data\TransformSetting;
 use PHPinnacle\Ferry\Enums\FieldKind;
 use PHPinnacle\Ferry\Rules\ReplicaSchema;
 use PHPinnacle\Ferry\Services\TransformRegistry;
 use PHPinnacle\Ferry\Tests\Fakes\Transform as FakeTransform;
+use PHPinnacle\Jason\Schema;
 use Tests\TestCase;
 
 require_once __DIR__ . '/../Fakes/Transform.php';
@@ -19,19 +20,19 @@ it('calculates a composed output schema from input schema and mapping options', 
     $registry->register(
         new FakeTransform(
             'pack',
-            accepts: fn (JsonSchema $input) => $input->singleType() === 'string',
-            output: fn () => JsonSchema::fromArray(['type' => 'array', 'items' => ['type' => 'string']]),
+            accepts: fn (Schema $input) => $input->singleType() === 'string',
+            output: fn () => Schema::fromArray(['type' => 'array', 'items' => ['type' => 'string']]),
         ),
         new FakeTransform(
             'join',
-            accepts: fn (JsonSchema $input) => $input->compatible(JsonSchema::fromArray([
+            accepts: fn (Schema $input) => SchemaCompatibility::make()->accepts($input, Schema::fromArray([
                 'type' => 'array',
                 'items' => ['type' => 'string'],
             ])),
-            output: fn () => JsonSchema::fromArray(['type' => ['string', 'null'], 'maxLength' => 100]),
+            output: fn () => Schema::fromArray(['type' => ['string', 'null'], 'maxLength' => 100]),
         ),
     );
-    $schema = JsonSchema::fromArray([
+    $schema = Schema::fromArray([
         'properties' => [
             '_code' => ['type' => 'string', 'maxLength' => 11],
             'id' => ['type' => 'integer'],

@@ -2,12 +2,12 @@
 
 namespace PHPinnacle\Ferry\Services;
 
-use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Data\FieldMapping;
 use PHPinnacle\Ferry\Data\TransformSetting;
 use PHPinnacle\Ferry\Enums\TransformScope;
 use PHPinnacle\Ferry\Models\Replica;
 use PHPinnacle\Ferry\Models\StructureItem;
+use PHPinnacle\Jason\Schema;
 
 class ReplicaSchemaResolver
 {
@@ -15,7 +15,7 @@ class ReplicaSchemaResolver
         private readonly TransformRegistry $transforms,
     ) {}
 
-    public function transformedSchema(Replica $replica): ?JsonSchema
+    public function transformedSchema(Replica $replica): ?Schema
     {
         return $this->transforms->resultSchema(
             $replica->schema,
@@ -25,9 +25,9 @@ class ReplicaSchemaResolver
         );
     }
 
-    public function originalSchema(Replica $replica): ?JsonSchema
+    public function originalSchema(Replica $replica): ?Schema
     {
-        /** @var JsonSchema $schema */
+        /** @var Schema $schema */
         $schema = $replica->getOriginal('schema');
         /** @var list<TransformSetting> $transforms */
         $transforms = $replica->getOriginal('transforms');
@@ -35,7 +35,7 @@ class ReplicaSchemaResolver
         return $this->transforms->resultSchema($schema, $transforms, null, TransformScope::Record);
     }
 
-    public function outputSchema(Replica $replica, FieldMapping $mapping, ?JsonSchema $schema = null): ?JsonSchema
+    public function outputSchema(Replica $replica, FieldMapping $mapping, ?Schema $schema = null): ?Schema
     {
         $schema ??= $this->transformedSchema($replica);
 

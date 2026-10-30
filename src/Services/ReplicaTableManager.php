@@ -5,11 +5,11 @@ namespace PHPinnacle\Ferry\Services;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Database\Schema\ColumnDefinition;
 use LogicException;
-use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Data\FieldMapping;
 use PHPinnacle\Ferry\Enums\DestinationType;
 use PHPinnacle\Ferry\Enums\FieldKind;
 use PHPinnacle\Ferry\Models\Replica;
+use PHPinnacle\Jason\Schema;
 
 class ReplicaTableManager
 {
@@ -155,7 +155,7 @@ class ReplicaTableManager
                 $existing !== null
                 && $previousType === 'string'
                 && $nextType === 'string'
-                && $previousOutput?->maxLength() !== $nextOutput?->maxLength()
+                && $previousOutput?->effectiveMaxLength() !== $nextOutput?->effectiveMaxLength()
             ) {
                 $changes['alter'][] = $mapping;
             }
@@ -165,7 +165,7 @@ class ReplicaTableManager
     }
 
     /** @return 'boolean'|'bigInteger'|'decimal'|'text'|'date'|'time'|'dateTime'|'string'|null */
-    public static function columnType(?JsonSchema $schema): ?string
+    public static function columnType(?Schema $schema): ?string
     {
         return match ($schema?->singleType()) {
             'boolean' => 'boolean',
@@ -173,16 +173,16 @@ class ReplicaTableManager
             'number' => 'decimal',
             'string' => match (true) {
                 $schema->annotation('x-ferry-reference') === true => 'text',
-                $schema->format() === 'date' => 'date',
-                $schema->format() === 'time' => 'time',
-                $schema->format() === 'date-time' => 'dateTime',
+                $schema->effectiveFormat() === 'date' => 'date',
+                $schema->effectiveFormat() === 'time' => 'time',
+                $schema->effectiveFormat() === 'date-time' => 'dateTime',
                 default => 'string',
             },
             default => null,
         };
     }
 
-    private function column(Blueprint $table, FieldMapping $mapping, ?JsonSchema $field): ColumnDefinition
+    private function column(Blueprint $table, FieldMapping $mapping, ?Schema $field): ColumnDefinition
     {
         /** @var string $target */
         $target = $mapping->target;
@@ -198,7 +198,10 @@ class ReplicaTableManager
         $precision = $field?->annotation('x-ferry-precision') ?? 15;
         /** @var int $scale */
         $scale = $field?->annotation('x-ferry-scale') ?? 2;
-        $length = $mapping->kind === FieldKind::Static && $mapping->transforms() === [] ? null : $field?->maxLength();
+        $length =
+            $mapping->kind === FieldKind::Static && $mapping->transforms() === []
+                ? null
+                : $field?->effectiveMaxLength();
 
         return match ($type) {
             'boolean' => $table->boolean($target),

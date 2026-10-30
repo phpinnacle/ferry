@@ -3,7 +3,6 @@
 use Illuminate\Database\SQLiteConnection;
 use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Queue;
-use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Contracts\Adapter;
 use PHPinnacle\Ferry\Data\StructurePlan;
 use PHPinnacle\Ferry\Enums\StructureStatus;
@@ -17,6 +16,7 @@ use PHPinnacle\Ferry\Services\RosettaAdapter;
 use PHPinnacle\Ferry\Services\StructureAdapterRegistry;
 use PHPinnacle\Ferry\Services\UpstreamFactory;
 use PHPinnacle\Ferry\Tests\TestCase;
+use PHPinnacle\Jason\Schema;
 use PHPinnacle\Rosetta\MetadataLoader;
 
 require_once __DIR__ . '/../TestCase.php';
@@ -66,7 +66,7 @@ $makeAdapter = function (int $estimated, string $key = 'rosetta') {
                     'name' => sprintf('table%d', $position),
                     'title' => sprintf('Object %d', $position),
                     'primary_key' => ['record_id'],
-                    'schema' => JsonSchema::fromArray([
+                    'schema' => Schema::fromArray([
                         'type' => 'object',
                         'properties' => [
                             'record_id' => ['type' => 'integer'],

@@ -1,7 +1,6 @@
 <?php
 
-use Filament\Schemas\Schema;
-use PHPinnacle\Eidos\Forms\JsonSchema;
+use Filament\Schemas\Schema as FilamentSchema;
 use PHPinnacle\Ferry\Data\FieldMapping;
 use PHPinnacle\Ferry\Data\TransformSetting;
 use PHPinnacle\Ferry\Enums\FieldKind;
@@ -15,6 +14,7 @@ use PHPinnacle\Ferry\Tests\Fixtures\SchemaHost;
 use PHPinnacle\Ferry\Tests\Fixtures\StructureItems;
 use PHPinnacle\Ferry\Transformations\Slug;
 use PHPinnacle\Ferry\Transformations\Trim;
+use PHPinnacle\Jason\Schema;
 use Tests\TestCase;
 
 require_once __DIR__ . '/../Fixtures/StructureItems.php';
@@ -66,14 +66,14 @@ it('runs record transforms before field chains and renames regardless of mapping
 
 it('keeps record transforms out of field editors and field transforms out of record chains', function () {
     $registry = app(TransformRegistry::class);
-    $field = FieldTransforms::make('transforms')->inputSchema(JsonSchema::fromArray([
+    $field = FieldTransforms::make('transforms')->inputSchema(Schema::fromArray([
         'type' => 'object',
         'properties' => [],
     ]));
-    Schema::make(SchemaHost::make())->components([$field])->fill();
+    FilamentSchema::make(SchemaHost::make())->components([$field])->fill();
     expect($field->getAvailableBlocks())->not->toHaveKeys(['insert_uuid', 'slug']);
     expect($registry->resultSchema(
-        JsonSchema::fromArray(['type' => 'object']),
+        Schema::fromArray(['type' => 'object']),
         [new TransformSetting('filter')],
         null,
         TransformScope::Record,
@@ -81,7 +81,7 @@ it('keeps record transforms out of field editors and field transforms out of rec
 });
 
 it('derives nullable slug schemas without carrying source length or format constraints', function () {
-    $input = JsonSchema::fromArray([
+    $input = Schema::fromArray([
         'type' => 'object',
         'properties' => [
             'name' => ['type' => ['string', 'null'], 'format' => 'email', 'maxLength' => 20],
@@ -97,7 +97,7 @@ it('derives nullable slug schemas without carrying source length or format const
 });
 
 it('keeps internal constants separate from physical fields and preserves fixed value precedence', function () {
-    $schema = JsonSchema::fromArray([
+    $schema = Schema::fromArray([
         'type' => 'object',
         'properties' => [
             '__ferry_static_1' => ['type' => 'string'],
@@ -128,7 +128,7 @@ it('keeps internal constants separate from physical fields and preserves fixed v
 });
 
 it('rejects a key-only UUID as input to a value slug transform', function () {
-    $schema = JsonSchema::fromArray(['type' => 'object', 'properties' => ['id' => ['type' => 'string']]]);
+    $schema = Schema::fromArray(['type' => 'object', 'properties' => ['id' => ['type' => 'string']]]);
     $settings = [
         new TransformSetting('insert_uuid', ['fields' => ["$['id']"], 'output' => 'uuid']),
         new TransformSetting('slug', ['input' => "$['uuid']", 'output' => 'slug']),
@@ -138,7 +138,7 @@ it('rejects a key-only UUID as input to a value slug transform', function () {
 });
 
 it('previews only the valid prefix of an incomplete record chain', function () {
-    $schema = JsonSchema::fromArray([
+    $schema = Schema::fromArray([
         'type' => 'object',
         'properties' => ['name' => ['type' => 'string']],
     ]);

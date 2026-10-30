@@ -1,7 +1,6 @@
 <?php
 
 use Illuminate\Support\Facades\Queue;
-use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Data\FieldMapping;
 use PHPinnacle\Ferry\Data\TransformSetting;
 use PHPinnacle\Ferry\Destinations\StaticDestination;
@@ -328,7 +327,7 @@ it('selects and renames only source key fields mapped to the static primary key'
     $object = TestCase::makeItem($upstream, [
         'primary_key' => $sourceKey,
         'fields' => [
-            '_owner' => JsonSchema::fromArray([
+            '_owner' => Schema::fromArray([
                 'type' => 'string',
                 'format' => 'uuid',
                 'x-ferry-reference' => true,

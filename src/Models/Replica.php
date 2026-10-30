@@ -8,7 +8,6 @@ use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Facades\Config;
-use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Casts\JsonSchemaCast;
 use PHPinnacle\Ferry\Casts\MappingCast;
 use PHPinnacle\Ferry\Casts\TransformsCast;
@@ -19,6 +18,7 @@ use PHPinnacle\Ferry\Enums\DestinationType;
 use PHPinnacle\Ferry\Enums\ReplicaStatus;
 use PHPinnacle\Ferry\Models\Concerns\HasConnector;
 use PHPinnacle\Ferry\Observers\ReplicaObserver;
+use PHPinnacle\Jason\Schema;
 
 /**
  * @property string $id
@@ -30,7 +30,7 @@ use PHPinnacle\Ferry\Observers\ReplicaObserver;
  * @property DestinationType $type
  * @property string $source
  * @property string $destination
- * @property JsonSchema $schema
+ * @property Schema $schema
  * @property list<FieldMapping> $mapping
  * @property list<TransformSetting> $transforms
  * @property CarbonImmutable $created_at

@@ -5,11 +5,12 @@ namespace PHPinnacle\Ferry\Transformations;
 use Filament\Forms\Components\Select;
 use Filament\Support\Icons\Heroicon;
 use PHPinnacle\Common\Forms\InlineBuilder\Block as InlineBlock;
-use PHPinnacle\Eidos\Forms\JsonSchema;
+use PHPinnacle\Eidos\Forms\SchemaCompatibility;
 use PHPinnacle\Ferry\Contracts\Transform;
 use PHPinnacle\Ferry\Enums\KafkaType;
 use PHPinnacle\Ferry\Enums\TransformScope;
 use PHPinnacle\Ferry\Enums\TransformTarget;
+use PHPinnacle\Jason\Schema;
 
 final class Cast implements Transform
 {
@@ -38,9 +39,9 @@ final class Cast implements Transform
         return TransformTarget::Value;
     }
 
-    public function accepts(JsonSchema $input): bool
+    public function accepts(Schema $input): bool
     {
-        return $input->compatible(JsonSchema::fromArray(['type' => [
+        return SchemaCompatibility::make()->accepts($input, Schema::fromArray(['type' => [
             'string',
             'integer',
             'number',
@@ -50,7 +51,7 @@ final class Cast implements Transform
     }
 
     /** @param array<string, string> $params */
-    public function output(JsonSchema $input, array $params): ?JsonSchema
+    public function output(Schema $input, array $params): ?Schema
     {
         if (($params['type'] ?? null) === null) {
             return null;
@@ -62,7 +63,7 @@ final class Cast implements Transform
             $schema['type'] = [$schema['type'], 'null'];
         }
 
-        return JsonSchema::fromArray($schema);
+        return Schema::fromArray($schema);
     }
 
     public function block(): InlineBlock
@@ -71,7 +72,7 @@ final class Cast implements Transform
             ->label(fn () => __('phpinnacle-ferry::transforms.cast'))
             ->description(fn () => __('phpinnacle-ferry::transforms.cast_description'))
             ->icon(Heroicon::ArrowPath)
-            ->schema(fn (?JsonSchema $input) => [
+            ->schema(fn (?Schema $input) => [
                 Select::make('type')
                     ->label(__('phpinnacle-ferry::resources.replica.fields.constant_type'))
                     ->options(KafkaType::class)
@@ -80,7 +81,7 @@ final class Cast implements Transform
                     ->disableOptionWhen(
                         fn (string $value) => (
                             $input?->singleType() === $value
-                            && $input->format() === null
+                            && $input->effectiveFormat() === null
                             && $input->annotation('x-ferry-reference') !== true
                         ),
                     )

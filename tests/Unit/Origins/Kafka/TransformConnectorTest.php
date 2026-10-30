@@ -1,7 +1,6 @@
 <?php
 
 use Illuminate\Support\Facades\Queue;
-use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Data\FieldMapping;
 use PHPinnacle\Ferry\Data\TransformSetting;
 use PHPinnacle\Ferry\Enums\FieldKind;
@@ -17,6 +16,7 @@ use PHPinnacle\Ferry\Tests\TestCase;
 use PHPinnacle\Ferry\Transformations\MaskField;
 use PHPinnacle\Ferry\Transformations\Substring;
 use PHPinnacle\Ferry\Transformations\Trim;
+use PHPinnacle\Jason\Schema;
 
 require_once __DIR__ . '/../../../Fakes/Transform.php';
 
@@ -36,7 +36,7 @@ it('orders field transforms and static values before the renames of a sink', fun
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
     $object = TestCase::makeItem($upstream, [
         'fields' => [
-            '_folder' => JsonSchema::fromArray(['type' => 'boolean']),
+            '_folder' => Schema::fromArray(['type' => 'boolean']),
         ],
         'sources' => [
             '_fld1' => [
@@ -84,8 +84,8 @@ it('captures an unbound field filter without writing it or capturing unused fiel
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
     $object = TestCase::makeItem($upstream, [
         'fields' => [
-            '_marked' => JsonSchema::fromArray(['type' => 'boolean']),
-            '_unused' => JsonSchema::fromArray(['type' => 'string', 'maxLength' => 10]),
+            '_marked' => Schema::fromArray(['type' => 'boolean']),
+            '_unused' => Schema::fromArray(['type' => 'string', 'maxLength' => 10]),
         ],
     ]);
     $replica = TestCase::makeReplica([
@@ -165,7 +165,7 @@ it('builds installed string transforms before renames and guards masking against
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
     $object = TestCase::makeItem($upstream, [
         'fields' => [
-            '_description' => JsonSchema::fromArray(['type' => 'string', 'maxLength' => 100]),
+            '_description' => Schema::fromArray(['type' => 'string', 'maxLength' => 100]),
         ],
     ]);
     $replica = TestCase::makeReplica([

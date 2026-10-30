@@ -4,9 +4,9 @@ namespace PHPinnacle\Ferry\Contracts;
 
 use PHPinnacle\Common\Forms\InlineBuilder\Block as InlineBlock;
 use PHPinnacle\Common\Forms\TabbedBuilder\Block as TabbedBlock;
-use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Enums\TransformScope;
 use PHPinnacle\Ferry\Enums\TransformTarget;
+use PHPinnacle\Jason\Schema;
 
 interface Transform
 {
@@ -22,10 +22,10 @@ interface Transform
 
     public function getTarget(): TransformTarget;
 
-    public function accepts(JsonSchema $input): bool;
+    public function accepts(Schema $input): bool;
 
     /** @param array<string, mixed> $params */
-    public function output(JsonSchema $input, array $params): ?JsonSchema;
+    public function output(Schema $input, array $params): ?Schema;
 
     public function block(): InlineBlock|TabbedBlock;
 

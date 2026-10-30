@@ -4,13 +4,13 @@ namespace PHPinnacle\Ferry\Services;
 
 use Illuminate\Container\Attributes\Singleton;
 use LogicException;
-use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Contracts\Transform;
 use PHPinnacle\Ferry\Data\FieldMapping;
 use PHPinnacle\Ferry\Data\TransformSetting;
 use PHPinnacle\Ferry\Enums\FieldKind;
 use PHPinnacle\Ferry\Enums\TransformScope;
 use PHPinnacle\Ferry\Enums\TransformTarget;
+use PHPinnacle\Jason\Schema;
 
 #[Singleton]
 class TransformRegistry
@@ -42,11 +42,11 @@ class TransformRegistry
 
     /** @param list<TransformSetting> $settings */
     public function resultSchema(
-        JsonSchema $input,
+        Schema $input,
         array $settings,
         ?TransformTarget $target = TransformTarget::Value,
         TransformScope $scope = TransformScope::Field,
-    ): ?JsonSchema {
+    ): ?Schema {
         foreach ($settings as $setting) {
             $transform = $this->getOrFail($setting->type);
             if (
@@ -68,7 +68,7 @@ class TransformRegistry
     }
 
     /** @param list<TransformSetting> $settings */
-    public function previewRecordSchema(JsonSchema $schema, array $settings): JsonSchema
+    public function previewRecordSchema(Schema $schema, array $settings): Schema
     {
         foreach ($settings as $setting) {
             $next = $this->resultSchema($schema, [$setting], null, TransformScope::Record);
@@ -82,13 +82,13 @@ class TransformRegistry
         return $schema;
     }
 
-    public function mappingSchema(FieldMapping $mapping, JsonSchema $schema): ?JsonSchema
+    public function mappingSchema(FieldMapping $mapping, Schema $schema): ?Schema
     {
         /** @var string $source */
         $source = $mapping->source;
         $input = $mapping->kind === FieldKind::Static
             ? $mapping->staticSchema()
-            : $schema->properties()[$source];
+            : $schema->resolveReferences()->effectiveProperties()[$source];
         /** @var list<string> $primaryKey */
         $primaryKey = $schema->annotation('x-primary-key') ?? [];
 

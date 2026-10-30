@@ -3,7 +3,6 @@
 use GuzzleHttp\Psr7\HttpFactory;
 use GuzzleHttp\Psr7\Response;
 use Illuminate\Support\Facades\Queue;
-use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Data\FieldMapping;
 use PHPinnacle\Ferry\Enums\ConnectorStatus;
 use PHPinnacle\Ferry\Enums\DestinationType;
@@ -23,6 +22,7 @@ use PHPinnacle\Ferry\Services\ReplicaSchemaResolver;
 use PHPinnacle\Ferry\Tests\TestCase;
 use PHPinnacle\Franz\Client;
 use PHPinnacle\Franz\Exception\ApiException;
+use PHPinnacle\Jason\Schema;
 use Psr\Http\Client\ClientInterface;
 use Psr\Http\Message\RequestFactoryInterface;
 use Psr\Http\Message\RequestInterface;
@@ -356,7 +356,7 @@ it('creates connectors with an idempotent configuration PUT and does not persist
 it('sends generated source converters to Kafka Connect without adding them to the sink', function () {
     $replica = ferry_replica();
     $object = $replica->sourceObject();
-    $object->update(['schema' => JsonSchema::fromArray([
+    $object->update(['schema' => Schema::fromArray([
         'type' => 'object',
         'properties' => ['_idrref' => [...$object->field('_idrref')->toArray(), 'x-ferry-converter' => 'uuid']],
     ])]);

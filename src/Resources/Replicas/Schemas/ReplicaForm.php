@@ -10,13 +10,12 @@ use Filament\Schemas\Components\Group;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
-use Filament\Schemas\Schema;
+use Filament\Schemas\Schema as FilamentSchema;
 use Illuminate\Translation\PotentiallyTranslatedString;
 use PHPinnacle\Common\Concerns\FormSlug;
 use PHPinnacle\Eidos\Forms\BuiltinStaticForms;
 use PHPinnacle\Eidos\Forms\FieldBinding;
 use PHPinnacle\Eidos\Forms\FieldMapping;
-use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Data\FieldMapping as SchemaMapping;
 use PHPinnacle\Ferry\Data\TransformSetting;
 use PHPinnacle\Ferry\Destinations\StaticDestination;
@@ -31,6 +30,7 @@ use PHPinnacle\Ferry\Models\Upstream;
 use PHPinnacle\Ferry\Rules\ReplicaSchema;
 use PHPinnacle\Ferry\Services\DestinationFactory;
 use PHPinnacle\Ferry\Services\TransformRegistry;
+use PHPinnacle\Jason\Schema;
 
 /**
  * @phpstan-import-type TransformData from TransformSetting
@@ -42,12 +42,12 @@ use PHPinnacle\Ferry\Services\TransformRegistry;
  */
 class ReplicaForm
 {
-    public static function creation(Schema $schema): Schema
+    public static function creation(FilamentSchema $schema): FilamentSchema
     {
         return $schema->columns(1)->components([self::creationSection()]);
     }
 
-    public static function configure(Schema $schema): Schema
+    public static function configure(FilamentSchema $schema): FilamentSchema
     {
         return $schema
             ->columns(1)
@@ -211,16 +211,16 @@ class ReplicaForm
     private static function mappingSection(Replica $record, DestinationFactory $destinations): Group
     {
         $object = $record->sourceObject();
-        $inputSchema = $record->schema->toArray();
+        $inputSchema = $record->schema->keywords();
         $inputSchema['required'] = array_values(array_unique([
-            ...$record->schema->required(),
+            ...$record->schema->effectiveRequired(),
             ...$object->primary_key,
         ]));
         $transforms = RecordTransforms::make('transforms')
             ->label(__('phpinnacle-ferry::resources.replica.fields.record_transforms'))
-            ->inputSchema(JsonSchema::fromArray($inputSchema))
+            ->inputSchema(Schema::fromArray($inputSchema))
             ->afterStateUpdated(self::syncMapping(...));
-        /** @var array{state: mixed, locale: string, schema: JsonSchema}|null $preview */
+        /** @var array{state: mixed, locale: string, schema: Schema}|null $preview */
         $preview = null;
         $sourceSchema = function () use ($transforms, $object, &$preview) {
             $state = $transforms->getRawState();
@@ -230,22 +230,22 @@ class ReplicaForm
             }
 
             $input = $transforms->getInputSchema();
-            $sourceSchema = $input->toArray();
-            foreach ($input->properties() as $name => $property) {
+            $sourceSchema = $input->keywords();
+            foreach ($input->resolveReferences()->effectiveProperties() as $name => $property) {
                 /** @var string|null $translation */
                 $translation = $property->annotation('x-ferry-trans');
                 if ($translation !== null) {
-                    $sourceSchema['properties'][$name]['title'] = __($translation);
+                    $sourceSchema['properties'][$name] = [...$property->keywords(), 'title' => __($translation)];
                 }
             }
 
             /** @var list<string> $primaryKey */
             $primaryKey = $input->annotation('x-primary-key') ?? $object->primary_key;
             $sourceSchema['required'] = array_values(array_unique([
-                ...$input->required(),
+                ...$input->effectiveRequired(),
                 ...$primaryKey,
             ]));
-            $preview = ['state' => $state, 'locale' => $locale, 'schema' => JsonSchema::fromArray($sourceSchema)];
+            $preview = ['state' => $state, 'locale' => $locale, 'schema' => Schema::fromArray($sourceSchema)];
 
             return $preview['schema'];
         };
@@ -269,11 +269,13 @@ class ReplicaForm
                 $primaryKey = $sourceSchema->annotation('x-primary-key') ?? [];
                 $sourceIsKey =
                     !$static && (in_array($source, $primaryKey, true) || in_array($source, $object->primary_key, true));
-                $inputSchema ??= fn () => $sourceSchema->properties()[$source];
+                $inputSchema ??= fn () => $sourceSchema->resolveReferences()->effectiveProperties()[$source];
                 /** @var string $label */
-                $label = ($sourceSchema->properties()[$source] ?? null)?->annotation('title') ?? $source;
+                $label =
+                    ($sourceSchema->resolveReferences()->effectiveProperties()[$source] ?? null)?->annotation('title')
+                    ?? $source;
 
-                /** @var Closure(): JsonSchema $inputSchema */
+                /** @var Closure(): Schema $inputSchema */
 
                 return [
                     FieldTransforms::make('transforms')
@@ -309,7 +311,7 @@ class ReplicaForm
         /** @var FieldMapping|FieldBinding $mapping */
         $mapping = $component->getContainer()->getComponentByStatePath('mapping');
         $sourceSchema = $mapping->getSourceSchema();
-        $properties = $sourceSchema->properties();
+        $properties = $sourceSchema->resolveReferences()->effectiveProperties();
         /** @var FormState $rows */
         $rows = $mapping->getRawState() ?? [];
         $rows = array_values(array_filter(
@@ -321,7 +323,7 @@ class ReplicaForm
         $mapping->hydrateState($defaultState);
     }
 
-    /** @param Closure(): JsonSchema $sourceSchema */
+    /** @param Closure(): Schema $sourceSchema */
     private static function fieldBinding(Closure $sourceSchema): FieldBinding
     {
         return FieldBinding::make('mapping')
@@ -366,7 +368,7 @@ class ReplicaForm
             ->columnSpanFull();
     }
 
-    /** @param Closure(): JsonSchema $sourceSchema */
+    /** @param Closure(): Schema $sourceSchema */
     private static function fieldMapping(
         Closure $sourceSchema,
         ?StaticDestination $destination,
@@ -377,7 +379,7 @@ class ReplicaForm
         return $mapping
             ->dense()
             ->compact()
-            ->staticForms(fn (FieldMapping $component, string $target, JsonSchema $property) => in_array(
+            ->staticForms(fn (FieldMapping $component, string $target, Schema $property) => in_array(
                 $target,
                 $destination?->getPrimaryKey() ?? [],
                 true,
@@ -390,12 +392,12 @@ class ReplicaForm
             ->jsonSchema(
                 source: $sourceSchema,
                 target: $destination !== null
-                    ? JsonSchema::fromArray($destination->getSchema()->keywords())
-                    : JsonSchema::fromArray([]),
+                    ? $destination->getSchema()
+                    : Schema::fromArray([]),
             )
             ->canConnectUsing(function (
-                JsonSchema $source,
-                JsonSchema $target,
+                Schema $source,
+                Schema $target,
                 string $sourceName,
                 string $targetName,
             ) use ($mapping, $destination) {
@@ -427,7 +429,7 @@ class ReplicaForm
                 /** @var list<string> $primaryKey */
                 $primaryKey = $schema->annotation('x-primary-key') ?? [];
                 $properties = [];
-                foreach ($schema->properties() as $source => $property) {
+                foreach ($schema->resolveReferences()->effectiveProperties() as $source => $property) {
                     $properties[$source] = $registry
                         ->resultSchema(
                             $property,
@@ -436,10 +438,10 @@ class ReplicaForm
                                 ? TransformTarget::Key
                                 : TransformTarget::Value,
                         )
-                        ?->toArray() ?? [];
+                        ?->keywords() ?? [];
                 }
 
-                return JsonSchema::fromArray([...$schema->toArray(), 'properties' => $properties]);
+                return Schema::fromArray([...$schema->keywords(), 'properties' => $properties]);
             })
             ->labels(
                 source: __('phpinnacle-ferry::resources.replica.fields.source_title'),

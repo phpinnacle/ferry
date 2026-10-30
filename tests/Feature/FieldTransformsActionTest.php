@@ -4,11 +4,11 @@ use Filament\Actions\Action;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Components\Utilities\Get;
-use Filament\Schemas\Schema;
+use Filament\Schemas\Schema as FilamentSchema;
 use Illuminate\Validation\ValidationException;
 use PHPinnacle\Common\Forms\InlineBuilder\Block as InlineBlock;
 use PHPinnacle\Common\Forms\InlineBuilder\BuilderAction;
-use PHPinnacle\Eidos\Forms\JsonSchema;
+use PHPinnacle\Eidos\Forms\SchemaCompatibility;
 use PHPinnacle\Ferry\Contracts\Transform;
 use PHPinnacle\Ferry\Data\FieldMapping;
 use PHPinnacle\Ferry\Data\TransformSetting;
@@ -25,6 +25,7 @@ use PHPinnacle\Ferry\Transformations\MaskField;
 use PHPinnacle\Ferry\Transformations\Substring;
 use PHPinnacle\Ferry\Transformations\Toggle;
 use PHPinnacle\Ferry\Transformations\Trim;
+use PHPinnacle\Jason\Schema;
 use Tests\TestCase;
 
 require_once __DIR__ . '/../Fakes/Transform.php';
@@ -38,14 +39,14 @@ beforeEach(function () {
     $transforms->register(Trim::make(), MaskField::make());
     $this->field = FieldTransforms::make('transforms')
         ->label('Name')
-        ->inputSchema(JsonSchema::fromArray(['type' => 'string']));
-    Schema::make(SchemaHost::make())->statePath('data')->components([$this->field])->fill();
+        ->inputSchema(Schema::fromArray(['type' => 'string']));
+    FilamentSchema::make(SchemaHost::make())->statePath('data')->components([$this->field])->fill();
     $this->action = $this->field->getAction('fieldTransforms');
 });
 
 it('resolves schema objects through callbacks against current form state', function () {
-    $string = JsonSchema::fromArray(['type' => 'string']);
-    $boolean = JsonSchema::fromArray(['type' => ['boolean', 'null']]);
+    $string = Schema::fromArray(['type' => 'string']);
+    $boolean = Schema::fromArray(['type' => ['boolean', 'null']]);
     $this->field->inputSchema(fn (Get $get) => $get('type') === 'boolean' ? $boolean : $string);
 
     expect($this->field->getInputSchema()->toArray())->toBe(['type' => 'string']);
@@ -85,26 +86,26 @@ it('filters the block catalog by target and additions by the current schema', fu
     app(TransformRegistry::class)->register(new FakeTransform(
         'key_string',
         target: TransformTarget::Key,
-        accepts: fn (JsonSchema $input) => $input->singleType() === 'string',
+        accepts: fn (Schema $input) => $input->singleType() === 'string',
     ));
     $this->field->target(TransformTarget::Key);
 
     expect(array_keys($this->field->getBlocks()))->toBe(['key_string']);
     expect(array_keys($this->field->getAvailableBlocks()))->toBe(['key_string']);
 
-    $this->field->inputSchema(JsonSchema::fromArray(['type' => 'boolean']));
+    $this->field->inputSchema(Schema::fromArray(['type' => 'boolean']));
 
     expect(array_keys($this->field->getBlocks()))->toBe(['key_string']);
     expect($this->field->getAvailableBlocks())->toBe([]);
 });
 
 it('uses the current registry for the preceding output and available blocks', function () {
-    app(TransformRegistry::class)->register(new FakeTransform('custom', output: fn () => JsonSchema::fromArray([
+    app(TransformRegistry::class)->register(new FakeTransform('custom', output: fn () => Schema::fromArray([
         'type' => 'string',
     ])));
     $registry = new TransformRegistry;
     $registry->register(
-        new FakeTransform('custom', output: fn () => JsonSchema::fromArray(['type' => 'boolean'])),
+        new FakeTransform('custom', output: fn () => Schema::fromArray(['type' => 'boolean'])),
         Toggle::make(),
     );
     app()->instance(TransformRegistry::class, $registry);
@@ -258,7 +259,7 @@ it('rejects non-string mask parameters at the standalone field boundary', functi
 it('offers only transforms that accept the output of the current chain', function () {
     $registry = app(TransformRegistry::class);
     $registry->register(Substring::make());
-    $this->field->inputSchema(JsonSchema::fromArray(['type' => 'boolean']));
+    $this->field->inputSchema(Schema::fromArray(['type' => 'boolean']));
 
     expect(array_keys($this->field->getAvailableBlocks()))->toBe([
         'cast',
@@ -304,7 +305,7 @@ it('offers only transforms that accept the output of the current chain', functio
 
 it('rejects incompatible reordering and validates removal of a preceding cast', function () {
     $this->field
-        ->inputSchema(JsonSchema::fromArray(['type' => 'boolean']))
+        ->inputSchema(Schema::fromArray(['type' => 'boolean']))
         ->state([
             ['type' => 'cast', 'data' => ['type' => 'string']],
             ['type' => 'trim', 'data' => []],
@@ -323,7 +324,7 @@ it('rejects incompatible reordering and validates removal of a preceding cast', 
 it('offers and validates string transforms for formatted strings', function (array $input) {
     $registry = app(TransformRegistry::class);
     $registry->register(Substring::make());
-    $this->field->inputSchema(JsonSchema::fromArray($input));
+    $this->field->inputSchema(Schema::fromArray($input));
 
     expect(array_keys($this->field->getAvailableBlocks()))->toBe([
         'cast',
@@ -350,7 +351,7 @@ it('offers and validates string transforms for formatted strings', function (arr
 ]);
 
 it('preserves dedicated logical types from their schemas', function (array $definition, array $available) {
-    $this->field->inputSchema(JsonSchema::fromArray($definition));
+    $this->field->inputSchema(Schema::fromArray($definition));
 
     expect(array_keys($this->field->getAvailableBlocks()))
         ->toBe($available);
@@ -367,7 +368,7 @@ it('preserves dedicated logical types from their schemas', function (array $defi
 ]);
 
 it('offers JSONPath filtering for array and object inputs', function (array $input) {
-    $this->field->inputSchema(JsonSchema::fromArray($input));
+    $this->field->inputSchema(Schema::fromArray($input));
     expect(array_keys($this->field->getAvailableBlocks()))->toBe(['filter']);
     expect(($this->action)([])->toHtml())->toContain('Filter records', 'fi-dropdown');
     $this->field->state([['type' => 'cast', 'data' => ['type' => 'string']]]);
@@ -420,7 +421,7 @@ it('validates stored parameters through the description form without configured 
 });
 
 it('casts a union of scalar types without losing nullability', function () {
-    $this->field->inputSchema(JsonSchema::fromArray(['type' => ['string', 'number', 'null']]));
+    $this->field->inputSchema(Schema::fromArray(['type' => ['string', 'number', 'null']]));
     expect(array_keys($this->field->getAvailableBlocks()))->toBe(['cast', 'filter']);
 
     ($this->action)(['block' => 'cast'])->data(['data' => ['type' => 'string']])->call();
@@ -435,18 +436,18 @@ it('lets a custom array transform participate in the same schema chain', functio
     $registry->register(
         new FakeTransform(
             'join',
-            accepts: fn (JsonSchema $input) => $input->compatible(JsonSchema::fromArray([
+            accepts: fn (Schema $input) => SchemaCompatibility::make()->accepts($input, Schema::fromArray([
                 'type' => 'array',
                 'items' => ['type' => 'string'],
             ])),
-            output: fn () => JsonSchema::fromArray(['type' => 'string', 'maxLength' => 20]),
+            output: fn () => Schema::fromArray(['type' => 'string', 'maxLength' => 20]),
         ),
     );
-    $field = FieldTransforms::make('transforms')->inputSchema(JsonSchema::fromArray([
+    $field = FieldTransforms::make('transforms')->inputSchema(Schema::fromArray([
         'type' => 'array',
         'items' => ['type' => 'string'],
     ]));
-    Schema::make(SchemaHost::make())->statePath('data')->components([$field])->fill();
+    FilamentSchema::make(SchemaHost::make())->statePath('data')->components([$field])->fill();
     $action = $field->getAction('fieldTransforms');
     expect(array_keys($field->getAvailableBlocks()))->toBe(['filter', 'join']);
 
@@ -464,7 +465,7 @@ it('lets a custom array transform participate in the same schema chain', functio
         ['type' => 'join', 'data' => []],
         ['type' => 'trim', 'data' => []],
     ]);
-    expect($registry->resultSchema(JsonSchema::fromArray(['type' => 'array', 'items' => ['type' => 'string']]), [
+    expect($registry->resultSchema(Schema::fromArray(['type' => 'array', 'items' => ['type' => 'string']]), [
         new TransformSetting('join'),
     ])?->toArray())->toBe(['type' => 'string', 'maxLength' => 20]);
 });
@@ -472,7 +473,7 @@ it('lets a custom array transform participate in the same schema chain', functio
 it('preserves JSONPath predicates when a preceding cast changes type', function (string $type) {
     $params = ['mode' => 'exclude', 'condition' => '@ != null', 'missing_or_null_behavior' => 'fail'];
     $this->field
-        ->inputSchema(JsonSchema::fromArray(['type' => 'string']))
+        ->inputSchema(Schema::fromArray(['type' => 'string']))
         ->state([
             ['type' => 'cast', 'data' => ['type' => 'int64']],
             ['type' => 'filter', 'data' => $params],
@@ -483,10 +484,10 @@ it('preserves JSONPath predicates when a preceding cast changes type', function 
 })->with(['boolean', 'float64']);
 
 it('uses the preceding cast output for the filter example', function () {
-    $this->field->inputSchema(JsonSchema::fromArray(['type' => 'boolean']));
+    $this->field->inputSchema(Schema::fromArray(['type' => 'boolean']));
     $condition = fn () => collect(
         ($this->action)(['block' => 'filter'])
-            ->getSchema(Schema::make($this->field->getLivewire()))->getFlatComponents(),
+            ->getSchema(FilamentSchema::make($this->field->getLivewire()))->getFlatComponents(),
     )
         ->first(fn ($component) => $component instanceof Textarea && $component->getName() === 'condition');
 
@@ -516,7 +517,7 @@ it('rejects casting to the effective type after each preceding cast', function (
 it('calculates allowed moves using the complete type chain and refreshes them after parameters change', function () {
     $registry = app(TransformRegistry::class);
     $this->field
-        ->inputSchema(JsonSchema::fromArray(['type' => 'boolean']))
+        ->inputSchema(Schema::fromArray(['type' => 'boolean']))
         ->state([
             ['type' => 'cast', 'data' => ['type' => 'string']],
             ['type' => 'filter', 'data' => ['condition' => '@ != null']],
@@ -528,7 +529,7 @@ it('calculates allowed moves using the complete type chain and refreshes them af
     expect($this->field->getAllowedMoves())->toBe([[0, 1, 2], [0, 1], [2]]);
 
     $this->field
-        ->inputSchema(JsonSchema::fromArray(['type' => 'string']))
+        ->inputSchema(Schema::fromArray(['type' => 'string']))
         ->state([
             ['type' => 'cast', 'data' => ['type' => 'int64']],
             ['type' => 'trim', 'data' => []],
@@ -546,13 +547,13 @@ it('uses transformation schema callbacks when deciding whether a move is allowed
     $registry->register(
         new FakeTransform(
             'make_object',
-            accepts: fn (JsonSchema $input) => $input->singleType() === 'string',
-            output: fn () => JsonSchema::fromArray(['type' => 'object']),
+            accepts: fn (Schema $input) => $input->singleType() === 'string',
+            output: fn () => Schema::fromArray(['type' => 'object']),
         ),
         new FakeTransform(
             'read_object',
-            accepts: fn (JsonSchema $schema) => $schema->singleType() === 'object',
-            output: fn (JsonSchema $schema, array $params) => JsonSchema::fromArray(['type' => $params['type']]),
+            accepts: fn (Schema $schema) => $schema->singleType() === 'object',
+            output: fn (Schema $schema, array $params) => Schema::fromArray(['type' => $params['type']]),
         ),
     );
     $this->field->state([
@@ -571,7 +572,7 @@ it('checks the current input type again before applying a reordered chain', func
     ];
     $this->field->state($settings);
     expect($this->field->getAllowedMoves())->toBe([[0, 1], [0, 1]]);
-    $this->field->inputSchema(JsonSchema::fromArray(['type' => 'boolean']));
+    $this->field->inputSchema(Schema::fromArray(['type' => 'boolean']));
     expect(fn () => ($this->action)(['order' => ['1', '0']])->call())->toThrow(ValidationException::class);
     expect($this->field->getSettings())->toBe($settings);
 });
@@ -598,14 +599,14 @@ it('registers independent transform implementations and uses their native blocks
             return TransformTarget::Value;
         }
 
-        public function accepts(JsonSchema $input): bool
+        public function accepts(Schema $input): bool
         {
             return $input->singleType() === 'string';
         }
 
-        public function output(JsonSchema $input, array $params): ?JsonSchema
+        public function output(Schema $input, array $params): ?Schema
         {
-            return JsonSchema::fromArray(['type' => 'string', 'maxLength' => strlen($params['value'])]);
+            return Schema::fromArray(['type' => 'string', 'maxLength' => strlen($params['value'])]);
         }
 
         public function connector(array $params): array
@@ -632,8 +633,8 @@ it('registers independent transform implementations and uses their native blocks
 
     expect($this->field->getContainer()->getState()['transforms'])
         ->toBe([['type' => 'custom', 'data' => ['value' => 'hello']]]);
-    expect($this->field->getInputSchema()->maxLength())->toBe(5);
-    $schema = JsonSchema::fromArray(['type' => 'object', 'properties' => ['name' => ['type' => 'string']]]);
+    expect($this->field->getInputSchema()->effectiveMaxLength())->toBe(5);
+    $schema = Schema::fromArray(['type' => 'object', 'properties' => ['name' => ['type' => 'string']]]);
     $replica = new Replica([
         'schema' => $schema,
         'mapping' => [
@@ -652,7 +653,7 @@ it('passes the preceding schema to each settings form', function () {
     $inputType = null;
     app(TransformRegistry::class)->register(
         new FakeTransform('custom', block: InlineBlock::make('custom')->schema(
-            function (?JsonSchema $input) use (&$inputType) {
+            function (?Schema $input) use (&$inputType) {
                 $inputType = $input->singleType();
 
                 return [TextInput::make('value')];

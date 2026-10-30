@@ -3,12 +3,12 @@
 use Filament\Actions\Testing\TestAction;
 use Illuminate\Support\Facades\Queue;
 use Livewire\Livewire;
-use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Enums\DestinationType;
 use PHPinnacle\Ferry\Enums\StructureStatus;
 use PHPinnacle\Ferry\Services\DestinationFactory;
 use PHPinnacle\Ferry\Tests\Fixtures\ReplicaForm;
 use PHPinnacle\Ferry\Tests\TestCase;
+use PHPinnacle\Jason\Schema;
 
 use function PHPinnacle\Ferry\Tests\Fakes\customers_destination;
 
@@ -22,7 +22,7 @@ it('updates parent mapping output after native dictionary changes and Livewire r
     Queue::fake();
     app(DestinationFactory::class)->register(customers_destination());
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
-    TestCase::makeItem($upstream, ['fields' => ['active' => JsonSchema::fromArray(['type' => 'boolean'])]]);
+    TestCase::makeItem($upstream, ['fields' => ['active' => Schema::fromArray(['type' => 'boolean'])]]);
     $page = Livewire::test(ReplicaForm::class, [
         'state' => [
             'upstream_id' => $upstream->id,
@@ -73,7 +73,7 @@ it('updates parent mapping output after native dictionary changes and Livewire r
 it('hydrates, edits and reorders native replacement dictionaries after Livewire updates', function () {
     Queue::fake();
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
-    TestCase::makeItem($upstream, ['fields' => ['active' => JsonSchema::fromArray(['type' => ['boolean', 'null']])]]);
+    TestCase::makeItem($upstream, ['fields' => ['active' => Schema::fromArray(['type' => ['boolean', 'null']])]]);
     $page = Livewire::test(ReplicaForm::class, ['state' => [
         'upstream_id' => $upstream->id,
         'source' => 'object-0',

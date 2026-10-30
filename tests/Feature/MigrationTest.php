@@ -1,13 +1,13 @@
 <?php
 
 use Illuminate\Support\Facades\Queue;
-use Illuminate\Support\Facades\Schema;
-use PHPinnacle\Eidos\Forms\JsonSchema;
+use Illuminate\Support\Facades\Schema as DatabaseSchema;
 use PHPinnacle\Ferry\Enums\StructureStatus;
 use PHPinnacle\Ferry\Models\Replica;
 use PHPinnacle\Ferry\Models\Structure;
 use PHPinnacle\Ferry\Models\StructureItem;
 use PHPinnacle\Ferry\Tests\TestCase;
+use PHPinnacle\Jason\Schema;
 
 require_once __DIR__ . '/../TestCase.php';
 
@@ -16,7 +16,7 @@ uses(TestCase::class);
 it('stores adapter-independent structures on a fresh installation and cascades owner deletion', function () {
     Queue::fake();
     $upstream = TestCase::makeUpstream(['adapter' => null]);
-    $schema = JsonSchema::fromArray([
+    $schema = Schema::fromArray([
         'type' => 'object',
         'properties' => ['tenant_id' => ['type' => 'integer'], 'record_id' => ['type' => 'string']],
     ]);
@@ -46,9 +46,9 @@ it('stores adapter-independent structures on a fresh installation and cascades o
         ->toBe($schema->toArray())
         ->and($item->structure->is($upstream->structure))
         ->toBeTrue()
-        ->and(Schema::hasTable('upstream_metadata'))
+        ->and(DatabaseSchema::hasTable('upstream_metadata'))
         ->toBeFalse()
-        ->and(Schema::hasColumn('upstreams', 'status'))
+        ->and(DatabaseSchema::hasColumn('upstreams', 'status'))
         ->toBeFalse();
 
     $upstream->getConnection()->table('upstreams')->where('id', $upstream->id)->delete();

@@ -6,10 +6,10 @@ use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Support\Icons\Heroicon;
 use PHPinnacle\Common\Forms\InlineBuilder\Block as InlineBlock;
-use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Contracts\Transform;
 use PHPinnacle\Ferry\Enums\TransformScope;
 use PHPinnacle\Ferry\Enums\TransformTarget;
+use PHPinnacle\Jason\Schema;
 
 final class BooleanToString implements Transform
 {
@@ -38,13 +38,13 @@ final class BooleanToString implements Transform
         return TransformTarget::Value;
     }
 
-    public function accepts(JsonSchema $input): bool
+    public function accepts(Schema $input): bool
     {
         return $input->singleType() === 'boolean';
     }
 
     /** @param array<string, string> $params */
-    public function output(JsonSchema $input, array $params): ?JsonSchema
+    public function output(Schema $input, array $params): ?Schema
     {
         if (!array_key_exists('true', $params) || !array_key_exists('false', $params)) {
             return null;
@@ -71,7 +71,7 @@ final class BooleanToString implements Transform
             $schema['maxLength'] = max($lengths);
         }
 
-        return JsonSchema::fromArray($schema);
+        return Schema::fromArray($schema);
     }
 
     public function block(): InlineBlock

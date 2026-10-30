@@ -3,14 +3,14 @@
 namespace PHPinnacle\Ferry\Tests\Fixtures;
 
 use Illuminate\Support\Facades\Lang;
-use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Models\StructureItem;
+use PHPinnacle\Jason\Schema;
 
-/** @phpstan-import-type Definition from JsonSchema */
+/** @phpstan-import-type Definition from Schema */
 class StructureItems
 {
     /**
-     * @param array{fields?: array<string, JsonSchema>, sources?: array<string, Definition>, ...} $attributes
+     * @param array{fields?: array<string, Schema>, sources?: array<string, Definition>, ...} $attributes
      */
     public static function make(array $attributes = []): StructureItem
     {
@@ -32,7 +32,7 @@ class StructureItems
         return new StructureItem([
             'primary_key' => ['_idrref'],
             'priority' => 0,
-            'schema' => JsonSchema::fromArray([
+            'schema' => Schema::fromArray([
                 'type' => 'object',
                 'properties' => $properties,
                 'x-primary-key' => $attributes['primary_key'] ?? ['_idrref'],

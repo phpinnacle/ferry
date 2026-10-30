@@ -4,8 +4,8 @@ namespace PHPinnacle\Ferry\Services\Rosetta;
 
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Lang;
-use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Models\StructureItem;
+use PHPinnacle\Jason\Schema;
 use PHPinnacle\Rosetta\Contracts\Field;
 use PHPinnacle\Rosetta\Data\MetadataDefinition;
 use PHPinnacle\Rosetta\Data\MetadataProperty;
@@ -17,7 +17,7 @@ use PHPinnacle\Rosetta\Fields\ScalarField;
 use PHPinnacle\Rosetta\Fields\StringField;
 use PHPinnacle\Rosetta\Fields\UnionField;
 
-/** @phpstan-import-type Definition from JsonSchema */
+/** @phpstan-import-type Keywords from Schema */
 class StructureConverter
 {
     public function item(MetadataDefinition $definition): StructureItem
@@ -26,7 +26,7 @@ class StructureConverter
         foreach ($definition->system as $name => $field) {
             $translation = 'phpinnacle-ferry::resources.replica.system_fields.' . $name;
             $properties[$name] = [
-                ...$this->field($field)->toArray(),
+                ...$this->field($field)->keywords(),
                 'title' => $name,
                 ...(Lang::has($translation) ? ['x-ferry-trans' => $translation] : []),
             ];
@@ -51,7 +51,7 @@ class StructureConverter
                 } else {
                     $properties[$name] = [
                         ...$properties[$name],
-                        ...$this->field(new ScalarField(FieldType::Id))->toArray(),
+                        ...$this->field(new ScalarField(FieldType::Id))->keywords(),
                     ];
                 }
 
@@ -67,7 +67,7 @@ class StructureConverter
             'kind' => $definition->kind->value,
             'label' => $definition->label,
             'title' => $definition->title,
-            'schema' => JsonSchema::fromArray(['type' => 'object', 'properties' => $properties]),
+            'schema' => Schema::fromArray(['type' => 'object', 'properties' => $properties]),
             'values' => array_map(static fn ($value) => $value->jsonSerialize(), $definition->values),
         ]);
         $item->priority = match (true) {
@@ -79,7 +79,7 @@ class StructureConverter
         return $item->setRelation('children', new Collection(array_map($this->item(...), $definition->sections)));
     }
 
-    public function field(Field $field): JsonSchema
+    public function field(Field $field): Schema
     {
         $schema = match (true) {
             $field instanceof StringField => ['type' => 'string'],
@@ -140,10 +140,10 @@ class StructureConverter
             }
         }
 
-        return JsonSchema::fromArray($schema);
+        return Schema::fromArray($schema);
     }
 
-    /** @return array<string, Definition> */
+    /** @return array<string, Keywords> */
     private function propertyFields(MetadataProperty $property): array
     {
         $title = match (true) {
@@ -155,7 +155,7 @@ class StructureConverter
         if (!$field instanceof UnionField) {
             return [
                 $property->name . ($field instanceof ReferenceField ? 'rref' : '') => [
-                    ...$this->field($field)->toArray(),
+                    ...$this->field($field)->keywords(),
                     'title' => $title,
                     ...($property->comment === null ? [] : ['description' => $property->comment]),
                 ],
@@ -199,7 +199,7 @@ class StructureConverter
         $sources = [];
         foreach ($columns as $suffix => $column) {
             $sources[$property->name . '_' . $suffix] = [
-                ...$this->field($column)->toArray(),
+                ...$this->field($column)->keywords(),
                 'title' => $title . ' · ' . __('phpinnacle-ferry::resources.replica.components.' . $suffix),
                 ...($property->comment === null ? [] : ['description' => $property->comment]),
             ];

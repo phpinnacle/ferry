@@ -1,7 +1,6 @@
 <?php
 
 use Illuminate\Support\Facades\Queue;
-use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Data\FieldMapping;
 use PHPinnacle\Ferry\Destinations\StaticDestination;
 use PHPinnacle\Ferry\Enums\DestinationType;
@@ -152,13 +151,13 @@ it('unions tables and columns across the tracked replicas of one upstream', func
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
     $first = TestCase::makeItem($upstream, [
         'sources' => ['_fld1' => ['type' => 'string', 'maxLength' => 100, 'title' => 'Title']],
-        'fields' => ['_idrref' => JsonSchema::fromArray(['type' => 'string', 'x-ferry-converter' => 'uuid'])],
+        'fields' => ['_idrref' => Schema::fromArray(['type' => 'string', 'x-ferry-converter' => 'uuid'])],
     ]);
     $second = TestCase::makeItem($upstream, [
         'external_id' => 'object-1',
         'name' => '_reference1',
         'sources' => ['_fld2' => ['type' => 'string', 'maxLength' => 100, 'title' => 'Name']],
-        'fields' => ['_idrref' => JsonSchema::fromArray(['type' => 'string', 'x-ferry-converter' => 'uuid'])],
+        'fields' => ['_idrref' => Schema::fromArray(['type' => 'string', 'x-ferry-converter' => 'uuid'])],
     ]);
 
     TestCase::makeReplica([
@@ -271,7 +270,7 @@ it('uses the key and column names supplied by a non-Rosetta adapter', function (
         'name' => 'customers',
         'primary_key' => ['record_id'],
         'fields' => [],
-        'schema' => JsonSchema::fromArray([
+        'schema' => Schema::fromArray([
             'type' => 'object',
             'properties' => [
                 'record_id' => ['type' => 'string', 'title' => 'ID'],

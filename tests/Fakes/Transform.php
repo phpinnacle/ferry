@@ -5,16 +5,16 @@ namespace PHPinnacle\Ferry\Tests\Fakes;
 use Closure;
 use PHPinnacle\Common\Forms\InlineBuilder\Block as InlineBlock;
 use PHPinnacle\Common\Forms\TabbedBuilder\Block as TabbedBlock;
-use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Contracts\Transform as TransformContract;
 use PHPinnacle\Ferry\Enums\TransformScope;
 use PHPinnacle\Ferry\Enums\TransformTarget;
+use PHPinnacle\Jason\Schema;
 
 final class Transform implements TransformContract
 {
     /**
-     * @param Closure(JsonSchema): bool|null $accepts
-     * @param Closure(JsonSchema, array<string, string>): (JsonSchema|null)|null $output
+     * @param Closure(Schema): bool|null $accepts
+     * @param Closure(Schema, array<string, string>): (Schema|null)|null $output
      * @param Closure(array<string, mixed>): array<string, string>|null $connector
      */
     public function __construct(
@@ -47,12 +47,12 @@ final class Transform implements TransformContract
         return $this->target;
     }
 
-    public function accepts(JsonSchema $input): bool
+    public function accepts(Schema $input): bool
     {
         return $this->accepts === null || ($this->accepts)($input);
     }
 
-    public function output(JsonSchema $input, array $params): ?JsonSchema
+    public function output(Schema $input, array $params): ?Schema
     {
         return $this->output === null ? $input : ($this->output)($input, $params);
     }

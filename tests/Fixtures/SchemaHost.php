@@ -5,11 +5,11 @@ namespace PHPinnacle\Ferry\Tests\Fixtures;
 use Filament\Schemas\Components\Component as SchemaComponent;
 use Filament\Schemas\Concerns\InteractsWithSchemas;
 use Filament\Schemas\Contracts\HasSchemas;
-use Filament\Schemas\Schema;
+use Filament\Schemas\Schema as FilamentSchema;
 use Livewire\Component;
-use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Contracts\Transform;
 use PHPinnacle\Ferry\Forms\FieldTransforms;
+use PHPinnacle\Jason\Schema;
 
 final class SchemaHost extends Component implements HasSchemas
 {
@@ -19,11 +19,11 @@ final class SchemaHost extends Component implements HasSchemas
     public array $data = [];
 
     /** @return array<SchemaComponent> */
-    public static function transformSchema(Transform $transform, ?JsonSchema $input = null): array
+    public static function transformSchema(Transform $transform, ?Schema $input = null): array
     {
-        $input ??= JsonSchema::fromArray([]);
+        $input ??= Schema::fromArray([]);
         $field = FieldTransforms::make('transforms')->inputSchema($input);
-        Schema::make(self::make())->components([$field])->fill();
+        FilamentSchema::make(self::make())->components([$field])->fill();
 
         return $transform->block()->getSchema($field, null, ['input' => $input]);
     }

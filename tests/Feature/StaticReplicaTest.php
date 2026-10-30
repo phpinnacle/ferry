@@ -3,10 +3,9 @@
 use Filament\Schemas\Schema as FormSchema;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Queue;
-use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Schema as DatabaseSchema;
 use Illuminate\Support\ViewErrorBag;
 use Illuminate\Validation\ValidationException;
-use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Data\FieldMapping;
 use PHPinnacle\Ferry\Data\TransformSetting;
 use PHPinnacle\Ferry\Destinations\StaticDestination;
@@ -21,6 +20,7 @@ use PHPinnacle\Ferry\Services\ReplicaSchemaResolver;
 use PHPinnacle\Ferry\Tests\Fixtures\MappingState;
 use PHPinnacle\Ferry\Tests\Fixtures\SchemaHost;
 use PHPinnacle\Ferry\Tests\TestCase;
+use PHPinnacle\Jason\Schema;
 
 use function PHPinnacle\Ferry\Tests\Fakes\customers_destination;
 
@@ -46,8 +46,8 @@ it('prepares typed replica attributes from its form', function (?string $destina
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
     TestCase::makeItem($upstream, [
         'fields' => [
-            '_code' => JsonSchema::fromArray(['type' => 'string', 'maxLength' => 11, 'minLength' => 11]),
-            '_description' => JsonSchema::fromArray(['type' => 'string', 'maxLength' => 100]),
+            '_code' => Schema::fromArray(['type' => 'string', 'maxLength' => 11, 'minLength' => 11]),
+            '_description' => Schema::fromArray(['type' => 'string', 'maxLength' => 100]),
         ],
     ]);
 
@@ -96,7 +96,7 @@ it('prepares typed replica attributes from its form', function (?string $destina
             '_code' => 'tax_number',
             '_idrref' => $destination === null ? 'external_id' : 'customer_id',
         ])
-        ->and(Schema::hasTable('ferry_replica_customers_replica'))
+        ->and(DatabaseSchema::hasTable('ferry_replica_customers_replica'))
         ->toBe($destination === null);
 
     if ($destination !== null) {
@@ -108,8 +108,8 @@ it('keeps a static value through creating, filling and updating a static replica
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
     TestCase::makeItem($upstream, [
         'fields' => [
-            '_code' => JsonSchema::fromArray(['type' => 'string', 'maxLength' => 11, 'minLength' => 11]),
-            '_description' => JsonSchema::fromArray(['type' => 'string', 'maxLength' => 100]),
+            '_code' => Schema::fromArray(['type' => 'string', 'maxLength' => 11, 'minLength' => 11]),
+            '_description' => Schema::fromArray(['type' => 'string', 'maxLength' => 100]),
         ],
     ]);
     $livewire = SchemaHost::make();
@@ -163,9 +163,9 @@ it('keeps transforms through creating, filling and updating a replica', function
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
     TestCase::makeItem($upstream, [
         'fields' => [
-            '_code' => JsonSchema::fromArray(['type' => 'string', 'maxLength' => 11, 'minLength' => 11]),
-            '_description' => JsonSchema::fromArray(['type' => 'string', 'maxLength' => 100]),
-            '_folder' => JsonSchema::fromArray(['type' => 'boolean']),
+            '_code' => Schema::fromArray(['type' => 'string', 'maxLength' => 11, 'minLength' => 11]),
+            '_description' => Schema::fromArray(['type' => 'string', 'maxLength' => 100]),
+            '_folder' => Schema::fromArray(['type' => 'boolean']),
         ],
     ]);
     $livewire = SchemaHost::make();
@@ -219,7 +219,7 @@ it('validates transform parameters on a replica with a complete key mapping', fu
     array $valid,
 ) {
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
-    TestCase::makeItem($upstream, ['fields' => ['_description' => JsonSchema::fromArray([
+    TestCase::makeItem($upstream, ['fields' => ['_description' => Schema::fromArray([
         'type' => 'string',
         'maxLength' => 100,
     ])]]);
@@ -260,8 +260,8 @@ it('persists and restores transforms on every source independently of its target
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
     TestCase::makeItem($upstream, [
         'fields' => [
-            '_code' => JsonSchema::fromArray(['type' => 'string', 'maxLength' => 11, 'minLength' => 11]),
-            '_description' => JsonSchema::fromArray(['type' => 'string', 'maxLength' => 100]),
+            '_code' => Schema::fromArray(['type' => 'string', 'maxLength' => 11, 'minLength' => 11]),
+            '_description' => Schema::fromArray(['type' => 'string', 'maxLength' => 100]),
         ],
     ]);
     $livewire = SchemaHost::make();
@@ -312,7 +312,7 @@ it('persists and restores transforms on every source independently of its target
 
 it('validates destination column names with every source key mapped', function (array $bindings, string $column) {
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
-    TestCase::makeItem($upstream, ['fields' => ['_description' => JsonSchema::fromArray([
+    TestCase::makeItem($upstream, ['fields' => ['_description' => Schema::fromArray([
         'type' => 'string',
         'maxLength' => 100,
     ])]]);
@@ -340,7 +340,7 @@ it('rejects an empty replica mapping at the form boundary', function () {
 
 it('rejects a static value column that duplicates a bound column', function () {
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
-    TestCase::makeItem($upstream, ['fields' => ['_description' => JsonSchema::fromArray([
+    TestCase::makeItem($upstream, ['fields' => ['_description' => Schema::fromArray([
         'type' => 'string',
         'maxLength' => 100,
     ])]]);
@@ -391,7 +391,7 @@ it('resolves the destination table from the registered static destination', func
         schema: customers_destination()->getSchema(),
     ));
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
-    TestCase::makeItem($upstream, ['fields' => ['_description' => JsonSchema::fromArray([
+    TestCase::makeItem($upstream, ['fields' => ['_description' => Schema::fromArray([
         'type' => 'string',
         'maxLength' => 100,
     ])]]);
@@ -419,17 +419,17 @@ it('resolves the destination table from the registered static destination', func
 
     expect($replica->fresh()->destination)->toBe('customer_directory');
     expect($connector['table.name.format'])->toBe('customers');
-    expect(Schema::hasTable('ferry_replica_' . $replica->code))->toBeFalse();
+    expect(DatabaseSchema::hasTable('ferry_replica_' . $replica->code))->toBeFalse();
 });
 
 it('preserves the static table and its rows after the deletion job completes', function () {
-    Schema::create('customers', function (Blueprint $table) {
+    DatabaseSchema::create('customers', function (Blueprint $table) {
         $table->uuid('customer_id')->primary();
         $table->string('name');
         $table->string('tax_number');
     });
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
-    TestCase::makeItem($upstream, ['fields' => ['_description' => JsonSchema::fromArray([
+    TestCase::makeItem($upstream, ['fields' => ['_description' => Schema::fromArray([
         'type' => 'string',
         'maxLength' => 100,
     ])]]);
@@ -457,7 +457,7 @@ it('preserves the static table and its rows after the deletion job completes', f
     new \PHPinnacle\Ferry\Jobs\Connector\SynchronizeConnectorsJob($upstream->id)->handle(app(\PHPinnacle\Ferry\Services\ConnectorManager::class));
 
     expect(Replica::withTrashed()->whereKey($replica->id)->exists())->toBeFalse();
-    expect(Schema::hasTable('customers'))->toBeTrue();
+    expect(DatabaseSchema::hasTable('customers'))->toBeTrue();
     expect((array) $replica->getConnection()->table('customers')->sole())->toBe($row);
 });
 
@@ -503,8 +503,8 @@ it('rejects an unregistered destination at the create form boundary', function (
 it('edits a Boolean constant through the built-in form without a cast', function () {
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
     TestCase::makeItem($upstream, ['fields' => [
-        '_description' => JsonSchema::fromArray(['type' => 'string', 'maxLength' => 100]),
-        '_code' => JsonSchema::fromArray(['type' => 'string', 'maxLength' => 11, 'minLength' => 11]),
+        '_description' => Schema::fromArray(['type' => 'string', 'maxLength' => 100]),
+        '_code' => Schema::fromArray(['type' => 'string', 'maxLength' => 11, 'minLength' => 11]),
     ]]);
     $livewire = SchemaHost::make();
 
@@ -562,9 +562,9 @@ it('creates an unmapped pending replica from only its identifying fields', funct
     expect($replica->connector_id)->toBeNull();
     expect($replica->type)->toBe($type);
     if ($type === DestinationType::Dynamic) {
-        expect(Schema::hasTable($replica->destination))->toBeFalse();
+        expect(DatabaseSchema::hasTable($replica->destination))->toBeFalse();
     } else {
-        expect(Schema::hasTable('customers'))->toBeFalse();
+        expect(DatabaseSchema::hasTable('customers'))->toBeFalse();
         $edit = ReplicaForm::configure(
             FormSchema::make(SchemaHost::make())->statePath('data')->record($replica)->operation('edit'),
         );

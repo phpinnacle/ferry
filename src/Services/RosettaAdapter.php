@@ -2,12 +2,12 @@
 
 namespace PHPinnacle\Ferry\Services;
 
-use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Contracts\Adapter;
 use PHPinnacle\Ferry\Data\StructurePlan;
 use PHPinnacle\Ferry\Models\StructureItem;
 use PHPinnacle\Ferry\Models\Upstream;
 use PHPinnacle\Ferry\Services\Rosetta\StructureConverter;
+use PHPinnacle\Jason\Schema;
 use PHPinnacle\Rosetta\Connections\PdoConnection;
 use PHPinnacle\Rosetta\MetadataLoader;
 use PHPinnacle\Rosetta\StorageMap;
@@ -73,10 +73,10 @@ class RosettaAdapter implements Adapter
                         fn (array $index) => $index['primary'],
                     );
                     $object->primary_key = $primaryKey['columns'] ?? [];
-                    $object->schema = JsonSchema::fromArray([
-                        ...$object->schema->toArray(),
+                    $object->schema = Schema::fromArray([
+                        ...$object->schema->keywords(),
                         'required' => array_values(array_unique([
-                            ...$object->schema->required(),
+                            ...$object->schema->effectiveRequired(),
                             ...$object->primary_key,
                         ])),
                         'x-primary-key' => $object->primary_key,

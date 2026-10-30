@@ -1,7 +1,6 @@
 <?php
 
 use Illuminate\Validation\ValidationException;
-use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Data\FieldMapping;
 use PHPinnacle\Ferry\Destinations\StaticDestination;
 use PHPinnacle\Ferry\Enums\FieldKind;
@@ -17,7 +16,7 @@ it('uses JSON Schema compatibility when saving static replicas', function (
     array $target,
     bool $allowed,
 ) {
-    $schema = JsonSchema::fromArray([
+    $schema = Schema::fromArray([
         'properties' => ['amount' => $source, '_idrref' => ['type' => 'string']],
     ]);
     $destination = new StaticDestination(
@@ -74,7 +73,7 @@ it('compares native static values with destination enums and lengths', function 
     array $target,
     bool $allowed,
 ) {
-    $schema = JsonSchema::fromArray(['properties' => ['_idrref' => ['type' => 'string']]]);
+    $schema = Schema::fromArray(['properties' => ['_idrref' => ['type' => 'string']]]);
     $destination = new StaticDestination(
         'labels',
         'Labels',

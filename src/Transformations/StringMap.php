@@ -8,10 +8,10 @@ use Filament\Schemas\Components\Utilities\Get;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Translation\PotentiallyTranslatedString;
 use PHPinnacle\Common\Forms\InlineBuilder\Block as InlineBlock;
-use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Contracts\Transform;
 use PHPinnacle\Ferry\Enums\TransformScope;
 use PHPinnacle\Ferry\Enums\TransformTarget;
+use PHPinnacle\Jason\Schema;
 
 final class StringMap implements Transform
 {
@@ -40,17 +40,17 @@ final class StringMap implements Transform
         return TransformTarget::Value;
     }
 
-    public function accepts(JsonSchema $input): bool
+    public function accepts(Schema $input): bool
     {
         return (
             $input->singleType() === 'string'
-            && !in_array($input->format(), ['date', 'time', 'date-time'], true)
+            && !in_array($input->effectiveFormat(), ['date', 'time', 'date-time'], true)
             && $input->annotation('x-ferry-reference') !== true
         );
     }
 
     /** @param array{mapping?: array<array-key, string>} $params */
-    public function output(JsonSchema $input, array $params): ?JsonSchema
+    public function output(Schema $input, array $params): ?Schema
     {
         if (($params['mapping'] ?? []) === []) {
             return null;
@@ -76,11 +76,14 @@ final class StringMap implements Transform
                 $schema['minLength'] = min($lengths);
                 $schema['maxLength'] = max($lengths);
             }
-        } elseif ($input->maxLength() !== null) {
-            $schema['maxLength'] = max($input->maxLength(), max(array_map(mb_strlen(...), $params['mapping'])));
+        } elseif ($input->effectiveMaxLength() !== null) {
+            $schema['maxLength'] = max(
+                $input->effectiveMaxLength(),
+                max(array_map(mb_strlen(...), $params['mapping'])),
+            );
         }
 
-        return JsonSchema::fromArray($schema);
+        return Schema::fromArray($schema);
     }
 
     public function block(): InlineBlock

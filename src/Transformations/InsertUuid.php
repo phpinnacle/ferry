@@ -5,7 +5,6 @@ namespace PHPinnacle\Ferry\Transformations;
 use Filament\Forms\Components\TextInput;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
-use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Eidos\Forms\JsonSchemaPicker;
 use PHPinnacle\Ferry\Contracts\Transform;
 use PHPinnacle\Ferry\Enums\TransformScope;
@@ -36,7 +35,7 @@ final class InsertUuid implements Transform
         return TransformTarget::Key;
     }
 
-    public function accepts(JsonSchema $input): bool
+    public function accepts(Schema $input): bool
     {
         return $input->singleType() === 'object';
     }
@@ -48,13 +47,13 @@ final class InsertUuid implements Transform
     }
 
     /** @param array{fields?: list<string>|null, output?: string|null} $params */
-    public function output(JsonSchema $input, array $params): ?JsonSchema
+    public function output(Schema $input, array $params): ?Schema
     {
         if (blank($params['output'] ?? null) || blank($params['fields'] ?? null)) {
             return null;
         }
 
-        $schema = $input->toArray();
+        $schema = $input->keywords();
         $schema['properties'] =
             [
                 $params['output'] => [
@@ -67,10 +66,10 @@ final class InsertUuid implements Transform
                 ],
             ]
             + ($schema['properties'] ?? []);
-        $schema['required'] = [...$input->required(), $params['output']];
+        $schema['required'] = [...$input->effectiveRequired(), $params['output']];
         $schema['x-primary-key'] = [$params['output']];
 
-        return JsonSchema::fromArray($schema);
+        return Schema::fromArray($schema);
     }
 
     public function block(): RecordTransformBlock
@@ -84,18 +83,18 @@ final class InsertUuid implements Transform
                     ($component->getInputSchema()->annotation('x-primary-key') ?? []) !== []
                 ),
             )
-            ->parameters(function (JsonSchema $input) {
+            ->parameters(function (Schema $input) {
                 /** @var list<string> $primaryKey */
                 $primaryKey = $input->annotation('x-primary-key') ?? [];
                 $properties = [];
                 foreach ($primaryKey as $source) {
-                    $property = $input->properties()[$source];
+                    $property = $input->resolveReferences()->effectiveProperties()[$source];
                     /** @var string|null $translation */
                     $translation = $property->annotation('x-ferry-trans');
                     /** @var string $label */
                     $label = $translation !== null ? __($translation) : $property->annotation('title') ?? $source;
                     $properties[$source] = Schema::fromArray([
-                        ...$property->toArray(),
+                        ...$property->keywords(),
                         'title' => $label,
                     ]);
                 }
@@ -121,7 +120,7 @@ final class InsertUuid implements Transform
                         ->required()
                         ->maxLength(255)
                         ->regex('/^[a-z][a-z0-9_]*$/')
-                        ->rules(['string', Rule::notIn(array_keys($input->properties()))])
+                        ->rules(['string', Rule::notIn(array_keys($input->resolveReferences()->effectiveProperties()))])
                         ->validationMessages(['not_in' => __('phpinnacle-ferry::validation.uuid_field_exists')])
                         ->lazy(),
                 ];

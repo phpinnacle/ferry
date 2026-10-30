@@ -7,20 +7,20 @@ use Filament\Schemas\Components\Component;
 use Illuminate\Translation\PotentiallyTranslatedString;
 use PHPinnacle\Common\Forms\InlineBuilder;
 use PHPinnacle\Common\Forms\InlineBuilder\Block as InlineBlock;
-use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Contracts\Transform;
 use PHPinnacle\Ferry\Data\TransformSetting;
 use PHPinnacle\Ferry\Enums\TransformScope;
 use PHPinnacle\Ferry\Enums\TransformTarget;
 use PHPinnacle\Ferry\Services\TransformRegistry;
+use PHPinnacle\Jason\Schema;
 
 /** @phpstan-import-type TransformData from TransformSetting */
 class FieldTransforms extends InlineBuilder
 {
     protected TransformTarget $target = TransformTarget::Value;
 
-    /** @var JsonSchema|Closure(): JsonSchema */
-    protected JsonSchema|Closure $inputSchema;
+    /** @var Schema|Closure(): Schema */
+    protected Schema|Closure $inputSchema;
 
     public function target(TransformTarget $target): static
     {
@@ -29,15 +29,15 @@ class FieldTransforms extends InlineBuilder
         return $this;
     }
 
-    /** @param JsonSchema|Closure(): JsonSchema $schema */
-    public function inputSchema(JsonSchema|Closure $schema): static
+    /** @param Schema|Closure(): Schema $schema */
+    public function inputSchema(Schema|Closure $schema): static
     {
         $this->inputSchema = $schema;
 
         return $this;
     }
 
-    public function getInputSchema(?int $index = null): ?JsonSchema
+    public function getInputSchema(?int $index = null): ?Schema
     {
         return $this->resolveSettings(app(TransformRegistry::class), $index)['schema'];
     }
@@ -89,7 +89,7 @@ class FieldTransforms extends InlineBuilder
         );
     }
 
-    /** @return array{settings: list<TransformSetting>, schema: JsonSchema|null, invalid: TransformSetting|null} */
+    /** @return array{settings: list<TransformSetting>, schema: Schema|null, invalid: TransformSetting|null} */
     private function resolveSettings(TransformRegistry $registry, ?int $beforeIndex = null): array
     {
         $settings = [];

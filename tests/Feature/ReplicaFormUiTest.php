@@ -11,7 +11,6 @@ use Livewire\Livewire;
 use PHPinnacle\Eidos\Enums\MappingMode;
 use PHPinnacle\Eidos\Forms\FieldBinding;
 use PHPinnacle\Eidos\Forms\FieldMapping;
-use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Data\FieldMapping as SchemaMapping;
 use PHPinnacle\Ferry\Destinations\StaticDestination;
 use PHPinnacle\Ferry\Enums\DestinationType;
@@ -250,7 +249,7 @@ it('marks source keys required in both editors without replacing other required 
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
     $object = TestCase::makeItem($upstream, [
         'primary_key' => ['record_id'],
-        'schema' => JsonSchema::fromArray([
+        'schema' => Schema::fromArray([
             'type' => 'object',
             'properties' => ['record_id' => ['type' => 'string'], 'name' => ['type' => 'string']],
             'required' => ['name'],
@@ -351,8 +350,8 @@ it('accepts UUID transform outputs for reference destinations', function () {
     app(TransformRegistry::class)->register(
         new FakeTransform(
             'as_uuid',
-            accepts: fn (JsonSchema $input) => $input->singleType() === 'string',
-            output: fn () => JsonSchema::fromArray(['type' => 'string', 'format' => 'uuid']),
+            accepts: fn (Schema $input) => $input->singleType() === 'string',
+            output: fn () => Schema::fromArray(['type' => 'string', 'format' => 'uuid']),
         ),
     );
     app(DestinationFactory::class)->register(new StaticDestination(
@@ -374,14 +373,14 @@ it('accepts UUID transform outputs for reference destinations', function () {
     ));
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
     TestCase::makeItem($upstream, ['fields' => [
-        '_owner' => JsonSchema::fromArray([
+        '_owner' => Schema::fromArray([
             'type' => 'string',
             'format' => 'uuid',
             'x-ferry-reference' => true,
             'minLength' => 36,
             'maxLength' => 36,
         ]),
-        '_description' => JsonSchema::fromArray(['type' => 'string', 'maxLength' => 100]),
+        '_description' => Schema::fromArray(['type' => 'string', 'maxLength' => 100]),
     ]]);
 
     $form = TestCase::replicaForm([
@@ -497,7 +496,7 @@ it('does not apply a submitted transform action to a disabled editor', function 
 
 it('keeps timestamp settings and output types after Livewire updates and editing repeated instances', function () {
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
-    TestCase::makeItem($upstream, ['fields' => ['epoch' => JsonSchema::fromArray(['type' => 'integer'])]]);
+    TestCase::makeItem($upstream, ['fields' => ['epoch' => Schema::fromArray(['type' => 'integer'])]]);
     $page = Livewire::test(\PHPinnacle\Ferry\Tests\Fixtures\ReplicaForm::class, ['state' => [
         'upstream_id' => $upstream->id,
         'source' => 'object-0',
@@ -591,8 +590,8 @@ it('refreshes static mapping compatibility when transform actions change the sou
     app(DestinationFactory::class)->register(customers_destination());
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
     TestCase::makeItem($upstream, ['fields' => [
-        '_description' => JsonSchema::fromArray(['type' => 'string', 'maxLength' => 100]),
-        '_code' => JsonSchema::fromArray(['type' => 'string', 'maxLength' => 9, 'minLength' => 9]),
+        '_description' => Schema::fromArray(['type' => 'string', 'maxLength' => 100]),
+        '_code' => Schema::fromArray(['type' => 'string', 'maxLength' => 9, 'minLength' => 9]),
     ]]);
     $page = Livewire::test(\PHPinnacle\Ferry\Tests\Fixtures\ReplicaForm::class, ['state' => [
         'upstream_id' => $upstream->id,
@@ -633,15 +632,15 @@ it('supplies saved source descriptions and constraints to both mapping editors',
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
     TestCase::makeItem($upstream, [
         'fields' => [
-            '_idrref' => JsonSchema::fromArray([
+            '_idrref' => Schema::fromArray([
                 'type' => 'string',
                 'format' => 'uuid',
                 'x-ferry-reference' => true,
                 'minLength' => 36,
                 'maxLength' => 36,
             ]),
-            '_code' => JsonSchema::fromArray(['type' => 'string', 'maxLength' => 8, 'minLength' => 8]),
-            '_description' => JsonSchema::fromArray(['type' => 'string', 'maxLength' => 100]),
+            '_code' => Schema::fromArray(['type' => 'string', 'maxLength' => 8, 'minLength' => 8]),
+            '_description' => Schema::fromArray(['type' => 'string', 'maxLength' => 100]),
         ],
         'sources' => [
             '_fld17' => [
@@ -792,14 +791,14 @@ it('binds dynamic fields and connects static fields to the declared destination 
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
     TestCase::makeItem($upstream, [
         'fields' => [
-            '_idrref' => JsonSchema::fromArray([
+            '_idrref' => Schema::fromArray([
                 'type' => 'string',
                 'format' => 'uuid',
                 'x-ferry-reference' => true,
                 'minLength' => 36,
                 'maxLength' => 36,
             ]),
-            '_description' => JsonSchema::fromArray(['type' => 'string', 'maxLength' => 100]),
+            '_description' => Schema::fromArray(['type' => 'string', 'maxLength' => 100]),
         ],
         'sources' => [
             '_fld1' => [
@@ -872,15 +871,15 @@ it('validates the static mapping against the declared destination fields', funct
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
     TestCase::makeItem($upstream, [
         'fields' => [
-            '_idrref' => JsonSchema::fromArray([
+            '_idrref' => Schema::fromArray([
                 'type' => 'string',
                 'format' => 'uuid',
                 'x-ferry-reference' => true,
                 'minLength' => 36,
                 'maxLength' => 36,
             ]),
-            '_code' => JsonSchema::fromArray(['type' => 'string', 'maxLength' => 11, 'minLength' => 11]),
-            '_description' => JsonSchema::fromArray(['type' => 'string', 'maxLength' => 100]),
+            '_code' => Schema::fromArray(['type' => 'string', 'maxLength' => 11, 'minLength' => 11]),
+            '_description' => Schema::fromArray(['type' => 'string', 'maxLength' => 100]),
         ],
         'sources' => [],
     ]);
@@ -1166,7 +1165,7 @@ it('keeps mapping state out of creation when switching destinations', function (
         schema: customers_destination()->getSchema(),
     ));
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
-    TestCase::makeItem($upstream, ['fields' => ['_description' => JsonSchema::fromArray([
+    TestCase::makeItem($upstream, ['fields' => ['_description' => Schema::fromArray([
         'type' => 'string',
         'maxLength' => 100,
     ])]]);
@@ -1230,7 +1229,7 @@ it('stores physical source names directly', function (DestinationType $type) {
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
     $property = ['_fld17' => ['type' => 'string', 'maxLength' => 100, 'title' => 'Email']];
     $object = TestCase::makeItem($upstream, [
-        'fields' => ['_code' => JsonSchema::fromArray(['type' => 'string', 'maxLength' => 11, 'minLength' => 11])],
+        'fields' => ['_code' => Schema::fromArray(['type' => 'string', 'maxLength' => 11, 'minLength' => 11])],
         'sources' => $property,
     ]);
     $transforms = [[
@@ -1392,7 +1391,7 @@ it('uses destination JSON Schema titles, constraints and required mappings in th
         schema: $schema,
     ));
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
-    TestCase::makeItem($upstream, ['fields' => ['_description' => JsonSchema::fromArray([
+    TestCase::makeItem($upstream, ['fields' => ['_description' => Schema::fromArray([
         'type' => 'string',
         'maxLength' => 100,
     ])]]);
@@ -1413,7 +1412,7 @@ it('uses destination JSON Schema titles, constraints and required mappings in th
         'name' => 'Customer name',
         'is_active' => 'Active',
     ]);
-    expect($mapping->getTargetSchema()->properties()['name']->maxLength())->toBe(100);
+    expect($mapping->getTargetSchema()->properties()['name']->effectiveMaxLength())->toBe(100);
     expect($mapping->getTargetSchema()->properties()['name']->annotation('description'))->toBe('Official name');
     expect(collect($form->getState()['mapping'])->firstWhere('source', '_idrref')['target'])->toBe('id');
 });
@@ -1485,14 +1484,14 @@ it('maps UUID references into bounded strings while respecting target length and
     app(DestinationFactory::class)->register($destination);
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
     $object = TestCase::makeItem($upstream, ['fields' => [
-        '_partner' => JsonSchema::fromArray([
+        '_partner' => Schema::fromArray([
             'type' => 'string',
             'format' => 'uuid',
             'x-ferry-reference' => true,
             'minLength' => 36,
             'maxLength' => 36,
         ]),
-        '_description' => JsonSchema::fromArray(['type' => 'string', 'maxLength' => 100]),
+        '_description' => Schema::fromArray(['type' => 'string', 'maxLength' => 100]),
     ]]);
 
     $form = TestCase::replicaForm([
@@ -1545,7 +1544,7 @@ it('copies the selected source schema at creation and uses the saved snapshot on
     $snapshot = $replica->schema->toArray();
     $current = $snapshot;
     $current['properties']['second_field']['maxLength'] = 80;
-    $second->update(['schema' => JsonSchema::fromArray($current)]);
+    $second->update(['schema' => Schema::fromArray($current)]);
     foreach (['en', 'ru'] as $locale) {
         app()->setLocale($locale);
         $edit = ReplicaForm::configure(

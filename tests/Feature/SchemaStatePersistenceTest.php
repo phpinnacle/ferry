@@ -1,19 +1,35 @@
 <?php
 
-use Filament\Schemas\Schema;
+use Filament\Schemas\Schema as FilamentSchema;
 use Illuminate\Support\Facades\Queue;
-use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Enums\DestinationType;
 use PHPinnacle\Ferry\Enums\StructureStatus;
+use PHPinnacle\Ferry\Models\StructureItem;
 use PHPinnacle\Ferry\Resources\Replicas\Schemas\ReplicaForm;
 use PHPinnacle\Ferry\Services\ReplicaSchemaResolver;
 use PHPinnacle\Ferry\Tests\Fixtures\SchemaHost;
 use PHPinnacle\Ferry\Tests\TestCase;
+use PHPinnacle\Jason\Schema;
 
 require_once __DIR__ . '/../TestCase.php';
 require_once __DIR__ . '/../Fixtures/SchemaHost.php';
 
 uses(TestCase::class);
+
+it('preserves JSON object and array values when casting stored Jason schemas', function () {
+    $schema = Schema::fromArray([
+        'type' => 'object',
+        'properties' => ['0' => ['enum' => [(object) [], [], 1.0]]],
+    ]);
+    $item = new StructureItem(['schema' => $schema]);
+    $stored = $item->getAttributes()['schema'];
+    $restored = new StructureItem;
+    $restored->setRawAttributes(['schema' => $stored]);
+
+    expect($restored->schema->equals($schema))->toBeTrue();
+    expect($restored->schema->toJson())->toBe($schema->toJson());
+    expect($restored->toArray()['schema'])->toEqual($schema->toArray());
+});
 
 it('stores and restores the exact native schema emitted by the form', function (
     string|int|float|bool $value,
@@ -23,9 +39,9 @@ it('stores and restores the exact native schema emitted by the form', function (
     Queue::fake();
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
     TestCase::makeItem($upstream, ['fields' => [
-        '_description' => JsonSchema::fromArray(['type' => 'string', 'maxLength' => 100]),
-        '_marked' => JsonSchema::fromArray(['type' => 'boolean']),
-        '_unused' => JsonSchema::fromArray(['type' => 'string', 'maxLength' => 20]),
+        '_description' => Schema::fromArray(['type' => 'string', 'maxLength' => 100]),
+        '_marked' => Schema::fromArray(['type' => 'boolean']),
+        '_unused' => Schema::fromArray(['type' => 'string', 'maxLength' => 20]),
     ]]);
     $livewire = SchemaHost::make();
 
@@ -91,7 +107,9 @@ it('stores and restores the exact native schema emitted by the form', function (
         ->and($replica->getConnection()->getSchemaBuilder()->getColumnListing($replica->destination))
         ->toBe(['external_id', 'name', 'constant']);
 
-    $edit = ReplicaForm::configure(Schema::make($livewire)->statePath('data')->record($replica)->operation('edit'));
+    $edit = ReplicaForm::configure(
+        FilamentSchema::make($livewire)->statePath('data')->record($replica)->operation('edit'),
+    );
     $edit->fill($saved->toArray());
     expect($edit->getState()['mapping'])->toEqual($state['mapping']);
 })->with([

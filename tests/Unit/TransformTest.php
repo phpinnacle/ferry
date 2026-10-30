@@ -1,9 +1,8 @@
 <?php
 
-use Filament\Schemas\Schema;
+use Filament\Schemas\Schema as FilamentSchema;
 use Illuminate\Validation\ValidationException;
 use PHPinnacle\Common\Forms\InlineBuilder\Block as InlineBlock;
-use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Contracts\Transform;
 use PHPinnacle\Ferry\Data\FieldMapping;
 use PHPinnacle\Ferry\Data\TransformSetting;
@@ -21,6 +20,7 @@ use PHPinnacle\Ferry\Transformations\Filter;
 use PHPinnacle\Ferry\Transformations\MaskField;
 use PHPinnacle\Ferry\Transformations\Substring;
 use PHPinnacle\Ferry\Transformations\Trim;
+use PHPinnacle\Jason\Schema;
 use Tests\TestCase;
 
 require_once __DIR__ . '/../Fakes/Transform.php';
@@ -48,7 +48,7 @@ it('keeps key and value transformation chains on their declared record targets',
     $key = new FakeTransform('custom', target: TransformTarget::Key);
     $registry = new TransformRegistry;
     $registry->register($key);
-    $schema = JsonSchema::fromArray(['type' => 'string']);
+    $schema = Schema::fromArray(['type' => 'string']);
     $settings = [new TransformSetting('custom')];
     expect($registry->resultSchema($schema, $settings))->toBeNull();
     expect($registry->resultSchema($schema, $settings, TransformTarget::Key)?->toArray())->toBe($schema->toArray());
@@ -56,7 +56,7 @@ it('keeps key and value transformation chains on their declared record targets',
 
 it('uses translated Kafka type labels and stores their native string values', function (string $locale, array $labels) {
     app()->setLocale($locale);
-    $schema = Schema::make(SchemaHost::make())
+    $schema = FilamentSchema::make(SchemaHost::make())
         ->statePath('data')
         ->components(SchemaHost::transformSchema(Cast::make()));
     $schema->fill(['type' => 'int16']);
@@ -99,7 +99,7 @@ it('casts a field to the selected column type', function (string $type, string $
 
     expect(
         Cast::make()
-            ->output(JsonSchema::fromArray(['type' => 'string']), ['type' => $type])
+            ->output(Schema::fromArray(['type' => 'string']), ['type' => $type])
             ?->toArray(),
     )
         ->toBe(['type' => $schemaType])
@@ -120,7 +120,7 @@ it('casts a field to the selected column type', function (string $type, string $
 ]);
 
 it('clears reference metadata when explicitly casting to a string', function () {
-    $input = JsonSchema::fromArray([
+    $input = Schema::fromArray([
         'type' => ['string', 'null'],
         'format' => 'uuid',
         'x-ferry-reference' => true,
@@ -133,10 +133,10 @@ it('clears reference metadata when explicitly casting to a string', function () 
 });
 
 it('disables and rejects the current cast type in the native form', function (array $definition, string $current) {
-    $schema = Schema::make(SchemaHost::make())
+    $schema = FilamentSchema::make(SchemaHost::make())
         ->statePath('data')
         ->components(
-            SchemaHost::transformSchema(Cast::make(), JsonSchema::fromArray($definition)),
+            SchemaHost::transformSchema(Cast::make(), Schema::fromArray($definition)),
         );
     $schema->fill(['type' => $current]);
 
@@ -149,8 +149,8 @@ it('disables and rejects the current cast type in the native form', function (ar
 ]);
 
 it('keeps all cast targets available when the current type is unknown or a union', function (array $definition) {
-    $schema = Schema::make(SchemaHost::make())->components(
-        SchemaHost::transformSchema(Cast::make(), JsonSchema::fromArray($definition)),
+    $schema = FilamentSchema::make(SchemaHost::make())->components(
+        SchemaHost::transformSchema(Cast::make(), Schema::fromArray($definition)),
     );
 
     expect($schema->getComponent('type')->getEnabledOptions())->toBe($schema->getComponent('type')->getOptions());
@@ -161,8 +161,8 @@ it('keeps all cast targets available when the current type is unknown or a union
 ]);
 
 it('validates numeric cast targets and preserves nullable output schemas', function (string $type, string $schemaType) {
-    $input = JsonSchema::fromArray(['type' => [$schemaType, 'null'], 'minimum' => 0]);
-    $schema = Schema::make(SchemaHost::make())
+    $input = Schema::fromArray(['type' => [$schemaType, 'null'], 'minimum' => 0]);
+    $schema = FilamentSchema::make(SchemaHost::make())
         ->statePath('data')
         ->components(SchemaHost::transformSchema(Cast::make(), $input));
     $schema->fill(['type' => $type]);
@@ -176,7 +176,7 @@ it('validates numeric cast targets and preserves nullable output schemas', funct
 ]);
 
 it('rejects unsupported cast targets in the native form', function (string $type) {
-    $schema = Schema::make(SchemaHost::make())
+    $schema = FilamentSchema::make(SchemaHost::make())
         ->statePath('data')
         ->components(SchemaHost::transformSchema(Cast::make()));
     $schema->fill(['type' => $type]);
@@ -185,10 +185,10 @@ it('rejects unsupported cast targets in the native form', function (string $type
 })->with(['integer', 'array']);
 
 it('keeps the Kafka null replacement default implicit and persists disabling it', function (?string $setting) {
-    $schema = Schema::make(SchemaHost::make())
+    $schema = FilamentSchema::make(SchemaHost::make())
         ->statePath('data')
         ->components(
-            SchemaHost::transformSchema(Cast::make(), JsonSchema::fromArray(['type' => 'boolean'])),
+            SchemaHost::transformSchema(Cast::make(), Schema::fromArray(['type' => 'boolean'])),
         );
     $params = ['type' => 'string'];
     if ($setting !== null) {
@@ -209,7 +209,7 @@ it('keeps the Kafka null replacement default implicit and persists disabling it'
 })->with([null, 'true', 'false']);
 
 it('validates null replacement settings before dehydration', function () {
-    $schema = Schema::make(SchemaHost::make())
+    $schema = FilamentSchema::make(SchemaHost::make())
         ->statePath('data')
         ->components(SchemaHost::transformSchema(Cast::make()));
     $schema->fill(['type' => 'string', 'replace_null_with_default' => 'invalid']);
@@ -252,12 +252,12 @@ it('casts a typed constant after inserting it', function () {
 it('registers optional installed field transforms through the shared registry', function () {
     $registry = $this->app->make(TransformRegistry::class);
     $registry->register(Trim::make(), Substring::make(), MaskField::make());
-    expect($registry->resultSchema(JsonSchema::fromArray(['type' => 'string']), [
+    expect($registry->resultSchema(Schema::fromArray(['type' => 'string']), [
         new TransformSetting('trim'),
         new TransformSetting('substring', ['start' => '0']),
         new TransformSetting('mask', ['replacement' => '***']),
     ])?->toArray())->toBe(['type' => 'string']);
-    expect($registry->resultSchema(JsonSchema::fromArray(['type' => 'boolean']), [
+    expect($registry->resultSchema(Schema::fromArray(['type' => 'boolean']), [
         new TransformSetting('mask', ['replacement' => '***']),
     ]))->toBeNull();
 });
@@ -286,7 +286,7 @@ it('masks a source field without applying the Apache transform to tombstones', f
 
 it('only applies text transforms to native string inputs', function (array $definition, bool $allowed) {
     foreach ([Trim::make(), Substring::make(), MaskField::make()] as $description) {
-        expect($description->accepts(JsonSchema::fromArray($definition)))->toBe($allowed);
+        expect($description->accepts(Schema::fromArray($definition)))->toBe($allowed);
     }
 })->with([
     'string' => [['type' => 'string'], true],
@@ -309,7 +309,7 @@ it('dehydrates native settings forms into string parameters and omits an empty e
     ?array $expected,
 ) {
     $livewire = SchemaHost::make();
-    $schema = Schema::make($livewire)->statePath('data')->components(SchemaHost::transformSchema($transform));
+    $schema = FilamentSchema::make($livewire)->statePath('data')->components(SchemaHost::transformSchema($transform));
     $schema->fill($params === [] ? null : $params);
 
     if ($params !== []) {
@@ -341,9 +341,13 @@ it('dehydrates native settings forms into string parameters and omits an empty e
 
 it('keeps settings forms independent when a transformation is reused', function () {
     $transform = MaskField::make();
-    $first = Schema::make(SchemaHost::make())->statePath('data')->components(SchemaHost::transformSchema($transform));
+    $first = FilamentSchema::make(SchemaHost::make())
+        ->statePath('data')
+        ->components(SchemaHost::transformSchema($transform));
     $first->fill(['replacement' => 'First']);
-    $second = Schema::make(SchemaHost::make())->statePath('data')->components(SchemaHost::transformSchema($transform));
+    $second = FilamentSchema::make(SchemaHost::make())
+        ->statePath('data')
+        ->components(SchemaHost::transformSchema($transform));
     $second->fill(['replacement' => 'Second']);
 
     expect($first->getState())->toBe(['replacement' => 'First']);
@@ -354,7 +358,7 @@ it('preserves nullability and replaces value constraints in built-in output sche
     Transform $transform,
     array $params,
 ) {
-    $input = JsonSchema::fromArray([
+    $input = Schema::fromArray([
         'type' => ['string', 'null'],
         'format' => 'email',
         'enum' => ['user@example.com', null],
@@ -377,15 +381,15 @@ it('passes the complete preceding output schema to callbacks in an ordered chain
     $registry->register(
         new FakeTransform(
             'limit',
-            accepts: fn (JsonSchema $input) => $input->singleType() === 'string',
-            output: function (JsonSchema $input, array $params) use (&$seen) {
+            accepts: fn (Schema $input) => $input->singleType() === 'string',
+            output: function (Schema $input, array $params) use (&$seen) {
                 $seen[] = $input->toArray();
 
-                return JsonSchema::fromArray([...$input->toArray(), 'maxLength' => (int) $params['length']]);
+                return Schema::fromArray([...$input->toArray(), 'maxLength' => (int) $params['length']]);
             },
         ),
     );
-    $input = JsonSchema::fromArray(['type' => 'string', 'format' => 'email']);
+    $input = Schema::fromArray(['type' => 'string', 'format' => 'email']);
 
     expect($registry->resultSchema($input, []))->toBe($input);
     expect(
@@ -433,8 +437,8 @@ it('compiles a custom registered transform without building its settings form', 
     $object = StructureItems::make([
         'primary_key' => ['id'],
         'fields' => [
-            '_marked' => JsonSchema::fromArray(['type' => 'boolean']),
-            'id' => JsonSchema::fromArray(['type' => 'integer']),
+            '_marked' => Schema::fromArray(['type' => 'boolean']),
+            'id' => Schema::fromArray(['type' => 'integer']),
         ],
         'sources' => [],
     ]);

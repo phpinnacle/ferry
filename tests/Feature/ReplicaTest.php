@@ -3,8 +3,7 @@
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
-use Illuminate\Support\Facades\Schema;
-use PHPinnacle\Eidos\Forms\JsonSchema;
+use Illuminate\Support\Facades\Schema as DatabaseSchema;
 use PHPinnacle\Ferry\Data\FieldMapping;
 use PHPinnacle\Ferry\Data\TransformSetting;
 use PHPinnacle\Ferry\Enums\FieldKind;
@@ -17,6 +16,7 @@ use PHPinnacle\Ferry\Tests\Fakes\Transform as FakeTransform;
 use PHPinnacle\Ferry\Tests\Fixtures\StructureItems;
 use PHPinnacle\Ferry\Tests\TestCase;
 use PHPinnacle\Ferry\Transformations\MaskField;
+use PHPinnacle\Jason\Schema;
 
 require_once __DIR__ . '/../Fakes/Transform.php';
 
@@ -72,7 +72,10 @@ it('rolls back a replica and its table when creation fails', function () {
 
     expect(TestCase::makeReplica(...))->toThrow(RuntimeException::class, 'Destination creation failed');
 
-    expect(Replica::query()->count())->toBe(0)->and(Schema::hasTable('ferry_replica_test-replica'))->toBeFalse();
+    expect(Replica::query()->count())
+        ->toBe(0)
+        ->and(DatabaseSchema::hasTable('ferry_replica_test-replica'))
+        ->toBeFalse();
 });
 
 it('finds source objects only in the upstream published root metadata', function () {
@@ -139,7 +142,7 @@ it('owns the persisted schema and destination table throughout its lifecycle', f
         ->toEqual($replica->mapping)
         ->and($upstream->isInUse())
         ->toBeTrue()
-        ->and(Schema::getColumnListing($replica->destination))
+        ->and(DatabaseSchema::getColumnListing($replica->destination))
         ->toContain('external_id', 'title', 'price', 'posted')
         ->not->toContain('id', 'created_at', 'updated_at');
 
@@ -147,7 +150,7 @@ it('owns the persisted schema and destination table throughout its lifecycle', f
 
     app(\PHPinnacle\Ferry\Services\ConnectorManager::class)->synchronize($upstream->id);
 
-    expect(Schema::hasTable($replica->destination))
+    expect(DatabaseSchema::hasTable($replica->destination))
         ->toBeFalse()
         ->and(Replica::query()->count())
         ->toBe(0)
@@ -198,7 +201,7 @@ it('adds, renames and drops columns when the mapping changes', function () {
         'row_id' => 'source-1',
         'price' => null,
     ]);
-    expect(Schema::getColumnListing($replica->destination))
+    expect(DatabaseSchema::getColumnListing($replica->destination))
         ->toContain('row_id', 'price')
         ->not->toContain('external_id', 'title');
 });
@@ -206,7 +209,7 @@ it('adds, renames and drops columns when the mapping changes', function () {
 it('preserves renamed values when a new mapping reuses the original column name', function () {
     $field = ['type' => 'string', 'maxLength' => 100];
     $replica = TestCase::makeReplica([
-        'schema' => JsonSchema::fromArray([
+        'schema' => Schema::fromArray([
             'properties' => ['_idrref' => TestCase::keySchema()->toArray(), 'name' => $field, 'alias' => $field],
             'x-primary-key' => ['_idrref'],
         ]),
@@ -234,18 +237,18 @@ it('preserves renamed values when a new mapping reuses the original column name'
 });
 
 it('uses output schema bounds for PostgreSQL varchar columns', function () {
-    app(TransformRegistry::class)->register(MaskField::make(), new FakeTransform('bounded', output: fn () => JsonSchema::fromArray([
+    app(TransformRegistry::class)->register(MaskField::make(), new FakeTransform('bounded', output: fn () => Schema::fromArray([
         'type' => 'string',
         'maxLength' => 30,
     ])));
     $object = StructureItems::make([
         'fields' => [
             '_idrref' => TestCase::keySchema(),
-            'bounded' => JsonSchema::fromArray(['type' => 'string', 'maxLength' => 10]),
-            'unbounded' => JsonSchema::fromArray(['type' => 'string']),
-            'zero' => JsonSchema::fromArray(['type' => 'string', 'maxLength' => 0]),
-            'masked' => JsonSchema::fromArray(['type' => 'string', 'maxLength' => 1]),
-            'expanded' => JsonSchema::fromArray(['type' => 'string', 'maxLength' => 1]),
+            'bounded' => Schema::fromArray(['type' => 'string', 'maxLength' => 10]),
+            'unbounded' => Schema::fromArray(['type' => 'string']),
+            'zero' => Schema::fromArray(['type' => 'string', 'maxLength' => 0]),
+            'masked' => Schema::fromArray(['type' => 'string', 'maxLength' => 1]),
+            'expanded' => Schema::fromArray(['type' => 'string', 'maxLength' => 1]),
         ],
         'sources' => [],
     ]);
@@ -282,14 +285,14 @@ it('uses output schema bounds for PostgreSQL varchar columns', function () {
 });
 
 it('alters string bounds without dropping stored values, including when renaming', function () {
-    app(TransformRegistry::class)->register(MaskField::make(), new FakeTransform('bounded', output: fn () => JsonSchema::fromArray([
+    app(TransformRegistry::class)->register(MaskField::make(), new FakeTransform('bounded', output: fn () => Schema::fromArray([
         'type' => 'string',
         'maxLength' => 30,
     ])));
     $object = StructureItems::make([
         'fields' => [
             '_idrref' => TestCase::keySchema(),
-            'code' => JsonSchema::fromArray(['type' => 'string', 'maxLength' => 1]),
+            'code' => Schema::fromArray(['type' => 'string', 'maxLength' => 1]),
         ],
         'sources' => [],
     ]);
@@ -339,7 +342,7 @@ it('changes the column type when a mapped field changes type', function () {
 
     $schema = $replica->schema->toArray();
     $schema['properties']['flag'] = ['type' => 'number', 'x-ferry-precision' => 15, 'x-ferry-scale' => 2];
-    $replica->update(['schema' => JsonSchema::fromArray($schema)]);
+    $replica->update(['schema' => Schema::fromArray($schema)]);
 
     $column = collect(DB::select('PRAGMA table_info("' . $replica->destination . '")'))
         ->firstWhere('name', 'flag');
@@ -353,14 +356,14 @@ it('generates its dynamic table name on creation and preserves it after prefix a
     DB::table('initial_orders')->insert(['external_id' => 'source-1']);
 
     expect($replica->fresh()->destination)->toBe('initial_orders');
-    expect(Schema::hasTable('ignored_table'))->toBeFalse();
+    expect(DatabaseSchema::hasTable('ignored_table'))->toBeFalse();
 
     config(['phpinnacle-ferry.replica.table_prefix' => 'changed_']);
     $replica->update(['code' => 'renamed']);
 
     expect($replica->fresh()->destination)->toBe('initial_orders');
     expect(DB::table('initial_orders')->value('external_id'))->toBe('source-1');
-    expect(Schema::hasTable('changed_renamed'))->toBeFalse();
+    expect(DatabaseSchema::hasTable('changed_renamed'))->toBeFalse();
 });
 
 it('creates decimal columns from the effective output schema', function (?array $result, string $sql) {
@@ -373,13 +376,13 @@ it('creates decimal columns from the effective output schema', function (?array 
         ->shouldReceive('sourceObject')
         ->andReturn(StructureItems::make(['fields' => ['_idrref' => TestCase::keySchema()]]));
     if ($result !== null) {
-        app(TransformRegistry::class)->register(new FakeTransform('decimal', output: fn () => JsonSchema::fromArray(
+        app(TransformRegistry::class)->register(new FakeTransform('decimal', output: fn () => Schema::fromArray(
             $result,
         )));
     }
 
     $replica->fill([
-        'schema' => JsonSchema::fromArray([
+        'schema' => Schema::fromArray([
             'properties' => [
                 '_idrref' => TestCase::keySchema()->toArray(),
                 'amount' => ['type' => 'number', 'x-ferry-precision' => 12, 'x-ferry-scale' => 4],
@@ -416,7 +419,7 @@ it('creates SQL columns from timestamp conversion output', function (string $tar
     ]);
     $object = StructureItems::make(['fields' => [
         '_idrref' => TestCase::keySchema(),
-        'created' => JsonSchema::fromArray(['type' => 'integer']),
+        'created' => Schema::fromArray(['type' => 'integer']),
     ]]);
     $replica = Mockery::mock(Replica::class)->makePartial();
     $replica->shouldReceive('sourceObject')->andReturn($object);
@@ -463,15 +466,15 @@ it('copies the complete input schema on creation and keeps its own snapshot afte
 
     $changed = $snapshot;
     $changed['properties']['title']['maxLength'] = 80;
-    $object->update(['schema' => JsonSchema::fromArray($changed)]);
+    $object->update(['schema' => Schema::fromArray($changed)]);
     expect($replica->fresh()->schema->toArray())->toBe($snapshot);
 
-    $replica->update(['schema' => JsonSchema::fromArray($changed)]);
+    $replica->update(['schema' => Schema::fromArray($changed)]);
     expect($replica->fresh()->schema->toArray())
         ->toBe($changed)
         ->and($replica->fresh()->mapping)
         ->toBe([])
-        ->and(Schema::hasTable($replica->destination))
+        ->and(DatabaseSchema::hasTable($replica->destination))
         ->toBeFalse();
 });
 it('applies combined removals, type replacements, renames and additions without losing retained values', function () {
@@ -507,7 +510,7 @@ it('applies combined removals, type replacements, renames and additions without 
     $schema['properties']['name']['maxLength'] = 20;
 
     $replica->update([
-        'schema' => JsonSchema::fromArray($schema),
+        'schema' => Schema::fromArray($schema),
         'mapping' => [
             TestCase::keyMapping(),
             new FieldMapping('name', 'display_name'),
@@ -522,7 +525,7 @@ it('applies combined removals, type replacements, renames and additions without 
         'added' => null,
         'flag' => null,
     ]);
-    expect(Schema::getColumnListing($replica->destination))->toEqualCanonicalizing([
+    expect(DatabaseSchema::getColumnListing($replica->destination))->toEqualCanonicalizing([
         'external_id',
         'display_name',
         'added',

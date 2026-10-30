@@ -3,13 +3,13 @@
 namespace PHPinnacle\Ferry\Origins\Kafka;
 
 use Illuminate\Container\Attributes\Singleton;
-use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Data\FieldMapping;
 use PHPinnacle\Ferry\Enums\FieldKind;
 use PHPinnacle\Ferry\Enums\TransformScope;
 use PHPinnacle\Ferry\Models\Replica;
 use PHPinnacle\Ferry\Models\StructureItem;
 use PHPinnacle\Ferry\Services\TransformRegistry;
+use PHPinnacle\Jason\Schema;
 
 #[Singleton]
 class TransformFactory
@@ -32,7 +32,7 @@ class TransformFactory
         $pipeline = [];
         $columns = $replica->columnMap();
         $reserved = array_fill_keys([
-            ...array_keys($object->schema->properties()),
+            ...array_keys($object->schema->resolveReferences()->effectiveProperties()),
             ...array_values($columns),
             ...$replica->constantColumns(),
             ...array_keys($fixedValues),
@@ -101,7 +101,7 @@ class TransformFactory
             'renames' => self::renames($columns),
         ];
         if ($columns === []) {
-            /** @var JsonSchema $schema */
+            /** @var Schema $schema */
             $schema = $this->transforms->resultSchema(
                 $object->schema,
                 $replica->transforms,
@@ -109,7 +109,10 @@ class TransformFactory
                 TransformScope::Record,
             );
             // An empty include retains every field, so key-only sinks must explicitly exclude them.
-            $pipeline['rename_values']['exclude'] = implode(',', array_keys($schema->properties()));
+            $pipeline['rename_values']['exclude'] = implode(
+                ',',
+                array_keys($schema->resolveReferences()->effectiveProperties()),
+            );
         }
 
         return self::configuration($pipeline);
