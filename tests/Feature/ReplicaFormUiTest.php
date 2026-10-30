@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
+use PHPinnacle\Eidos\Enums\MappingMode;
 use PHPinnacle\Eidos\Forms\FieldBinding;
 use PHPinnacle\Eidos\Forms\FieldMapping;
 use PHPinnacle\Eidos\Forms\JsonSchema;
@@ -183,9 +184,9 @@ it('only connects static destination primary keys to source primary-key fields',
     $mapping = $form->getComponentByStatePath('mapping');
 
     expect($mapping->getConnectionModes())
-        ->toHaveKey('record_id.id', 'whole')
-        ->toHaveKey('tenant_id.tenant', 'whole')
-        ->toHaveKey('owner.name', 'whole')
+        ->toHaveKey('record_id.id', MappingMode::Whole)
+        ->toHaveKey('tenant_id.tenant', MappingMode::Whole)
+        ->toHaveKey('owner.name', MappingMode::Whole)
         ->not->toHaveKey('record_id.name')
         ->not->toHaveKey('tenant_id.name')
         ->not->toHaveKey('owner.id')
@@ -448,8 +449,8 @@ it('accepts UUID transform outputs for reference destinations', function () {
         'x-ferry-reference' => true,
     ]);
     expect($mapping->getConnectionModes())
-        ->toHaveKey('_owner.owner', 'whole')
-        ->toHaveKey('_description.owner', 'whole');
+        ->toHaveKey('_owner.owner', MappingMode::Whole)
+        ->toHaveKey('_description.owner', MappingMode::Whole);
     $state = $form->getState();
     $owner = collect($state['mapping'])->firstWhere('source', '_owner');
     expect($mapping->getOutputSchema()['properties']['_owner'])->toMatchArray([
@@ -595,7 +596,7 @@ it('refreshes static mapping compatibility when transform actions change the sou
     $action = TestAction::make('fieldTransforms')->schemaComponent($path, 'form');
     $page->callAction($action->arguments(['block' => 'cast']), ['data' => ['type' => 'boolean']]);
     expect($page->instance()->form->getComponentByStatePath('mapping')->getConnectionModes()['_description'])
-        ->toBe(['is_active' => 'whole']);
+        ->toBe(['is_active' => MappingMode::Whole]);
     expect($page->effects)->not->toHaveKey('html');
     expect($page->effects['partials']['schema-component::form.mapping'])
         ->toContain('data-mapping-source-settings="_description"', '>boolean</span>', 'updateConfiguration(');
@@ -835,7 +836,10 @@ it('binds dynamic fields and connects static fields to the declared destination 
         ->and($form('customers')->getComponentByStatePath('mapping'))
         ->toBeInstanceOf(FieldMapping::class);
 
-    expect($mapping->getConnectionModes()['_fld1'])->toBe(['name' => 'whole', 'tax_number' => 'whole']);
+    expect($mapping->getConnectionModes()['_fld1'])->toBe([
+        'name' => MappingMode::Whole,
+        'tax_number' => MappingMode::Whole,
+    ]);
 
     $schema = $form('customers');
     $schema->fill([
@@ -850,7 +854,7 @@ it('binds dynamic fields and connects static fields to the declared destination 
         ->getComponentByStatePath('mapping.' . $key . '.options.transforms')
         ->state([['type' => 'cast', 'data' => ['type' => 'string']]]);
     expect($mapping->getConnectionModes()['_fld1'])
-        ->toBe(['name' => 'whole', 'tax_number' => 'whole']);
+        ->toBe(['name' => MappingMode::Whole, 'tax_number' => MappingMode::Whole]);
 });
 
 it('validates the static mapping against the declared destination fields', function (array $mapping, bool $valid) {
@@ -1478,9 +1482,9 @@ it('maps UUID references into bounded strings while respecting target length and
     $mapping = $form->getComponentByStatePath('mapping');
 
     expect($mapping->getConnectionModes())
-        ->not->toHaveKey('_partner.external_id')->toHaveKey('_idrref.external_id', 'whole')->toHaveKey(
+        ->not->toHaveKey('_partner.external_id')->toHaveKey('_idrref.external_id', MappingMode::Whole)->toHaveKey(
             '_partner.exact_id',
-            'whole',
+            MappingMode::Whole,
         )
         ->not->toHaveKey('_partner.short_id')
         ->not->toHaveKey('_description.uuid_id');

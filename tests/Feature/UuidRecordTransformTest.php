@@ -5,6 +5,7 @@ use Filament\Schemas\Schema as FormSchema;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
+use PHPinnacle\Eidos\Enums\MappingMode;
 use PHPinnacle\Eidos\Forms\JsonSchemaPicker;
 use PHPinnacle\Ferry\Data\FieldMapping;
 use PHPinnacle\Ferry\Destinations\StaticDestination;
@@ -113,8 +114,8 @@ it('creates and persists one UUID key through the tabbed record builder for both
         ->toMatchArray(['record_id' => true, 'tenant_id' => true, 'row_id' => true]);
     if ($type === DestinationType::Static) {
         expect($mapping->getConnectionModes())
-            ->toHaveKey('record_id.id', 'whole')
-            ->toHaveKey('tenant_id.tenant', 'whole')
+            ->toHaveKey('record_id.id', MappingMode::Whole)
+            ->toHaveKey('tenant_id.tenant', MappingMode::Whole)
             ->not->toHaveKey('tenant_id.id')
             ->not->toHaveKey('row_id.id');
     }
