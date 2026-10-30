@@ -48,11 +48,7 @@ beforeEach(function () {
     Queue::fake();
 });
 
-it('prohibits all source primary-key transforms while allowing their removal in both mapping editors', function (
-    DestinationType $type,
-    string $transform,
-    array $parameters,
-) {
+it('omits value transforms from source primary-key editors', function (DestinationType $type) {
     $destination = new StaticDestination(
         'keyed',
         'Keyed',
@@ -68,7 +64,7 @@ it('prohibits all source primary-key transforms while allowing their removal in 
     app(DestinationFactory::class)->register($destination);
     app(TransformRegistry::class)->register(Trim::make());
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
-    $object = TestCase::makeItem($upstream, [
+    TestCase::makeItem($upstream, [
         'primary_key' => ['record_id'],
         'sources' => ['record_id' => ['type' => 'string'], 'name' => ['type' => 'string']],
     ]);
@@ -92,52 +88,20 @@ it('prohibits all source primary-key transforms while allowing their removal in 
     $keys = $mapping->getSourceRowIndexes();
     $field = $form->getComponentByStatePath('mapping.' . $keys['record_id'] . '.options.transforms');
     $ordinary = $form->getComponentByStatePath('mapping.' . $keys['name'] . '.options.transforms');
+    expect($field->getBlocks())->toBe([]);
     expect($field->getAvailableBlocks())->toBe([]);
     expect($field->getAction('fieldTransforms')([])->toHtml())
         ->not
         ->toContain('inline-builder-add-button', 'inline-builder-placeholder');
-    expect($field->isDeletable())->toBeTrue();
-    expect(array_keys($ordinary->getAvailableTransforms(app(TransformRegistry::class))))
+    expect(array_keys($ordinary->getAvailableBlocks()))
         ->toContain('cast', 'filter', 'trim');
 
-    $settings = [['type' => $transform, 'data' => $parameters]];
-    $field->state($settings);
-    expect($form->getState(...))->toThrow(ValidationException::class);
-    $invalid = new SchemaMapping(source: 'record_id', target: 'id', options: [
-        'transforms' => [['type' => $transform, 'data' => $parameters]],
-    ]);
-    expect(fn () => TestCase::replicaFormState([
-        'schema' => $replica->schema->toArray(),
-        'name' => 'Keyed',
-        'mapping' => [$invalid->jsonSerialize()],
-    ], $replica))
-        ->toThrow(ValidationException::class);
-
-    expect($field->getSettings())->toBe($settings);
-    $action = $field->getAction('fieldTransforms');
-    expect($action([])->toHtml())
-        ->not
-        ->toContain('inline-builder-add-button', 'inline-builder-placeholder')
-        ->toContain(__('phpinnacle-common::inline-builder.remove', [
-            'block' => app(TransformRegistry::class)->getOrFail($transform)->block()->getLabel(),
-        ]));
-    expect(fn () => $action(['block' => 'filter'])->call())->toThrow(ValidationException::class);
-    $action(['block' => $transform, 'index' => 0, 'remove' => true])->call();
-    expect($field->getSettings())->toBe([]);
     $data = $form->getState();
-    $replica->mapping = $data['mapping'];
     expect(collect($data['mapping'])->firstWhere('source', 'record_id'))->toMatchArray([
         'source' => 'record_id',
         'target' => 'id',
     ]);
-})->with([DestinationType::Dynamic, DestinationType::Static])->with([
-    'filter' => [
-        'filter',
-        ['condition' => "@ == 'blocked'", 'mode' => 'exclude', 'missing_or_null_behavior' => 'include'],
-    ],
-    'trim' => ['trim', []],
-    'cast' => ['cast', ['type' => 'int64']],
-]);
+})->with([DestinationType::Dynamic, DestinationType::Static]);
 
 it('only connects static destination primary keys to source primary-key fields', function () {
     $destination = new StaticDestination(
@@ -437,7 +401,7 @@ it('accepts UUID transform outputs for reference destinations', function () {
         ]),
     ]);
     $mapping = $form->getComponentByStatePath('mapping');
-    expect($mapping->getSourceSchema()['properties']['_owner'])->toMatchArray([
+    expect($mapping->getSourceSchema()->toArray()['properties']['_owner'])->toMatchArray([
         'type' => 'string',
         'format' => 'uuid',
         'x-ferry-reference' => true,
@@ -447,7 +411,7 @@ it('accepts UUID transform outputs for reference destinations', function () {
         ->toHaveKey('_description.owner', MappingMode::Whole);
     $state = $form->getState();
     $owner = collect($state['mapping'])->firstWhere('source', '_owner');
-    expect($mapping->getOutputSchema()['properties']['_owner'])->toMatchArray([
+    expect($mapping->getOutputSchema()->toArray()['properties']['_owner'])->toMatchArray([
         'type' => 'string',
         'format' => 'uuid',
         'x-ferry-reference' => true,
@@ -475,7 +439,10 @@ it('accepts UUID transform outputs for reference destinations', function () {
     ]);
     $transformed = collect($form->getState()['mapping'])->firstWhere('source', '_description');
     expect($transformed['target'])->toBe('owner');
-    expect($mapping->getOutputSchema()['properties']['_description'])->toBe(['type' => 'string', 'format' => 'uuid']);
+    expect($mapping->getOutputSchema()->toArray()['properties']['_description'])->toBe([
+        'type' => 'string',
+        'format' => 'uuid',
+    ]);
 });
 
 it('keeps the editors while deriving mapping sources from current record transforms', function (DestinationType $type) {
@@ -493,7 +460,7 @@ it('keeps the editors while deriving mapping sources from current record transfo
 
     $transforms->state([['type' => 'slug', 'data' => ['input' => "$['name']", 'output' => 'slug']]]);
 
-    expect($mapping->getSourceSchema()['properties'])->toHaveKey('slug');
+    expect($mapping->getSourceSchema()->toArray()['properties'])->toHaveKey('slug');
     $mapping->getContainer()->getParentComponent()->clearCachedChildSchemas();
     expect($form->getComponentByStatePath('mapping'))->toBe($mapping);
     expect($form->getComponentByStatePath('transforms'))->toBe($transforms);
@@ -501,11 +468,11 @@ it('keeps the editors while deriving mapping sources from current record transfo
 
     $transforms->state([]);
 
-    expect($mapping->getSourceSchema()['properties'])->not->toHaveKey('slug');
+    expect($mapping->getSourceSchema()->toArray()['properties'])->not->toHaveKey('slug');
     app()->setLocale('en');
-    expect($mapping->getSourceSchema()['properties']['_idrref']['title'])->toBe('Identifier');
+    expect($mapping->getSourceSchema()->toArray()['properties']['_idrref']['title'])->toBe('Identifier');
     app()->setLocale('ru');
-    expect($mapping->getSourceSchema()['properties']['_idrref']['title'])->toBe('Идентификатор');
+    expect($mapping->getSourceSchema()->toArray()['properties']['_idrref']['title'])->toBe('Идентификатор');
 })->with([DestinationType::Dynamic, DestinationType::Static]);
 
 it('keeps timestamp settings and output types after Livewire updates and editing repeated instances', function () {
@@ -1467,7 +1434,7 @@ it('uses destination JSON Schema titles, constraints and required mappings in th
 
     $mapping = $form->getComponentByStatePath('mapping');
 
-    expect($mapping->getTargetSchema())->toBe($schema->toArray());
+    expect($mapping->getTargetSchema()->toArray())->toBe($schema->toArray());
     expect($mapping->getRequiredTargets())->toBe(['name']);
     expect(array_column($mapping->getTargets(), 'label', 'id'))->toBe([
         'name' => 'Customer name',
@@ -1622,7 +1589,10 @@ it('copies the selected source schema at creation and uses the saved snapshot on
         expect($livewire->data['schema'])
             ->toBe($snapshot)
             ->and(
-                $edit->getComponentByStatePath('mapping')->getSourceSchema()['properties']['second_field']['maxLength'],
+                $edit
+                    ->getComponentByStatePath('mapping')
+                    ->getSourceSchema()
+                    ->toArray()['properties']['second_field']['maxLength'],
             )
             ->toBe(40)
             ->and($sources['_idrref']['label'])

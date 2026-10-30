@@ -41,7 +41,7 @@ it('updates parent mapping output after native dictionary changes and Livewire r
     $page->call('$refresh');
 
     $mapping = $page->instance()->form->getComponentByStatePath('mapping');
-    expect($mapping->getOutputSchema()['properties']['active'])->toBe([
+    expect($mapping->getOutputSchema()->toArray()['properties']['active'])->toBe([
         'type' => 'string',
         'enum' => [''],
         'minLength' => 0,
@@ -64,7 +64,14 @@ it('updates parent mapping output after native dictionary changes and Livewire r
             ]],
         ],
     ]);
-    expect($reopened->instance()->form->getComponentByStatePath('mapping')->getOutputSchema()['properties']['active'])
+    expect(
+        $reopened
+            ->instance()
+            ->form
+            ->getComponentByStatePath('mapping')
+            ->getOutputSchema()
+            ->toArray()['properties']['active'],
+    )
         ->toBe(['type' => 'string', 'enum' => [''], 'minLength' => 0, 'maxLength' => 0]);
 });
 

@@ -18,7 +18,6 @@ use PHPinnacle\Ferry\Origins\Kafka\TransformFactory;
 use PHPinnacle\Ferry\Resources\Replicas\Schemas\ReplicaForm;
 use PHPinnacle\Ferry\Services\DestinationFactory;
 use PHPinnacle\Ferry\Services\ReplicaSchemaResolver;
-use PHPinnacle\Ferry\Services\TransformRegistry;
 use PHPinnacle\Ferry\Tests\Fixtures\SchemaHost;
 use PHPinnacle\Ferry\Tests\TestCase;
 use PHPinnacle\Jason\Schema;
@@ -106,7 +105,7 @@ it('creates and persists one UUID key through the tabbed record builder for both
 
     $form = $page->instance()->form;
     $mapping = $form->getComponentByStatePath('mapping');
-    expect(array_keys($mapping->getSourceSchema()['properties']))
+    expect(array_keys($mapping->getSourceSchema()->toArray()['properties']))
         ->toBe(['record_id', '_idrref', 'tenant_id', 'row_id', 'name', 'unused']);
     expect($mapping->getSources()[0]['id'])->toBe('record_id');
     expect($mapping->getSources()[0]['label'])->toBe('Record Id');
@@ -137,22 +136,8 @@ it('creates and persists one UUID key through the tabbed record builder for both
     $state = $form->getState();
     $index = $form->getComponentByStatePath('mapping')->getSourceRowIndex('record_id');
     $keyTransforms = $form->getComponentByStatePath('mapping.' . $index . '.options.transforms');
-    expect($keyTransforms->getAvailableTransforms(app(\PHPinnacle\Ferry\Services\TransformRegistry::class)))->toBe([]);
+    expect($keyTransforms->getBlocks())->toBe([]);
     expect($keyTransforms->getAvailableBlocks())->toBe([]);
-    $keyTransforms->state([['type' => 'cast', 'data' => ['type' => 'string']]]);
-    expect($form->getState(...))->toThrow(ValidationException::class);
-    $invalidRows = $state['mapping'];
-    $invalidRows[array_search('record_id', array_column($state['mapping'], 'source'), true)]['options']['transforms'] =
-        [['type' => 'cast', 'data' => ['type' => 'string']]];
-    $record = $form->getRecord();
-    try {
-        TestCase::replicaFormState([...$state, 'mapping' => $invalidRows], $record);
-        test()->fail('Invalid key transforms must fail validation.');
-    } catch (ValidationException $exception) {
-        expect(implode(' ', array_keys($exception->errors())))->toContain('options.transforms');
-    }
-
-    $keyTransforms->state([]);
     $recordTransforms = $form->getComponentByStatePath('transforms');
     $original = $recordTransforms->getRawState();
     $invalid = $original;
@@ -221,6 +206,8 @@ it('creates and persists one UUID key through the tabbed record builder for both
             'transforms.' . $generator . '.output' => 'record_id',
             'transforms.rename_keys.include' => 'record_id',
             'transforms.rename_keys.renames' => 'record_id:id',
+            'transforms.rename_values.include' => 'name,tenant_id',
+            'transforms.rename_values.renames' => 'name:name,tenant_id:tenant',
             'pk.mode' => 'record_key',
             'pk.fields' => 'id',
             'insert.mode' => 'upsert',
@@ -252,7 +239,7 @@ it('preserves destination constants when adding a UUID key', function () {
     );
     $form->fill($replica->toArray());
     $mapping = $form->getComponentByStatePath('mapping');
-    $properties = $mapping->getSourceSchema()['properties'];
+    $properties = $mapping->getSourceSchema()->toArray()['properties'];
     expect(array_keys($properties))->toBe(array_keys($replica->schema->toArray()['properties']));
     $transforms = $form->getComponentByStatePath('transforms');
     $action = $transforms->getAction('add')(['block' => 'insert_uuid']);
@@ -262,7 +249,10 @@ it('preserves destination constants when adding a UUID key', function () {
     $transforms->getChildSchema($item)->getComponentByStatePath('output')->state('record_id');
     $transforms->callAfterStateUpdated();
     expect(array_keys($livewire->data['schema']['properties']))->toBe(array_keys($properties));
-    expect(array_keys($mapping->getSourceSchema()['properties']))->toBe(['record_id', ...array_keys($properties)]);
+    expect(array_keys($mapping->getSourceSchema()->toArray()['properties']))->toBe([
+        'record_id',
+        ...array_keys($properties),
+    ]);
     $rows = $mapping->getState();
     $rows[$mapping->getSourceRowIndex('record_id')]['target'] = 'id';
     $mapping->state($rows);

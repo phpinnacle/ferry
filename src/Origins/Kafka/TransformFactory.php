@@ -3,8 +3,10 @@
 namespace PHPinnacle\Ferry\Origins\Kafka;
 
 use Illuminate\Container\Attributes\Singleton;
+use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Data\FieldMapping;
 use PHPinnacle\Ferry\Enums\FieldKind;
+use PHPinnacle\Ferry\Enums\TransformScope;
 use PHPinnacle\Ferry\Models\Replica;
 use PHPinnacle\Ferry\Models\StructureItem;
 use PHPinnacle\Ferry\Services\TransformRegistry;
@@ -92,11 +94,23 @@ class TransformFactory
             ];
         }
 
+        $columns = array_diff_key($columns, $keyMap);
         $pipeline['rename_values'] = [
             'type' => 'org.apache.kafka.connect.transforms.ReplaceField$Value',
             'include' => implode(',', array_keys($columns)),
             'renames' => self::renames($columns),
         ];
+        if ($columns === []) {
+            /** @var JsonSchema $schema */
+            $schema = $this->transforms->resultSchema(
+                $object->schema,
+                $replica->transforms,
+                null,
+                TransformScope::Record,
+            );
+            // An empty include retains every field, so key-only sinks must explicitly exclude them.
+            $pipeline['rename_values']['exclude'] = implode(',', array_keys($schema->properties()));
+        }
 
         return self::configuration($pipeline);
     }

@@ -19,7 +19,6 @@ use PHPinnacle\Ferry\Origins\Kafka\TransformFactory;
 use PHPinnacle\Ferry\Resources\Replicas\Schemas\ReplicaForm;
 use PHPinnacle\Ferry\Services\DestinationFactory;
 use PHPinnacle\Ferry\Services\ReplicaSchemaResolver;
-use PHPinnacle\Ferry\Services\TransformRegistry;
 use PHPinnacle\Ferry\Tests\Fixtures\MappingState;
 use PHPinnacle\Ferry\Tests\Fixtures\SchemaHost;
 use PHPinnacle\Ferry\Tests\Fixtures\StructureItems;
@@ -284,7 +283,7 @@ it('offers Filter in the settings of an unbound source without a column selector
     $key = $mapping->getSourceRowIndexes()['_marked'];
     $field = $form->getComponentByStatePath('mapping.' . $key . '.options.transforms');
 
-    expect(array_keys($field->getAvailableTransforms(app(TransformRegistry::class))))->toBe([
+    expect(array_keys($field->getAvailableBlocks()))->toBe([
         'cast',
         'filter',
         'boolean_to_string',

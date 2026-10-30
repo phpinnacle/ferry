@@ -159,7 +159,7 @@ it('offers every registered record transform as a native tab and persists custom
     $value->callAfterStateUpdated();
 
     $mapping = $form->getComponentByStatePath('mapping');
-    expect($mapping->getSourceSchema()['properties'])->toHaveKey('tag');
+    expect($mapping->getSourceSchema()->toArray()['properties'])->toHaveKey('tag');
     $rows = $mapping->getState();
     $rows[$mapping->getSourceRowIndex('tag')]['target'] = 'tag';
     $mapping->state($rows);
@@ -200,7 +200,7 @@ it('updates mapping when a record output is renamed or deleted while retaining o
     $output->callAfterStateUpdated();
 
     $mapping = $form->getComponentByStatePath('mapping');
-    expect($mapping->getSourceSchema()['properties'])->toHaveKey('renamed_slug')->not->toHaveKey('slug');
+    expect($mapping->getSourceSchema()->toArray()['properties'])->toHaveKey('renamed_slug')->not->toHaveKey('slug');
     expect(array_column($mapping->getRawState(), 'source'))->toContain('renamed_slug')->not->toContain('slug');
     expect(collect($mapping->getState())->firstWhere('source', '_idrref')['target'])->toBe('id');
     expect(collect($mapping->getState())->firstWhere('target', 'active')['static'])->toBeTrue();
@@ -209,7 +209,7 @@ it('updates mapping when a record output is renamed or deleted while retaining o
     $action->call();
     expect($builder->getRawState())->toBe([]);
     $mapping = $form->getComponentByStatePath('mapping');
-    expect($mapping->getSourceSchema()['properties'])->not->toHaveKey('renamed_slug');
+    expect($mapping->getSourceSchema()->toArray()['properties'])->not->toHaveKey('renamed_slug');
     expect(array_column($mapping->getRawState(), 'source'))->not->toContain('renamed_slug');
     expect(collect($mapping->getState())->firstWhere('target', 'active')['static'])->toBeTrue();
 });

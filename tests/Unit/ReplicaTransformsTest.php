@@ -58,7 +58,7 @@ it('runs record transforms before field chains and renames regardless of mapping
         'transforms.field_0_0.fields' => 'name',
         'transforms.field_1_0.static.field' => '__ferry_static_1',
         'transforms.field_1_1.fields' => '__ferry_static_1',
-        'transforms.rename_values.renames' => 'name:title,slug:slug,other_slug:other_slug,uuid:id,__ferry_static_1:name',
+        'transforms.rename_values.renames' => 'name:title,slug:slug,other_slug:other_slug,__ferry_static_1:name',
     ]);
     expect(array_keys(app(ReplicaSchemaResolver::class)->transformedSchema($replica)->properties()))
         ->toBe(['uuid', 'name', 'slug', 'other_slug', 'tail']);
@@ -72,7 +72,7 @@ it('keeps record transforms out of field editors and field transforms out of rec
         'properties' => [],
     ]));
     Schema::make(SchemaHost::make())->components([$field])->fill();
-    expect($field->getAvailableTransforms($registry))->not->toHaveKeys(['insert_uuid', 'slug']);
+    expect($field->getAvailableBlocks())->not->toHaveKeys(['insert_uuid', 'slug']);
     expect($registry->resultSchema(
         JsonSchema::fromArray(['type' => 'object']),
         [new TransformSetting('filter')],

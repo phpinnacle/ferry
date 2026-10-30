@@ -14,9 +14,7 @@ use PHPinnacle\Ferry\Enums\TransformScope;
 use PHPinnacle\Ferry\Enums\TransformTarget;
 use PHPinnacle\Ferry\Services\TransformRegistry;
 
-/**
- * @phpstan-import-type TransformData from TransformSetting
- */
+/** @phpstan-import-type TransformData from TransformSetting */
 class FieldTransforms extends InlineBuilder
 {
     protected TransformTarget $target = TransformTarget::Value;
@@ -57,24 +55,6 @@ class FieldTransforms extends InlineBuilder
         return parent::getItemComponents($type, $index, $injections);
     }
 
-    /** @return array<string, Transform> */
-    public function getAvailableTransforms(TransformRegistry $transforms): array
-    {
-        $schema = $this->resolveSettings($transforms)['schema'];
-        if ($schema === null) {
-            return [];
-        }
-
-        return array_filter(
-            $transforms->all(),
-            fn (Transform $transform) => (
-                $transform->getScope() === TransformScope::Field
-                && $transform->getTarget() === $this->target
-                && $transform->accepts($schema)
-            ),
-        );
-    }
-
     /** @return array<string, InlineBlock> */
     public function getAvailableBlocks(): array
     {
@@ -83,9 +63,16 @@ class FieldTransforms extends InlineBuilder
             return [];
         }
 
-        return array_intersect_key(
+        $schema = $this->getInputSchema();
+        if ($schema === null) {
+            return [];
+        }
+
+        $registry = app(TransformRegistry::class);
+
+        return array_filter(
             $blocks,
-            $this->getAvailableTransforms(app(TransformRegistry::class)),
+            fn (InlineBlock $block) => $registry->getOrFail($block->getName())->accepts($schema),
         );
     }
 
@@ -122,17 +109,6 @@ class FieldTransforms extends InlineBuilder
         return ['settings' => $settings, 'schema' => $schema, 'invalid' => $invalid];
     }
 
-    /** @param list<TransformData> $settings */
-    public function hasCompatibleTypes(array $settings, TransformRegistry $transforms): bool
-    {
-        return $transforms->resultSchema(
-            $this->evaluate($this->inputSchema),
-            array_map(TransformSetting::fromArray(...), $settings),
-            $this->target,
-            TransformScope::Field,
-        ) !== null;
-    }
-
     public function getEditorActionName(): string
     {
         return 'fieldTransforms';
@@ -149,10 +125,13 @@ class FieldTransforms extends InlineBuilder
             fn (Transform $transform) => $transform->block(),
             array_filter(
                 $registry->all(),
-                fn (Transform $transform) => $transform->getScope() === TransformScope::Field,
+                fn (Transform $transform) => (
+                    $transform->getScope() === TransformScope::Field
+                    && $transform->getTarget() === $this->target
+                ),
             ),
         )));
-        $this->reorderableUsing(self::canReorderItems(...));
+        $this->reorderableUsing($this->canReorderItems(...));
         $this->rules(fn (self $component, TransformRegistry $transforms) => [
             fn (string $attribute, mixed $value, Closure $fail) => $component->validateSettings(
                 $transforms,
@@ -164,9 +143,14 @@ class FieldTransforms extends InlineBuilder
     }
 
     /** @param list<TransformData> $items */
-    private static function canReorderItems(self $component, array $items, TransformRegistry $transforms): bool
+    private function canReorderItems(array $items, TransformRegistry $registry): bool
     {
-        return $component->hasCompatibleTypes($items, $transforms);
+        return $registry->resultSchema(
+            $this->evaluate($this->inputSchema),
+            array_map(TransformSetting::fromArray(...), $items),
+            $this->target,
+            TransformScope::Field,
+        ) !== null;
     }
 
     /** @param Closure(string): PotentiallyTranslatedString $fail */

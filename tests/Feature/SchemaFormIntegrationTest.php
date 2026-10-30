@@ -35,7 +35,10 @@ it('keeps schema form translations independent of replica labels', function (
         'phpinnacle-ferry',
     );
     $source = ['properties' => ['name' => ['type' => 'string']]];
-    $field = FieldBinding::make('mapping')->jsonSchema($source)->simple(TextInput::make('destination'))->staticValues();
+    $field = FieldBinding::make('mapping')
+        ->jsonSchema(JsonSchema::fromArray($source))
+        ->simple(TextInput::make('destination'))
+        ->staticValues();
     $schema = Schema::make(SchemaHost::make())->statePath('data')->components([$field]);
     $schema->fill([
         'mapping' => [
@@ -62,10 +65,15 @@ it('validates transform settings on unconnected sources', function (
     app(TransformRegistry::class)->register(Trim::make(), MaskField::make());
     $source = ['properties' => ['input' => ['type' => $type]]];
     $field = $binding
-        ? FieldBinding::make('widget')->jsonSchema($source)->simple(TextInput::make('column')->default('output'))
-        : FieldMapping::make('widget')->jsonSchema(source: $source, target: [
-            'properties' => ['output' => ['type' => $type]],
-        ]);
+        ? FieldBinding::make('widget')
+            ->jsonSchema(JsonSchema::fromArray($source))
+            ->simple(TextInput::make('column')->default('output'))
+        : FieldMapping::make('widget')->jsonSchema(
+            source: JsonSchema::fromArray($source),
+            target: JsonSchema::fromArray([
+                'properties' => ['output' => ['type' => $type]],
+            ]),
+        );
     $field->sourceSettings([FieldTransforms::make('transforms')->inputSchema(JsonSchema::fromArray([
         'type' => $type,
     ]))]);
@@ -100,7 +108,7 @@ it('uses a generic value label independently of replica labels', function () {
         'phpinnacle-ferry',
     );
     $field = FieldMapping::make('mapping')
-        ->jsonSchema(target: ['properties' => ['target' => ['type' => 'string']]])
+        ->jsonSchema(target: JsonSchema::fromArray(['properties' => ['target' => ['type' => 'string']]]))
         ->withBuiltinStaticForms();
     $schema = Schema::make(SchemaHost::make())->statePath('data')->components([$field]);
     $schema->fill();

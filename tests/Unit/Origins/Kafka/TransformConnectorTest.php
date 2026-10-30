@@ -72,7 +72,7 @@ it('orders field transforms and static values before the renames of a sink', fun
         ->and($config['transforms.field_1_0.spec'])
         ->toBe('_fld1:int64')
         ->and($config['transforms.rename_values.renames'])
-        ->toBe('_idrref:external_id,_fld1:size,__ferry_static_2:active')
+        ->toBe('_fld1:size,__ferry_static_2:active')
         ->and($config['transforms.field_2_0.static.field'])
         ->toBe('__ferry_static_2')
         ->and($config['transforms.field_2_0_cast.spec'])
@@ -226,7 +226,7 @@ it('builds installed string transforms before renames and guards masking against
         ->and($config['predicates.tombstone.type'])
         ->toBe('org.apache.kafka.connect.transforms.predicates.RecordIsTombstone')
         ->and($config['transforms.rename_values.renames'])
-        ->toBe('_idrref:external_id,_description:contact');
+        ->toBe('_description:contact');
 });
 
 it('scopes and transforms independently selected reference components using their real columns', function () {
@@ -301,7 +301,7 @@ it('scopes and transforms independently selected reference components using thei
             'public._reference0._fld17_type',
         ])
         ->and($sink['transforms.rename_values.renames'])
-        ->toBe('_idrref:external_id,_fld16rref:supplier,_fld17_rrref:owner')
+        ->toBe('_fld16rref:supplier,_fld17_rrref:owner')
         ->and($sink['transforms.field_3_0.filter.condition'])
         ->toBe("$[?(@['_fld17_type'] == '08')]")
         ->and($sink['fields.whitelist'])
