@@ -26,6 +26,7 @@ class StructureItems
                 ),
             ];
         }
+
         $properties = [...$properties, ...($attributes['sources'] ?? [])];
 
         return new StructureItem([

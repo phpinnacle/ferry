@@ -112,6 +112,7 @@ class StructureItem extends Model
         if ($field === null) {
             return null;
         }
+
         /** @var array<string, mixed> $definition */
         $definition = array_diff_key($field->toArray(), [
             'title' => true,
@@ -135,6 +136,7 @@ class StructureItem extends Model
             ) {
                 continue;
             }
+
             /** @var string $title */
             $title = $field->annotation('title') ?? $source;
             /** @var string|null $translation */
@@ -142,6 +144,7 @@ class StructureItem extends Model
             if ($translation !== null) {
                 $title = Lang::get($translation);
             }
+
             $definition = $field->toArray();
             unset($definition['x-ferry-trans']);
             $definition['title'] = $title;

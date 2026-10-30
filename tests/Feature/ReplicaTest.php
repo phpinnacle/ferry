@@ -372,6 +372,7 @@ it('creates decimal columns from the effective output schema', function (?array 
             $result,
         )));
     }
+
     $replica->fill([
         'schema' => JsonSchema::fromArray([
             'properties' => [

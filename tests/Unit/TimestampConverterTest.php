@@ -49,6 +49,7 @@ it('projects timestamp output types without retaining input constraints', functi
 
         expect($transform->output($input, ['target_type' => $target])?->toArray())->toBe($expected);
     }
+
     expect($transform->output(JsonSchema::fromArray(['type' => 'integer']), []))->toBeNull();
 })->with([
     'text' => ['string', ['type' => 'string']],

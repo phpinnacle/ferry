@@ -187,6 +187,7 @@ it('refreshes every connector and continues after an external status check fails
                 ->not->toBeNull();
         }
     }
+
     Queue::assertNothingPushed();
     $notification = Notification::make();
     Notification::assertNotified(

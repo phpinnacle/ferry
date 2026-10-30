@@ -40,14 +40,17 @@ class TransformFactory
                 $reserved[$mapping->source] = true;
             }
         }
+
         foreach ($replica->transforms as $index => $setting) {
             $pipeline['replica_' . $index] = $this->transforms->getOrFail($setting->type)->connector($setting->data);
         }
+
         foreach ($replica->mapping as $index => $mapping) {
             if ($mapping->kind === FieldKind::Static) {
                 if ($mapping->target === null) {
                     continue;
                 }
+
                 $source = self::temporaryField('__ferry_static_' . $index, $reserved);
                 $columns[$source] = $mapping->target;
                 $pipeline += self::constant('field_' . $index . '_0', $source, $mapping);
@@ -57,6 +60,7 @@ class TransformFactory
                 $source = $mapping->source;
                 $offset = 0;
             }
+
             foreach ($mapping->transforms() as $position => $setting) {
                 $name = sprintf('field_%d_%d', $index, $position + $offset);
                 $pipeline[$name] = $this->transforms->getOrFail($setting->type)->connector(['field' => $source]
@@ -79,6 +83,7 @@ class TransformFactory
                 }
             }
         }
+
         if ($keyMap !== []) {
             $pipeline['rename_keys'] = [
                 'type' => 'org.apache.kafka.connect.transforms.ReplaceField$Key',
@@ -86,6 +91,7 @@ class TransformFactory
                 'renames' => self::renames($keyMap),
             ];
         }
+
         $pipeline['rename_values'] = [
             'type' => 'org.apache.kafka.connect.transforms.ReplaceField$Value',
             'include' => implode(',', array_keys($columns)),
@@ -101,6 +107,7 @@ class TransformFactory
         while (array_key_exists($name, $reserved)) {
             $name .= '_';
         }
+
         $reserved[$name] = true;
 
         return $name;
@@ -128,6 +135,7 @@ class TransformFactory
             foreach ($properties as $property => $value) {
                 $config[sprintf('transforms.%s.%s', $name, $property)] = $value;
             }
+
             if (($properties['predicate'] ?? null) === 'tombstone') {
                 $config['predicates'] = 'tombstone';
                 $config['predicates.tombstone.type'] = 'org.apache.kafka.connect.transforms.predicates.RecordIsTombstone';

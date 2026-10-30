@@ -291,6 +291,7 @@ class Structure extends Model
                     $externalIds[] = $child->external_id;
                 }
             }
+
             $revision = $current->draftRevision();
             /** @var array<string, string> $ids */
             $ids = $current
@@ -316,6 +317,7 @@ class Structure extends Model
                     );
                 }
             }
+
             $unique = ['upstream_id', 'external_id', 'revision'];
             $columns = [
                 'parent_id',

@@ -663,6 +663,7 @@ it('invalidates the old run and context when the adapter changes', function (?st
     if ($key === null) {
         expect($structure->run_id)->toBeNull();
     }
+
     Queue::assertPushed(PrepareStructureJob::class, $key === null ? 1 : 2);
     Queue::assertNotPushed(FetchStructureChunkJob::class);
 })->with([null, 'selected']);

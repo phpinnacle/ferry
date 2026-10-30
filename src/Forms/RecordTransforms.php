@@ -52,6 +52,7 @@ class RecordTransforms extends TabbedBuilder
             if ((string) $key === $before) {
                 break;
             }
+
             $items[] = $item;
         }
 
@@ -85,6 +86,7 @@ class RecordTransforms extends TabbedBuilder
 
             return;
         }
+
         /** @var array<string, TransformData>|null $value */
         if (
             app(TransformRegistry::class)->resultSchema(

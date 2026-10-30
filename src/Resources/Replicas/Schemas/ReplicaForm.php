@@ -112,6 +112,7 @@ class ReplicaForm
                 $mappings[] = $mapping;
             }
         }
+
         $schema = JsonSchema::fromArray($data['schema']);
         $transforms = array_map(TransformSetting::fromArray(...), $data['transforms'] ?? []);
         $effectiveSchema = app(TransformRegistry::class)->resultSchema(
@@ -125,6 +126,7 @@ class ReplicaForm
                 'data.transforms' => __('phpinnacle-ferry::validation.replica_transforms'),
             ]);
         }
+
         /** @var list<string> $primaryKey */
         $primaryKey = $effectiveSchema->annotation('x-primary-key') ?? $object->primary_key;
         ReplicaSchema::assertValid(
@@ -327,6 +329,7 @@ class ReplicaForm
                         $sourceSchema['properties'][$name]['title'] = __($translation);
                     }
                 }
+
                 /** @var list<string> $primaryKey */
                 $primaryKey = $input->annotation('x-primary-key') ?? $object->primary_key ?? [];
                 $sourceSchema['required'] = array_values(array_unique([...$input->required(), ...$primaryKey]));
@@ -411,6 +414,7 @@ class ReplicaForm
         } else {
             $mapping->jsonSchema($sourceSchema);
         }
+
         $mapping->state($rows);
         $defaultState = null;
         $mapping->hydrateState($defaultState);

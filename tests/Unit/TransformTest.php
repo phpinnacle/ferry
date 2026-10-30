@@ -260,6 +260,7 @@ it('keeps the Kafka null replacement default implicit and persists disabling it'
     if ($setting !== null) {
         $params['replace_null_with_default'] = $setting;
     }
+
     $schema->fill($params);
 
     expect($schema->getComponent('replace_null_with_default')->getState())->toBe($setting ?? 'true');
@@ -267,6 +268,7 @@ it('keeps the Kafka null replacement default implicit and persists disabling it'
     if ($setting === 'false') {
         $expected['replace_null_with_default'] = 'false';
     }
+
     expect($schema->getState())->toBe($expected);
     $config = new Cast()->connector(['field' => 'field'] + $expected);
     expect($config['replace.null.with.default'] ?? 'true')->toBe($setting ?? 'true');

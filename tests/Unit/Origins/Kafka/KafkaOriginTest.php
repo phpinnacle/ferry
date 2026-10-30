@@ -294,6 +294,7 @@ it('extracts new record state at the source and preserves deletes for every dest
             ],
         ])->saveQuietly();
     }
+
     $settings = config('phpinnacle-ferry.origins.kafka');
     $origins = new OriginFactory(app(), [
         'kafka' => $settings,
@@ -354,6 +355,7 @@ it('builds sink configuration through the destination registry', function (?stri
             ],
         ])->saveQuietly();
     }
+
     $http = new RecordingConnectClient;
     $connector = ferry_kafka_origin($http, destinations: $destinations)->make($replica);
     expect($connector->config['connector.class'])
@@ -385,6 +387,7 @@ it('rejects missing source objects and incompatible mappings during assembly', f
     } else {
         $replica->mapping = [new FieldMapping(source: 'missing', target: 'external_id')];
     }
+
     $http = new RecordingConnectClient;
     expect(fn () => ferry_kafka_origin($http)->make($replica))
         ->toThrow($missing ? LogicException::class : ValidationException::class)

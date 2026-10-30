@@ -83,6 +83,7 @@ class Replica extends Model
             if (!array_key_exists('schema', $replica->getAttributes())) {
                 $replica->schema = $replica->sourceObject()->schema;
             }
+
             if ($replica->type === DestinationType::Dynamic) {
                 $replica->destination = Config::string('phpinnacle-ferry.replica.table_prefix') . $replica->code;
             }
@@ -189,12 +190,14 @@ class Replica extends Model
                 $previous[$mapping->identity()] = $mapping;
             }
         }
+
         $next = [];
         foreach ($this->mapping as $mapping) {
             if ($mapping->target !== null) {
                 $next[$mapping->identity()] = $mapping;
             }
         }
+
         $nextSchema = $this->transformedSchema();
         $previousOutputs = array_map(fn (FieldMapping $mapping) => $this->outputSchema(
             $mapping,

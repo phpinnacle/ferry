@@ -47,6 +47,7 @@ it('refreshes all saved connectors from Artisan and continues after a status req
     if ($fails) {
         $command->expectsOutput($failed->name . ': Connect unavailable');
     }
+
     $command->expectsOutput('Connector status refresh completed.')->assertSuccessful()->run();
 
     expect($checked)
@@ -73,6 +74,7 @@ it('refreshes all saved connectors from Artisan and continues after a status req
                 ->not->toBeNull();
         }
     }
+
     Queue::assertNothingPushed();
 })->with(['all requests succeed' => false, 'partial request failure' => true]);
 

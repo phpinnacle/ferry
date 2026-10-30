@@ -58,18 +58,22 @@ final class Slug implements Transform
         if (blank($params['input'] ?? null) || blank($params['output'] ?? null)) {
             return null;
         }
+
         try {
             $segments = JsonPath::parse($params['input']);
         } catch (InvalidArgumentException) {
             return null;
         }
+
         if (count($segments) !== 1 || !is_string($segments[0])) {
             return null;
         }
+
         $source = $input->properties()[$segments[0]] ?? null;
         if ($source?->singleType() !== 'string' || $source->annotation('x-ferry-target') === 'key') {
             return null;
         }
+
         /** @var array{properties: array<string, array<string, mixed>>, ...} $schema */
         $schema = $input->toArray();
         $properties = $schema['properties'];

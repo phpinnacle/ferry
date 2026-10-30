@@ -28,6 +28,7 @@ class ReplicaTableManager
                         ));
                     }
                 }
+
                 $table->primary($primaryKey);
             });
     }

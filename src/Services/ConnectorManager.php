@@ -238,6 +238,7 @@ class ConnectorManager
         } catch (Throwable $exception) {
             throw new ConnectorOperationFailed($connector->id, $exception);
         }
+
         $connector->recordStatus($status, $connector->error);
     }
 

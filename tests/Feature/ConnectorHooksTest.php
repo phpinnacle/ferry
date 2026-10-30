@@ -127,6 +127,7 @@ it('starts new replicas, resumes paused replicas and retries failed connectors',
     if ($deployed) {
         ferry_drain_connectors();
     }
+
     $replica->refresh()->forceFill(['status' => $status])->saveQuietly();
     if ($connectorStatus !== null) {
         $replica->connector->recordStatus($connectorStatus);

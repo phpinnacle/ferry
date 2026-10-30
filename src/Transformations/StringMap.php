@@ -67,6 +67,7 @@ final class StringMap implements Transform
                     $schema['enum'][] = $output;
                 }
             }
+
             $lengths = array_map(
                 mb_strlen(...),
                 array_filter($schema['enum'], static fn (?string $value) => $value !== null),

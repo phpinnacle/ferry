@@ -142,6 +142,7 @@ final class Filter implements Transform
             } elseif ($match['reference'] !== null && ($fragment === '$' || $filters === 0)) {
                 $fragment .= $path;
             }
+
             $condition .= $fragment;
         }
 

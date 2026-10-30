@@ -31,6 +31,7 @@ class StructureConverter
                 ...(Lang::has($translation) ? ['x-ferry-trans' => $translation] : []),
             ];
         }
+
         foreach ($definition->properties as $property) {
             foreach ($this->propertyFields($property) as $name => $field) {
                 $properties[$name] = $field;
@@ -53,6 +54,7 @@ class StructureConverter
                         ...$this->field(new ScalarField(FieldType::Id))->toArray(),
                     ];
                 }
+
                 $properties[$name]['x-ferry-converter'] = $converter;
             }
         }
@@ -110,24 +112,30 @@ class StructureConverter
                 $schema['minLength'] = $field->length;
             }
         }
+
         if ($field instanceof NumberField) {
             if ($field->precision !== null) {
                 $schema['x-ferry-precision'] = $field->precision;
             }
+
             if ($field->scale !== null) {
                 $schema['x-ferry-scale'] = $field->scale;
             }
+
             if ($field->unsigned) {
                 $schema['minimum'] = 0;
             }
+
             if ($field->scale !== null && $field->scale > 0) {
                 $schema['multipleOf'] = 10 ** (-$field->scale);
             }
+
             if ($field->precision !== null && $field->precision > 0 && $field->scale !== null) {
                 $limit = 10 ** ($field->precision - $field->scale);
                 if (!$field->unsigned) {
                     $schema['exclusiveMinimum'] = -$limit;
                 }
+
                 $schema['exclusiveMaximum'] = $limit;
             }
         }
@@ -158,6 +166,7 @@ class StructureConverter
         foreach ($this->variants($field) as $variant) {
             $variants[$variant->type()->value] = $variant;
         }
+
         // Represent one- and four-byte discriminator codes as fixed-length hexadecimal strings.
         $columns = ['type' => new StringField(2, true)];
         foreach ([
@@ -170,14 +179,17 @@ class StructureConverter
             if ($suffix === 't') {
                 $variant ??= $variants[FieldType::Date->value] ?? $variants[FieldType::Time->value] ?? null;
             }
+
             if ($variant !== null) {
                 $columns[$suffix] = $variant;
             }
         }
+
         $targets = $field->targets();
         if (count($targets) > 1) {
             $columns['rtref'] = new StringField(8, true);
         }
+
         if ($targets !== []) {
             $columns['rrref'] = count($targets) === 1
                 ? new ReferenceField($targets[0])

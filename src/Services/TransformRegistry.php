@@ -57,6 +57,7 @@ class TransformRegistry
             ) {
                 return null;
             }
+
             $input = $transform->output($input, $setting->data);
             if ($input === null) {
                 return null;
@@ -74,6 +75,7 @@ class TransformRegistry
             if ($next === null) {
                 break;
             }
+
             $schema = $next;
         }
 

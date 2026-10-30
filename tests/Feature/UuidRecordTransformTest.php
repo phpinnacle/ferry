@@ -119,6 +119,7 @@ it('creates and persists one UUID key through the tabbed record builder for both
             ->not->toHaveKey('tenant_id.id')
             ->not->toHaveKey('row_id.id');
     }
+
     $index = $mapping->getSourceRowIndex('record_id');
     $page->set('data.mapping.' . $index . '.target', 'id');
     $mapping = $page->instance()->form->getComponentByStatePath('mapping');
@@ -147,6 +148,7 @@ it('creates and persists one UUID key through the tabbed record builder for both
     } catch (ValidationException $exception) {
         expect($exception->errors())->toHaveKey('data.mapping');
     }
+
     $keyTransforms->state([]);
     $recordTransforms = $form->getComponentByStatePath('transforms');
     $original = $recordTransforms->getRawState();

@@ -260,6 +260,7 @@ it('requires the whole source key in static mappings at the form and save bounda
     foreach ($bindings as $target => $entry) {
         $mappings[] = new SchemaMapping(source: $entry['source'], target: $target);
     }
+
     expect(fn () => ReplicaForm::forUpdate(
         [
             'schema' => $replica->schema->toArray(),
@@ -531,6 +532,7 @@ it('updates only static cards and the changed transform editor in a large dynami
     for ($index = 0; $index < 165; $index++) {
         $properties['_fld' . $index] = ['type' => 'string', 'maxLength' => 100, 'title' => 'Field ' . $index];
     }
+
     TestCase::makeItem($upstream, ['sources' => $properties]);
     $page = Livewire::test(\PHPinnacle\Ferry\Tests\Fixtures\ReplicaForm::class, ['state' => [
         'upstream_id' => $upstream->id,
@@ -751,6 +753,7 @@ it('selects the first object and clears mappings when changing upstreams', funct
             'sources' => ['next_only' => ['type' => 'boolean']],
         ]);
     }
+
     $livewire = SchemaHost::make();
     $form = ReplicaForm::configure(FilamentSchema::make($livewire)->statePath('data')->operation('create'));
     $form->fill([
@@ -1060,6 +1063,7 @@ it('loads at most twenty sources and searches beyond the initial options without
             'position' => $index,
         ]);
     }
+
     TestCase::makeItem($upstream, ['external_id' => 'draft', 'title' => 'Source draft', 'revision' => 2]);
     TestCase::makeItem($upstream, [
         'external_id' => 'child',
@@ -1308,6 +1312,7 @@ it('shows each composite column as a separate source card and saves only its sel
     foreach (['_fld17_type', '_fld17_rtref', '_fld17_rrref'] as $source) {
         expect($sources[$source]['description'])->toBe('Customer or supplier who owns the record.');
     }
+
     expect(array_keys($sources))
         ->toContain('_fld17_type', '_fld17_rtref', '_fld17_rrref')
         ->not

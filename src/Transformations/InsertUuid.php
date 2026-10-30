@@ -54,6 +54,7 @@ final class InsertUuid implements Transform
         if (blank($params['output'] ?? null) || blank($params['fields'] ?? null)) {
             return null;
         }
+
         $schema = $input->toArray();
         $schema['properties'] =
             [
@@ -101,6 +102,7 @@ final class InsertUuid implements Transform
                         'title' => $fields[$source]['title'] ?? $source,
                     ]);
                 }
+
                 $paths = array_map(fn (string $source) => JsonPath::fromSegments([$source]), $primaryKey);
 
                 return [
