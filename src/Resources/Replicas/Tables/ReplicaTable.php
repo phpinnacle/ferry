@@ -71,7 +71,6 @@ class ReplicaTable
                     ->modalHeading(__('phpinnacle-ferry::resources.replica.pages.create'))
                     ->modalDescription(__('phpinnacle-ferry::resources.replica.modals.create.description'))
                     ->schema(ReplicaForm::creation(...))
-                    ->mutateDataUsing(ReplicaForm::forCreate(...))
                     ->createAnother(false)
                     ->successRedirectUrl(fn (Replica $record) => ReplicaResource::getUrl('edit', [
                         'record' => $record,

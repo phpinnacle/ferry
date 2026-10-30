@@ -59,14 +59,14 @@ final class Substring implements Transform
     {
         return InlineBlock::make($this->getKey())
             ->color('info')
-            ->label(fn () => __('phpinnacle-ferry::resources.transform.substring'))
+            ->label(fn () => __('phpinnacle-ferry::transforms.substring'))
             ->icon(Heroicon::Scissors)
             ->schema(fn () => [
                 Group::make()
                     ->schema([
                         TextInput::make('start')
-                            ->label(__('phpinnacle-ferry::resources.transform.substring_start'))
-                            ->helperText(__('phpinnacle-ferry::resources.transform.substring_start_help'))
+                            ->label(__('phpinnacle-ferry::transforms.substring_start'))
+                            ->helperText(__('phpinnacle-ferry::transforms.substring_start_help'))
                             ->integer()
                             ->minValue(0)
                             ->maxValue(2_147_483_647)
@@ -74,8 +74,8 @@ final class Substring implements Transform
                             ->required()
                             ->dehydrateStateUsing(fn (int|string $state) => (string) $state),
                         TextInput::make('end')
-                            ->label(__('phpinnacle-ferry::resources.transform.substring_end'))
-                            ->helperText(__('phpinnacle-ferry::resources.transform.substring_end_help'))
+                            ->label(__('phpinnacle-ferry::transforms.substring_end'))
+                            ->helperText(__('phpinnacle-ferry::transforms.substring_end_help'))
                             ->integer()
                             ->minValue(0)
                             ->maxValue(2_147_483_647)

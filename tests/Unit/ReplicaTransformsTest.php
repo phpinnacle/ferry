@@ -9,6 +9,8 @@ use PHPinnacle\Ferry\Enums\TransformScope;
 use PHPinnacle\Ferry\Forms\FieldTransforms;
 use PHPinnacle\Ferry\Models\Replica;
 use PHPinnacle\Ferry\Origins\Kafka\TransformFactory;
+use PHPinnacle\Ferry\Services\ReplicaSchemaResolver;
+use PHPinnacle\Ferry\Services\ReplicaTableManager;
 use PHPinnacle\Ferry\Services\TransformRegistry;
 use PHPinnacle\Ferry\Tests\Fixtures\SchemaHost;
 use PHPinnacle\Ferry\Tests\Fixtures\StructureItems;
@@ -58,14 +60,17 @@ it('runs record transforms before field chains and renames regardless of mapping
         'transforms.field_1_1.fields' => '__ferry_static_1',
         'transforms.rename_values.renames' => 'name:title,slug:slug,other_slug:other_slug,uuid:id,__ferry_static_1:name',
     ]);
-    expect(array_keys($replica->transformedSchema()->properties()))
+    expect(array_keys(app(ReplicaSchemaResolver::class)->transformedSchema($replica)->properties()))
         ->toBe(['uuid', 'name', 'slug', 'other_slug', 'tail']);
-    expect($replica->primaryKeySources($object))->toBe(['uuid']);
+    expect(app(ReplicaSchemaResolver::class)->primaryKeySources($replica, $object))->toBe(['uuid']);
 });
 
 it('keeps record transforms out of field editors and field transforms out of record chains', function () {
     $registry = app(TransformRegistry::class);
-    $field = FieldTransforms::make('transforms')->inputSchema(['type' => 'object', 'properties' => []]);
+    $field = FieldTransforms::make('transforms')->inputSchema(JsonSchema::fromArray([
+        'type' => 'object',
+        'properties' => [],
+    ]));
     Schema::make(SchemaHost::make())->components([$field])->fill();
     expect($field->getAvailableTransforms($registry))->not->toHaveKeys(['insert_uuid', 'slug']);
     expect($registry->resultSchema(
@@ -181,7 +186,7 @@ it('preserves mapping change order when dropping, replacing, renaming and adding
     $changed = new FieldMapping('flag', 'flag');
     $replica->mapping = [$renamed, $added, $changed];
 
-    $changes = $replica->mappingChanges();
+    $changes = app(ReplicaTableManager::class)->mappingChanges($replica);
 
     expect($changes)->toEqual([
         'drop' => ['removed_first', 'flag', 'removed_last'],

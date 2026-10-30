@@ -26,7 +26,8 @@ it('updates parent mapping output after native dictionary changes and Livewire r
     $page = Livewire::test(ReplicaForm::class, ['state' => [
         'upstream_id' => $upstream->id,
         'source' => 'object-0',
-        'destination' => 'static:customers',
+        'type' => DestinationType::Static->value,
+        'destination' => 'customers',
     ]]);
     $mapping = $page->instance()->form->getComponentByStatePath('mapping');
     $path = 'mapping.' . $mapping->getSourceRowIndex('active') . '.options.transforms';
@@ -49,10 +50,12 @@ it('updates parent mapping output after native dictionary changes and Livewire r
 
     $savedTransforms = $page->instance()->form->getComponentByStatePath($path)->getSettings();
     $reopened = Livewire::test(ReplicaForm::class, [
+        'record' => $page->instance()->record,
         'state' => [
             'upstream_id' => $upstream->id,
             'source' => 'object-0',
-            'destination' => 'static:customers',
+            'type' => DestinationType::Static->value,
+            'destination' => 'customers',
             'mapping' => [[
                 'kind' => 'source',
                 'source' => 'active',
@@ -72,7 +75,7 @@ it('hydrates, edits and reorders native replacement dictionaries after Livewire 
     $page = Livewire::test(ReplicaForm::class, ['state' => [
         'upstream_id' => $upstream->id,
         'source' => 'object-0',
-        'destination' => DestinationType::Dynamic->value,
+        'type' => DestinationType::Dynamic->value,
     ]]);
     $field = $page->instance()->form->getComponentByStatePath('mapping');
     $path = 'mapping.' . $field->getSourceRowIndex('active') . '.options.transforms';

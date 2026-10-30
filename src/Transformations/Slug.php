@@ -3,17 +3,15 @@
 namespace PHPinnacle\Ferry\Transformations;
 
 use Filament\Forms\Components\TextInput;
-use Filament\Schemas\Components\Group;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use InvalidArgumentException;
-use PHPinnacle\Common\Forms\TabbedBuilder\Block as TabbedBlock;
 use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Eidos\Forms\JsonSchemaPicker;
 use PHPinnacle\Ferry\Contracts\Transform;
 use PHPinnacle\Ferry\Enums\TransformScope;
 use PHPinnacle\Ferry\Enums\TransformTarget;
-use PHPinnacle\Ferry\Forms\RecordTransforms;
+use PHPinnacle\Ferry\Forms\RecordTransformBlock;
 use PHPinnacle\Jason\JsonPath;
 use PHPinnacle\Jason\Schema;
 
@@ -95,20 +93,13 @@ final class Slug implements Transform
         return JsonSchema::fromArray($schema);
     }
 
-    public function block(): TabbedBlock
+    public function block(): RecordTransformBlock
     {
-        return TabbedBlock::make($this->getKey())
+        return RecordTransformBlock::make($this->getKey())
             ->label(fn (?array $state) => filled($state['output'] ?? null)
                 ? $state['output']
-                : __('phpinnacle-ferry::resources.transform.slug'))
-            ->schema([Group::make()->schema(function (Group $component) {
-                /** @var TabbedBlock $block */
-                $block = $component->getContainer()->getParentComponent();
-                /** @var RecordTransforms $builder */
-                $builder = $block->getContainer()->getParentComponent();
-                /** @var string $itemPath */
-                $itemPath = $component->getContainer()->getStatePath(false);
-                $input = $builder->getInputSchema(explode('.', $itemPath)[0]);
+                : __('phpinnacle-ferry::transforms.slug'))
+            ->parameters(function (JsonSchema $input) {
                 $properties = [];
                 foreach ($input->properties() as $name => $property) {
                     if ($property->singleType() === 'string' && $property->annotation('x-ferry-target') !== 'key') {
@@ -122,12 +113,12 @@ final class Slug implements Transform
 
                 return [
                     JsonSchemaPicker::make('input')
-                        ->label(__('phpinnacle-ferry::resources.replica.fields.slug_input'))
+                        ->label(__('phpinnacle-ferry::transforms.slug_input'))
                         ->jsonSchema(Schema::object($properties))
                         ->live()
                         ->required(),
                     TextInput::make('output')
-                        ->label(__('phpinnacle-ferry::resources.replica.fields.uuid_field'))
+                        ->label(__('phpinnacle-ferry::transforms.uuid_field'))
                         ->default('slug')
                         ->required()
                         ->maxLength(255)
@@ -136,10 +127,10 @@ final class Slug implements Transform
                         ->validationMessages(['not_in' => __('phpinnacle-ferry::validation.uuid_field_exists')])
                         ->lazy(),
                     TextInput::make('separators')
-                        ->label(__('phpinnacle-ferry::resources.replica.fields.slug_separators'))
+                        ->label(__('phpinnacle-ferry::transforms.slug_separators'))
                         ->rules(['nullable', 'string']),
                 ];
-            })]);
+            });
     }
 
     /** @param array{input: string, output: string, separators?: string|null} $params

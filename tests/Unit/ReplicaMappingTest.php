@@ -11,7 +11,7 @@ use PHPinnacle\Ferry\Enums\FieldKind;
 use PHPinnacle\Ferry\Models\Replica;
 use PHPinnacle\Ferry\Rules\ReplicaSchema;
 use PHPinnacle\Ferry\Services\DestinationFactory;
-use PHPinnacle\Ferry\Tests\Fixtures\StructureItems;
+use PHPinnacle\Ferry\Services\ReplicaSchemaResolver;
 use PHPinnacle\Jason\Schema;
 use PHPinnacle\Jason\SchemaBuilder;
 use Tests\TestCase;
@@ -20,36 +20,15 @@ use function PHPinnacle\Ferry\Tests\Fakes\customers_destination;
 
 require_once __DIR__ . '/../Fakes/CustomersDestination.php';
 
-require_once __DIR__ . '/../Fixtures/StructureItems.php';
-
 uses(TestCase::class);
-
-beforeEach(function () {
-    $this->object = StructureItems::make([
-        'fields' => [
-            '_idrref' => JsonSchema::fromArray([
-                'type' => 'string',
-                'format' => 'uuid',
-                'x-ferry-reference' => true,
-                'minLength' => 36,
-                'maxLength' => 36,
-            ]),
-            '_description' => JsonSchema::fromArray(['type' => 'string', 'maxLength' => 100]),
-            '_marked' => JsonSchema::fromArray(['type' => 'boolean']),
-        ],
-        'sources' => [],
-    ]);
-});
 
 it('uses JSON Schema compatibility when saving static replicas', function (
     array $source,
     array $target,
     bool $allowed,
 ) {
-    $field = JsonSchema::fromArray($source);
-    $object = StructureItems::make([
-        'fields' => ['amount' => $field, '_idrref' => $this->object->field('_idrref')],
-        'sources' => [],
+    $schema = JsonSchema::fromArray([
+        'properties' => ['amount' => $source, '_idrref' => ['type' => 'string']],
     ]);
     $destination = new StaticDestination(
         'totals',
@@ -69,21 +48,21 @@ it('uses JSON Schema compatibility when saving static replicas', function (
     ];
 
     if ($allowed) {
-        ReplicaSchema::assertValid(
+        app(ReplicaSchema::class)->assertValid(
             $mappings,
             $destination,
-            $object->primary_key,
-            $object->schema,
-            $object->primary_key,
+            ['_idrref'],
+            $schema,
+            ['_idrref'],
         );
         expect($mappings[0]->transforms())->toBe([]);
     } else {
-        expect(fn () => ReplicaSchema::assertValid(
+        expect(fn () => app(ReplicaSchema::class)->assertValid(
             $mappings,
             $destination,
-            $object->primary_key,
-            $object->schema,
-            $object->primary_key,
+            ['_idrref'],
+            $schema,
+            ['_idrref'],
         ))
             ->toThrow(ValidationException::class);
     }
@@ -128,6 +107,7 @@ it('compares native static values with destination enums and lengths', function 
     array $target,
     bool $allowed,
 ) {
+    $schema = JsonSchema::fromArray(['properties' => ['_idrref' => ['type' => 'string']]]);
     $destination = new StaticDestination(
         'labels',
         'Labels',
@@ -144,21 +124,21 @@ it('compares native static values with destination enums and lengths', function 
     $mappings = [$mapping, new FieldMapping(source: '_idrref', target: 'id')];
 
     if ($allowed) {
-        ReplicaSchema::assertValid(
+        app(ReplicaSchema::class)->assertValid(
             $mappings,
             $destination,
-            $this->object->primary_key,
-            $this->object->schema,
-            $this->object->primary_key,
+            ['_idrref'],
+            $schema,
+            ['_idrref'],
         );
         expect($mapping->static)->toBe($value);
     } else {
-        expect(fn () => ReplicaSchema::assertValid(
+        expect(fn () => app(ReplicaSchema::class)->assertValid(
             $mappings,
             $destination,
-            $this->object->primary_key,
-            $this->object->schema,
-            $this->object->primary_key,
+            ['_idrref'],
+            $schema,
+            ['_idrref'],
         ))
             ->toThrow(ValidationException::class);
     }
@@ -176,7 +156,7 @@ it('exposes default presentation for resolved destinations', function (
     string $destinationKey,
     string $label,
 ) {
-    $factory = new DestinationFactory;
+    $factory = new DestinationFactory(app(ReplicaSchemaResolver::class));
     $factory->register(customers_destination());
     $destination = $factory->resolve(new Replica([
         'type' => $type,

@@ -3,16 +3,14 @@
 namespace PHPinnacle\Ferry\Transformations;
 
 use Filament\Forms\Components\TextInput;
-use Filament\Schemas\Components\Group;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
-use PHPinnacle\Common\Forms\TabbedBuilder\Block as TabbedBlock;
 use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Eidos\Forms\JsonSchemaPicker;
 use PHPinnacle\Ferry\Contracts\Transform;
 use PHPinnacle\Ferry\Enums\TransformScope;
 use PHPinnacle\Ferry\Enums\TransformTarget;
-use PHPinnacle\Ferry\Forms\RecordTransforms;
+use PHPinnacle\Ferry\Forms\RecordTransformBlock;
 use PHPinnacle\Jason\JsonPath;
 use PHPinnacle\Jason\Schema;
 
@@ -75,33 +73,30 @@ final class InsertUuid implements Transform
         return JsonSchema::fromArray($schema);
     }
 
-    public function block(): TabbedBlock
+    public function block(): RecordTransformBlock
     {
-        return TabbedBlock::make($this->getKey())
+        return RecordTransformBlock::make($this->getKey())
             ->label(fn (?array $state) => filled($state['output'] ?? null)
                 ? $state['output']
-                : __('phpinnacle-ferry::resources.transform.insert_uuid'))
-            ->addable(function (TabbedBlock $component) {
-                /** @var RecordTransforms $builder */
-                $builder = $component->getContainer()->getParentComponent();
-
-                return ($builder->getObject()->primary_key ?? []) !== [];
-            })
-            ->schema([Group::make()->schema(function (Group $component) {
-                /** @var TabbedBlock $block */
-                $block = $component->getContainer()->getParentComponent();
-                /** @var RecordTransforms $builder */
-                $builder = $block->getContainer()->getParentComponent();
-                /** @var string $itemPath */
-                $itemPath = $component->getContainer()->getStatePath(false);
-                $input = $builder->getInputSchema(explode('.', $itemPath)[0]);
-                $primaryKey = $builder->getObject()->primary_key ?? [];
-                $fields = $builder->getObject()?->mappableFields() ?? [];
+                : __('phpinnacle-ferry::transforms.insert_uuid'))
+            ->addable(
+                fn (RecordTransformBlock $component) => (
+                    ($component->getInputSchema()->annotation('x-primary-key') ?? []) !== []
+                ),
+            )
+            ->parameters(function (JsonSchema $input) {
+                /** @var list<string> $primaryKey */
+                $primaryKey = $input->annotation('x-primary-key') ?? [];
                 $properties = [];
                 foreach ($primaryKey as $source) {
+                    $property = $input->properties()[$source];
+                    /** @var string|null $translation */
+                    $translation = $property->annotation('x-ferry-trans');
+                    /** @var string $label */
+                    $label = $translation !== null ? __($translation) : $property->annotation('title') ?? $source;
                     $properties[$source] = Schema::fromArray([
-                        ...$input->properties()[$source]->toArray(),
-                        'title' => $fields[$source]['title'] ?? $source,
+                        ...$property->toArray(),
+                        'title' => $label,
                     ]);
                 }
 
@@ -109,7 +104,7 @@ final class InsertUuid implements Transform
 
                 return [
                     JsonSchemaPicker::make('fields')
-                        ->label(__('phpinnacle-ferry::resources.replica.fields.uuid_sources'))
+                        ->label(__('phpinnacle-ferry::transforms.uuid_sources'))
                         ->multiple()
                         ->jsonSchema(Schema::object($properties))
                         ->default($paths)
@@ -121,7 +116,7 @@ final class InsertUuid implements Transform
                         ->rule('size:' . count($primaryKey))
                         ->live(),
                     TextInput::make('output')
-                        ->label(__('phpinnacle-ferry::resources.replica.fields.uuid_field'))
+                        ->label(__('phpinnacle-ferry::transforms.uuid_field'))
                         ->default('id')
                         ->required()
                         ->maxLength(255)
@@ -130,7 +125,7 @@ final class InsertUuid implements Transform
                         ->validationMessages(['not_in' => __('phpinnacle-ferry::validation.uuid_field_exists')])
                         ->lazy(),
                 ];
-            })]);
+            });
     }
 
     /** @param array{fields: list<string>, output: string} $params

@@ -12,21 +12,17 @@ use PHPinnacle\Ferry\Contracts\Transform;
 use PHPinnacle\Ferry\Data\TransformSetting;
 use PHPinnacle\Ferry\Enums\TransformScope;
 use PHPinnacle\Ferry\Enums\TransformTarget;
-use PHPinnacle\Ferry\Models\StructureItem;
 use PHPinnacle\Ferry\Services\TransformRegistry;
 
 /**
  * @phpstan-import-type TransformData from TransformSetting
- * @phpstan-import-type Definition from JsonSchema
  */
 class FieldTransforms extends InlineBuilder
 {
-    protected ?StructureItem $object = null;
-
     protected TransformTarget $target = TransformTarget::Value;
 
-    /** @var Definition|Closure(): Definition */
-    protected array|Closure $inputSchema = [];
+    /** @var JsonSchema|Closure(): JsonSchema */
+    protected JsonSchema|Closure $inputSchema;
 
     public function target(TransformTarget $target): static
     {
@@ -35,8 +31,8 @@ class FieldTransforms extends InlineBuilder
         return $this;
     }
 
-    /** @param Definition|Closure(): Definition $schema */
-    public function inputSchema(array|Closure $schema): static
+    /** @param JsonSchema|Closure(): JsonSchema $schema */
+    public function inputSchema(JsonSchema|Closure $schema): static
     {
         $this->inputSchema = $schema;
 
@@ -93,18 +89,6 @@ class FieldTransforms extends InlineBuilder
         );
     }
 
-    public function object(?StructureItem $object): static
-    {
-        $this->object = $object;
-
-        return $this;
-    }
-
-    public function getObject(): ?StructureItem
-    {
-        return $this->object;
-    }
-
     /** @return list<array{type: string, data: array<string, mixed>}> */
     public function getSettings(): array
     {
@@ -123,7 +107,7 @@ class FieldTransforms extends InlineBuilder
     {
         $settings = [];
         $invalid = null;
-        $schema = JsonSchema::fromArray($this->evaluate($this->inputSchema));
+        $schema = $this->evaluate($this->inputSchema);
         foreach (array_slice($this->getItems(), 0, $beforeIndex) as $index => $item) {
             $setting = new TransformSetting($item['type'], $this->getItemData($index, ['input' => $schema]));
             $settings[] = $setting;
@@ -142,7 +126,7 @@ class FieldTransforms extends InlineBuilder
     public function hasCompatibleTypes(array $settings, TransformRegistry $transforms): bool
     {
         return $transforms->resultSchema(
-            JsonSchema::fromArray($this->evaluate($this->inputSchema)),
+            $this->evaluate($this->inputSchema),
             array_map(TransformSetting::fromArray(...), $settings),
             $this->target,
             TransformScope::Field,
@@ -159,8 +143,8 @@ class FieldTransforms extends InlineBuilder
         parent::setUp();
 
         $this->hiddenLabel();
-        $this->addActionLabel(__('phpinnacle-ferry::resources.replica.fields.add_transform'));
-        $this->placeholder(__('phpinnacle-ferry::resources.replica.fields.transform'));
+        $this->addActionLabel(__('phpinnacle-ferry::transforms.add'));
+        $this->placeholder(__('phpinnacle-ferry::transforms.label'));
         $this->blocks(fn (TransformRegistry $registry) => array_values(array_map(
             fn (Transform $transform) => $transform->block(),
             array_filter(
@@ -169,19 +153,29 @@ class FieldTransforms extends InlineBuilder
             ),
         )));
         $this->reorderableUsing(self::canReorderItems(...));
-        $this->rules(fn (self $component) => [$component->validateSettings(...)]);
+        $this->rules(fn (self $component, TransformRegistry $transforms) => [
+            fn (string $attribute, mixed $value, Closure $fail) => $component->validateSettings(
+                $transforms,
+                $attribute,
+                $value,
+                $fail,
+            ),
+        ]);
     }
 
     /** @param list<TransformData> $items */
-    private static function canReorderItems(self $component, array $items): bool
+    private static function canReorderItems(self $component, array $items, TransformRegistry $transforms): bool
     {
-        return $component->hasCompatibleTypes($items, app(TransformRegistry::class));
+        return $component->hasCompatibleTypes($items, $transforms);
     }
 
     /** @param Closure(string): PotentiallyTranslatedString $fail */
-    private function validateSettings(string $attribute, mixed $value, Closure $fail): void
-    {
-        $transforms = app(TransformRegistry::class);
+    private function validateSettings(
+        TransformRegistry $transforms,
+        string $attribute,
+        mixed $value,
+        Closure $fail,
+    ): void {
         $invalid = $this->resolveSettings($transforms)['invalid'];
         if ($invalid !== null) {
             $fail('phpinnacle-ferry::validation.transform_input_type')->translate([

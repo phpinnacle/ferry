@@ -7,7 +7,10 @@ use Illuminate\Contracts\Database\Eloquent\SerializesCastableAttributes;
 use Illuminate\Database\Eloquent\Model;
 use PHPinnacle\Eidos\Forms\JsonSchema;
 
-/** @implements CastsAttributes<JsonSchema, JsonSchema> */
+/**
+ * @phpstan-import-type Definition from JsonSchema
+ * @implements CastsAttributes<JsonSchema, JsonSchema|Definition>
+ */
 class JsonSchemaCast implements CastsAttributes, SerializesCastableAttributes
 {
     public function get(Model $model, string $key, mixed $value, array $attributes): JsonSchema
@@ -21,8 +24,11 @@ class JsonSchemaCast implements CastsAttributes, SerializesCastableAttributes
 
     public function set(Model $model, string $key, mixed $value, array $attributes): string
     {
-        /** @var JsonSchema $value */
-        return json_encode($value->toArray(), JSON_THROW_ON_ERROR | JSON_PRESERVE_ZERO_FRACTION);
+        /** @var JsonSchema|Definition $value */
+        return json_encode(
+            $value instanceof JsonSchema ? $value->toArray() : $value,
+            JSON_THROW_ON_ERROR | JSON_PRESERVE_ZERO_FRACTION,
+        );
     }
 
     /** @return array<string, mixed> */

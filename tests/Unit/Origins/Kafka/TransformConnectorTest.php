@@ -10,6 +10,7 @@ use PHPinnacle\Ferry\Origins\Kafka\SinkConfigFactory;
 use PHPinnacle\Ferry\Origins\Kafka\SourceFactory;
 use PHPinnacle\Ferry\Origins\Kafka\TransformFactory;
 use PHPinnacle\Ferry\Services\DestinationFactory;
+use PHPinnacle\Ferry\Services\ReplicaSchemaResolver;
 use PHPinnacle\Ferry\Services\TransformRegistry;
 use PHPinnacle\Ferry\Tests\Fakes\Transform as FakeTransform;
 use PHPinnacle\Ferry\Tests\TestCase;
@@ -58,9 +59,9 @@ it('orders field transforms and static values before the renames of a sink', fun
         ],
     ]);
 
-    $builder = new SourceFactory;
-    $config = new SinkConfigFactory($factory)->make(
-        new DestinationFactory()->resolve($replica),
+    $builder = app(SourceFactory::class);
+    $config = new SinkConfigFactory($factory, app(ReplicaSchemaResolver::class))->make(
+        new DestinationFactory(app(ReplicaSchemaResolver::class))->resolve($replica),
         $replica,
         $object,
         $builder->topic($upstream, $object),
@@ -78,7 +79,7 @@ it('orders field transforms and static values before the renames of a sink', fun
         ->toBe('__ferry_static_2:boolean')
         ->and($config['fields.whitelist'])
         ->toBe('external_id,size,active')
-        ->and(array_keys($replica->columnMap($object)))
+        ->and(array_keys($replica->columnMap()))
         ->toBe(['_idrref', '_fld1'])
         ->and($config)
         ->not->toHaveKey('predicates');
@@ -111,13 +112,13 @@ it('captures an unbound field filter without writing it or capturing unused fiel
         ],
     ]);
 
-    $builder = new SourceFactory;
+    $builder = app(SourceFactory::class);
     $source = $builder->source(
         $upstream,
         config('phpinnacle-ferry.origins.kafka'),
     );
-    $config = new SinkConfigFactory($factory)->make(
-        new DestinationFactory()->resolve($replica),
+    $config = new SinkConfigFactory($factory, app(ReplicaSchemaResolver::class))->make(
+        new DestinationFactory(app(ReplicaSchemaResolver::class))->resolve($replica),
         $replica,
         $object,
         $builder->topic($upstream, $object),
@@ -157,7 +158,7 @@ it('keeps building the shared source when a replica refers to a transform that i
     ]);
 
     app()->instance(TransformRegistry::class, new TransformRegistry);
-    expect(new SourceFactory()->source(
+    expect(app(SourceFactory::class)->source(
         $upstream,
         config('phpinnacle-ferry.origins.kafka'),
     ))
@@ -188,8 +189,8 @@ it('builds installed string transforms before renames and guards masking against
             ]),
         ],
     ]);
-    $config = new SinkConfigFactory($factory)->make(
-        new DestinationFactory()->resolve($replica),
+    $config = new SinkConfigFactory($factory, app(ReplicaSchemaResolver::class))->make(
+        new DestinationFactory(app(ReplicaSchemaResolver::class))->resolve($replica),
         $replica,
         $object,
         'test-topic',
@@ -280,13 +281,13 @@ it('scopes and transforms independently selected reference components using thei
             ]),
         ],
     ]);
-    $source = new SourceFactory;
+    $source = app(SourceFactory::class);
     $config = $source->source(
         $upstream,
         config('phpinnacle-ferry.origins.kafka'),
     );
-    $sink = new SinkConfigFactory(app(TransformFactory::class))->make(
-        new DestinationFactory()->resolve($replica),
+    $sink = new SinkConfigFactory(app(TransformFactory::class), app(ReplicaSchemaResolver::class))->make(
+        new DestinationFactory(app(ReplicaSchemaResolver::class))->resolve($replica),
         $replica,
         $object,
         $source->topic($upstream, $object),

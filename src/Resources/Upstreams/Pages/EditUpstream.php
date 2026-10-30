@@ -27,11 +27,4 @@ class EditUpstream extends EditRecord
                 ->label(__('phpinnacle-ferry::resources.upstream.actions.delete')),
         ];
     }
-
-    protected function mutateFormDataBeforeFill(array $data): array
-    {
-        $data['config'] = $this->record->config;
-
-        return $data;
-    }
 }

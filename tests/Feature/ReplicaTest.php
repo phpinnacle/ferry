@@ -186,7 +186,7 @@ it('adds, renames and drops columns when the mapping changes', function () {
     ];
 
     $replica->fill(['mapping' => $updated]);
-    expect($replica->droppedColumns())->toBe(['title']);
+    expect(app(ReplicaTableManager::class)->mappingChanges($replica)['drop'])->toBe(['title']);
     $replica->save();
 
     expect(DB::table($replica->destination)->sole())->toEqual((object) [
@@ -218,7 +218,7 @@ it('preserves renamed values when a new mapping reuses the original column name'
         new FieldMapping(source: 'alias', target: 'name'),
     ]]);
 
-    expect($replica->droppedColumns())->toBe([]);
+    expect(app(ReplicaTableManager::class)->mappingChanges($replica)['drop'])->toBe([]);
     $replica->save();
 
     expect(DB::table($replica->destination)->sole())->toEqual((object) [
@@ -304,7 +304,7 @@ it('alters string bounds without dropping stored values, including when renaming
                 'transforms' => [['type' => $key, 'data' => $key === 'mask' ? ['replacement' => '***'] : []]],
             ]),
         ]]);
-        expect($replica->droppedColumns())->toBe([]);
+        expect(app(ReplicaTableManager::class)->mappingChanges($replica)['drop'])->toBe([]);
         config(['phpinnacle-ferry.connection' => 'pgsql']);
         $queries = DB::connection('pgsql')->pretend(fn () => app(ReplicaTableManager::class)->update($replica));
         config(['phpinnacle-ferry.connection' => null]);

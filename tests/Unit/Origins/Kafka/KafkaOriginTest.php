@@ -21,6 +21,7 @@ use PHPinnacle\Ferry\Origins\Kafka\TransformFactory;
 use PHPinnacle\Ferry\Origins\KafkaOrigin;
 use PHPinnacle\Ferry\Services\DestinationFactory;
 use PHPinnacle\Ferry\Services\OriginFactory;
+use PHPinnacle\Ferry\Services\ReplicaSchemaResolver;
 use PHPinnacle\Ferry\Tests\TestCase;
 use PHPinnacle\Franz\Client;
 use PHPinnacle\Franz\Exception\ApiException;
@@ -67,7 +68,7 @@ function ferry_kafka_origin(
 ): KafkaOrigin {
     $factory = new HttpFactory;
     $client = new Client('http://connect.example:8083', $http, $factory, $factory);
-    $destinations ??= new DestinationFactory;
+    $destinations ??= new DestinationFactory(app(ReplicaSchemaResolver::class));
     $transforms = app(TransformFactory::class);
 
     $config = config('phpinnacle-ferry.origins.kafka');
@@ -82,9 +83,11 @@ function ferry_kafka_origin(
         'kafka',
         $config,
         $kafkaConnect,
-        new SourceFactory,
+        app(SourceFactory::class),
         $destinations,
-        new SinkConfigFactory($transforms),
+        new SinkConfigFactory($transforms, app(ReplicaSchemaResolver::class)),
+        app(\PHPinnacle\Ferry\Rules\ReplicaSchema::class),
+        app(ReplicaSchemaResolver::class),
     );
 }
 
@@ -412,7 +415,7 @@ it('rejects all saved primary-key transforms during assembly', function (
             ->required(['id'])
             ->build(),
     );
-    $destinations = new DestinationFactory;
+    $destinations = new DestinationFactory(app(ReplicaSchemaResolver::class));
     $destinations->register($destination);
     $replica->type = $type;
     $replica->destination = $type === DestinationType::Static ? 'keyed' : $replica->destination;

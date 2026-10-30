@@ -68,8 +68,8 @@ final class Cast implements Transform
     public function block(): InlineBlock
     {
         return InlineBlock::make($this->getKey())
-            ->label(fn () => __('phpinnacle-ferry::resources.transform.cast'))
-            ->description(fn () => __('phpinnacle-ferry::resources.transform.cast_description'))
+            ->label(fn () => __('phpinnacle-ferry::transforms.cast'))
+            ->description(fn () => __('phpinnacle-ferry::transforms.cast_description'))
             ->icon(Heroicon::ArrowPath)
             ->schema(fn (?JsonSchema $input) => [
                 Select::make('type')
@@ -86,8 +86,8 @@ final class Cast implements Transform
                     )
                     ->required(),
                 Select::make('replace_null_with_default')
-                    ->label(__('phpinnacle-ferry::resources.transform.cast_replace_null_with_default'))
-                    ->helperText(__('phpinnacle-ferry::resources.transform.cast_replace_null_with_default_help'))
+                    ->label(__('phpinnacle-ferry::transforms.cast_replace_null_with_default'))
+                    ->helperText(__('phpinnacle-ferry::transforms.cast_replace_null_with_default_help'))
                     ->options([
                         'true' => __('filament-forms::components.select.boolean.true'),
                         'false' => __('filament-forms::components.select.boolean.false'),

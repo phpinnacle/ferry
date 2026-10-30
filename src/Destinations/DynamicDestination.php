@@ -4,11 +4,13 @@ namespace PHPinnacle\Ferry\Destinations;
 
 use PHPinnacle\Ferry\Contracts\Destination;
 use PHPinnacle\Ferry\Models\Replica;
+use PHPinnacle\Ferry\Services\ReplicaSchemaResolver;
 
 final readonly class DynamicDestination implements Destination
 {
     public function __construct(
         private Replica $replica,
+        private ReplicaSchemaResolver $schemas,
     ) {}
 
     public function getLabel(): string
@@ -40,7 +42,9 @@ final readonly class DynamicDestination implements Destination
     public function getPrimaryKey(): array
     {
         /** @var non-empty-list<string> */
-        return array_values($this->replica->primaryKeyMap($this->replica->sourceObject()));
+        return array_values($this->replica->primaryKeyMap(
+            $this->schemas->primaryKeySources($this->replica, $this->replica->sourceObject()),
+        ));
     }
 
     /** @return array<string, string> */

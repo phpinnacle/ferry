@@ -16,6 +16,10 @@ class DestinationFactory
     /** @var array<string, StaticDestination> */
     private array $items = [];
 
+    public function __construct(
+        private readonly ReplicaSchemaResolver $schemas,
+    ) {}
+
     public function register(StaticDestination ...$destinations): void
     {
         foreach ($destinations as $destination) {
@@ -42,7 +46,7 @@ class DestinationFactory
     {
         return match ($replica->type) {
             DestinationType::Static => $this->getOrFail($replica->destination),
-            DestinationType::Dynamic => new DynamicDestination($replica),
+            DestinationType::Dynamic => new DynamicDestination($replica, $this->schemas),
         };
     }
 

@@ -58,12 +58,12 @@ final class MaskField implements Transform
     {
         return InlineBlock::make($this->getKey())
             ->color('warning')
-            ->label(fn () => __('phpinnacle-ferry::resources.transform.mask'))
+            ->label(fn () => __('phpinnacle-ferry::transforms.mask'))
             ->icon(Heroicon::EyeSlash)
-            ->description(fn () => __('phpinnacle-ferry::resources.transform.mask_description'))
+            ->description(fn () => __('phpinnacle-ferry::transforms.mask_description'))
             ->schema(fn () => [
                 TextInput::make('replacement')
-                    ->label(__('phpinnacle-ferry::resources.transform.mask_replacement'))
+                    ->label(__('phpinnacle-ferry::transforms.mask_replacement'))
                     ->default('***')
                     ->rules(['string'])
                     ->required(),

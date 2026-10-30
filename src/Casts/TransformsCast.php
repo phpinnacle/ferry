@@ -8,7 +8,8 @@ use Illuminate\Database\Eloquent\Model;
 use PHPinnacle\Ferry\Data\TransformSetting;
 
 /**
- * @implements CastsAttributes<list<TransformSetting>, list<TransformSetting>>
+ * @phpstan-import-type TransformData from TransformSetting
+ * @implements CastsAttributes<list<TransformSetting>, list<TransformSetting>|list<TransformData>>
  */
 class TransformsCast implements CastsAttributes, SerializesCastableAttributes
 {
@@ -31,7 +32,7 @@ class TransformsCast implements CastsAttributes, SerializesCastableAttributes
         return array_map(static fn (TransformSetting $setting) => $setting->jsonSerialize(), $value);
     }
 
-    /** @param list<TransformSetting> $value */
+    /** @param list<TransformSetting>|list<TransformData> $value */
     public function set(Model $model, string $key, mixed $value, array $attributes): string
     {
         return json_encode($value, JSON_THROW_ON_ERROR);

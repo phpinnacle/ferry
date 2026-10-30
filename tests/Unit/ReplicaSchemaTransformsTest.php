@@ -46,7 +46,7 @@ it('calculates a composed output schema from input schema and mapping options', 
     ]);
 
     $key = new FieldMapping(source: 'id', target: 'id');
-    ReplicaSchema::assertValid([$mapping, $key], null, ['id'], $schema, ['id']);
+    app(ReplicaSchema::class)->assertValid([$mapping, $key], null, ['id'], $schema, ['id']);
 
     expect($registry->mappingSchema($mapping, $schema)->toArray())
         ->toBe(['type' => ['string', 'null'], 'maxLength' => 100])
@@ -56,7 +56,13 @@ it('calculates a composed output schema from input schema and mapping options', 
         ->toEqual($mapping);
 
     $packed = new FieldMapping('_code', 'title', ['transforms' => [$transforms[0]]]);
-    expect(fn () => ReplicaSchema::assertValid([$packed, $key], null, ['id'], $schema, ['id']))
+    expect(fn () => app(ReplicaSchema::class)->assertValid(
+        [$packed, $key],
+        null,
+        ['id'],
+        $schema,
+        ['id'],
+    ))
         ->toThrow(ValidationException::class);
 });
 
@@ -78,7 +84,13 @@ it('preserves native static values in ready mapping rows', function (string|int|
     $mapping = FieldMapping::fromArray(['kind' => 'static', 'target' => 'status', 'static' => $value, 'options' => []]);
 
     $schema = JsonSchema::fromArray(['properties' => ['id' => ['type' => 'integer']]]);
-    ReplicaSchema::assertValid([$mapping, new FieldMapping('id', 'id')], null, ['id'], $schema, ['id']);
+    app(ReplicaSchema::class)->assertValid(
+        [$mapping, new FieldMapping('id', 'id')],
+        null,
+        ['id'],
+        $schema,
+        ['id'],
+    );
 
     expect($mapping->static)
         ->toBe($value)

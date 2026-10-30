@@ -57,8 +57,8 @@ final class Toggle implements Transform
     {
         return InlineBlock::make($this->getKey())
             ->color('success')
-            ->label(fn () => __('phpinnacle-ferry::resources.transform.toggle'))
-            ->description(fn () => __('phpinnacle-ferry::resources.transform.toggle_description'))
+            ->label(fn () => __('phpinnacle-ferry::transforms.toggle'))
+            ->description(fn () => __('phpinnacle-ferry::transforms.toggle_description'))
             ->icon(Heroicon::ArrowsRightLeft);
     }
 

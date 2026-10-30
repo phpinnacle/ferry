@@ -78,12 +78,12 @@ final class BooleanToString implements Transform
     {
         return InlineBlock::make($this->getKey())
             ->color('info')
-            ->label(fn () => __('phpinnacle-ferry::resources.transform.boolean_to_string'))
-            ->description(fn () => __('phpinnacle-ferry::resources.transform.boolean_to_string_description'))
+            ->label(fn () => __('phpinnacle-ferry::transforms.boolean_to_string'))
+            ->description(fn () => __('phpinnacle-ferry::transforms.boolean_to_string_description'))
             ->icon(Heroicon::Language)
             ->schema(fn () => array_map(
                 fn (string $name) => TextInput::make($name)
-                    ->label(__('phpinnacle-ferry::resources.transform.boolean_string_' . $name))
+                    ->label(__('phpinnacle-ferry::transforms.boolean_string_' . $name))
                     ->default($name)
                     ->trim(false)
                     ->rules(['string'])

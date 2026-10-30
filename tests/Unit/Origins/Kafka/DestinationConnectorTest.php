@@ -11,6 +11,7 @@ use PHPinnacle\Ferry\Origins\Kafka\SinkConfigFactory;
 use PHPinnacle\Ferry\Origins\Kafka\SourceFactory;
 use PHPinnacle\Ferry\Origins\Kafka\TransformFactory;
 use PHPinnacle\Ferry\Services\DestinationFactory;
+use PHPinnacle\Ferry\Services\ReplicaSchemaResolver;
 use PHPinnacle\Ferry\Tests\TestCase;
 use PHPinnacle\Jason\Schema;
 use PHPinnacle\Jason\SchemaBuilder;
@@ -76,11 +77,11 @@ it('builds a confluent jdbc sink connector config with field renames', function 
         ],
     ]);
 
-    $builder = new SourceFactory;
+    $builder = app(SourceFactory::class);
     config(['phpinnacle-ferry.replica.table_prefix' => 'changed_prefix_']);
 
-    $config = new SinkConfigFactory($this->factory)->make(
-        new DestinationFactory()->resolve($replica),
+    $config = new SinkConfigFactory($this->factory, app(ReplicaSchemaResolver::class))->make(
+        new DestinationFactory(app(ReplicaSchemaResolver::class))->resolve($replica),
         $replica,
         $object,
         $builder->topic($upstream, $object),
@@ -143,16 +144,16 @@ it('keeps each sink limited to the fields of its own mapping when several replic
         ],
     ]);
 
-    $builder = new SourceFactory;
+    $builder = app(SourceFactory::class);
 
-    $firstConfig = new SinkConfigFactory($this->factory)->make(
-        new DestinationFactory()->resolve($first),
+    $firstConfig = new SinkConfigFactory($this->factory, app(ReplicaSchemaResolver::class))->make(
+        new DestinationFactory(app(ReplicaSchemaResolver::class))->resolve($first),
         $first,
         $object,
         $builder->topic($upstream, $object),
     );
-    $secondConfig = new SinkConfigFactory($this->factory)->make(
-        new DestinationFactory()->resolve($second),
+    $secondConfig = new SinkConfigFactory($this->factory, app(ReplicaSchemaResolver::class))->make(
+        new DestinationFactory(app(ReplicaSchemaResolver::class))->resolve($second),
         $second,
         $object,
         $builder->topic($upstream, $object),
@@ -187,9 +188,9 @@ it('builds a static sink with fixed fields and its target upstream', function (
         ],
     ]);
 
-    $builder = new SourceFactory;
+    $builder = app(SourceFactory::class);
 
-    $config = new SinkConfigFactory($this->factory)->make(
+    $config = new SinkConfigFactory($this->factory, app(ReplicaSchemaResolver::class))->make(
         $registry->resolve($replica),
         $replica,
         $object,
@@ -252,7 +253,7 @@ it('refuses to build a sink for an unregistered static destination', function ()
     ]);
     $replica->forceFill(['type' => DestinationType::Static, 'destination' => 'customers'])->saveQuietly();
 
-    expect(fn () => new DestinationFactory()->resolve($replica))
+    expect(fn () => new DestinationFactory(app(ReplicaSchemaResolver::class))->resolve($replica))
         ->toThrow(LogicException::class, __('phpinnacle-ferry::resources.replica.errors.static_destination_missing', [
             'destination' => 'customers',
         ]));
@@ -276,11 +277,11 @@ it('keeps configured sink hosts and environment ports while applying the default
         config(['database.connections.sqlite.port' => $port]);
     }
 
-    $builder = new SourceFactory;
+    $builder = app(SourceFactory::class);
 
     expect(
-        new SinkConfigFactory($this->factory)->make(
-            new DestinationFactory()->resolve($replica),
+        new SinkConfigFactory($this->factory, app(ReplicaSchemaResolver::class))->make(
+            new DestinationFactory(app(ReplicaSchemaResolver::class))->resolve($replica),
             $replica,
             $object,
             $builder->topic($upstream, $object),
@@ -342,7 +343,12 @@ it('selects and renames only source key fields mapped to the static primary key'
         ),
     ]);
 
-    $config = new SinkConfigFactory($this->factory)->make($destination, $replica, $object, 'topic');
+    $config = new SinkConfigFactory($this->factory, app(ReplicaSchemaResolver::class))->make(
+        $destination,
+        $replica,
+        $object,
+        'topic',
+    );
 
     expect($config)->toMatchArray([
         'pk.mode' => 'record_key',

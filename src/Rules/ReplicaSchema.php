@@ -14,6 +14,10 @@ use PHPinnacle\Ferry\Services\TransformRegistry;
 
 readonly class ReplicaSchema
 {
+    public function __construct(
+        private TransformRegistry $transforms,
+    ) {}
+
     /**
      * @param list<mixed> $columns
      * @param Closure(string): PotentiallyTranslatedString $fail
@@ -80,7 +84,7 @@ readonly class ReplicaSchema
      * @param list<string> $sourcePrimaryKey
      * @param list<string> $physicalPrimaryKey
      */
-    public static function assertValid(
+    public function assertValid(
         array $mappings,
         ?StaticDestination $destination,
         array $sourcePrimaryKey,
@@ -125,7 +129,7 @@ readonly class ReplicaSchema
                 continue;
             }
 
-            $output = app(TransformRegistry::class)->mappingSchema($mapping, $sourceSchema);
+            $output = $this->transforms->mappingSchema($mapping, $sourceSchema);
             if ($output === null || ReplicaTableManager::columnType($output) === null) {
                 throw ValidationException::withMessages([
                     'data.mapping' => __('phpinnacle-ferry::resources.replica.errors.unsupported_field_type', [

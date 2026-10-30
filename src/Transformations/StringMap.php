@@ -87,15 +87,15 @@ final class StringMap implements Transform
     {
         return InlineBlock::make($this->getKey())
             ->color('info')
-            ->label(fn () => __('phpinnacle-ferry::resources.transform.string_map'))
-            ->description(fn () => __('phpinnacle-ferry::resources.transform.string_map_description'))
+            ->label(fn () => __('phpinnacle-ferry::transforms.string_map'))
+            ->description(fn () => __('phpinnacle-ferry::transforms.string_map_description'))
             ->icon(Heroicon::ArrowsRightLeft)
             ->schema(fn () => [
                 KeyValue::make('mapping')
-                    ->label(__('phpinnacle-ferry::resources.transform.string_map_mapping'))
-                    ->keyLabel(__('phpinnacle-ferry::resources.transform.string_map_source'))
-                    ->valueLabel(__('phpinnacle-ferry::resources.transform.string_map_replacement'))
-                    ->helperText(__('phpinnacle-ferry::resources.transform.string_map_help'))
+                    ->label(__('phpinnacle-ferry::transforms.string_map_mapping'))
+                    ->keyLabel(__('phpinnacle-ferry::transforms.string_map_source'))
+                    ->valueLabel(__('phpinnacle-ferry::transforms.string_map_replacement'))
+                    ->helperText(__('phpinnacle-ferry::transforms.string_map_help'))
                     ->required()
                     ->rules(fn (Get $get) => [
                         'array',

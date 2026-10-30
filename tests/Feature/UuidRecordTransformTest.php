@@ -12,12 +12,13 @@ use PHPinnacle\Ferry\Destinations\StaticDestination;
 use PHPinnacle\Ferry\Enums\DestinationType;
 use PHPinnacle\Ferry\Enums\FieldKind;
 use PHPinnacle\Ferry\Enums\StructureStatus;
-use PHPinnacle\Ferry\Models\Replica;
 use PHPinnacle\Ferry\Origins\Kafka\SinkConfigFactory;
 use PHPinnacle\Ferry\Origins\Kafka\SourceFactory;
 use PHPinnacle\Ferry\Origins\Kafka\TransformFactory;
 use PHPinnacle\Ferry\Resources\Replicas\Schemas\ReplicaForm;
 use PHPinnacle\Ferry\Services\DestinationFactory;
+use PHPinnacle\Ferry\Services\ReplicaSchemaResolver;
+use PHPinnacle\Ferry\Services\TransformRegistry;
 use PHPinnacle\Ferry\Tests\Fixtures\SchemaHost;
 use PHPinnacle\Ferry\Tests\TestCase;
 use PHPinnacle\Jason\Schema;
@@ -67,7 +68,8 @@ it('creates and persists one UUID key through the tabbed record builder for both
             'code' => 'uuid_replica',
             'upstream_id' => $this->upstream->id,
             'source' => 'object-0',
-            'destination' => $type === DestinationType::Static ? 'static:keyed' : 'dynamic',
+            'type' => $type->value,
+            'destination' => $type === DestinationType::Static ? 'keyed' : null,
             'mapping' => [
                 ['kind' => 'source', 'source' => 'name', 'target' => 'name', 'options' => []],
                 ['kind' => 'source', 'source' => 'tenant_id', 'target' => null, 'options' => []],
@@ -142,12 +144,12 @@ it('creates and persists one UUID key through the tabbed record builder for both
     $invalidRows = $state['mapping'];
     $invalidRows[array_search('record_id', array_column($state['mapping'], 'source'), true)]['options']['transforms'] =
         [['type' => 'cast', 'data' => ['type' => 'string']]];
-    $record = new Replica(ReplicaForm::forCreate($state, app(DestinationFactory::class)));
+    $record = $form->getRecord();
     try {
-        ReplicaForm::forUpdate([...$state, 'mapping' => $invalidRows], $record, app(DestinationFactory::class));
+        TestCase::replicaFormState([...$state, 'mapping' => $invalidRows], $record);
         test()->fail('Invalid key transforms must fail validation.');
     } catch (ValidationException $exception) {
-        expect($exception->errors())->toHaveKey('data.mapping');
+        expect(implode(' ', array_keys($exception->errors())))->toContain('options.transforms');
     }
 
     $keyTransforms->state([]);
@@ -165,12 +167,19 @@ it('creates and persists one UUID key through the tabbed record builder for both
         'target' => 'id',
         'options' => ['transforms' => []],
     ]);
-    $replica = Replica::create(TestCase::mappedReplicaAttributes($state, app(DestinationFactory::class)))->fresh();
-    expect($replica->schema->toArray())->toBe($state['schema']);
+    $replica = $form->getRecord();
+    $replica->update($state);
+    $replica->refresh();
+    expect($state)->not->toHaveKey('schema');
     expect($replica->schema->properties())->not->toHaveKey('record_id');
     expect(collect($replica->mapping)->firstWhere('source', 'record_id')->target)->toBe('id');
-    expect($replica->primaryKeyMap($this->object))->toBe(['record_id' => 'id']);
-    expect($replica->transformedSchema()->properties()['record_id']->toArray())->toMatchArray([
+    expect($replica->primaryKeyMap(app(ReplicaSchemaResolver::class)->primaryKeySources(
+        $replica,
+        $this->object,
+    )))->toBe(['record_id' => 'id']);
+    expect(
+        app(ReplicaSchemaResolver::class)->transformedSchema($replica)->properties()['record_id']->toArray(),
+    )->toMatchArray([
         'type' => 'string',
         'format' => 'uuid',
         'minLength' => 36,
@@ -179,7 +188,7 @@ it('creates and persists one UUID key through the tabbed record builder for both
     $edit = ReplicaForm::configure(
         FormSchema::make(SchemaHost::make())->statePath('data')->record($replica)->operation('edit'),
     );
-    $edit->fill(ReplicaForm::fill($replica->toArray()));
+    $edit->fill($replica->toArray());
     expect($edit->getState()['mapping'])->toBe($state['mapping']);
     expect($edit->getState()['transforms'])->toBe($state['transforms']);
     $savedPicker = $edit
@@ -189,7 +198,7 @@ it('creates and persists one UUID key through the tabbed record builder for both
     expect($savedPicker->getState())->toBe(["$['tenant_id']", "$['row_id']"]);
     expect($edit->getComponentByStatePath('mapping')->getSources()[0]['id'])->toBe('record_id');
 
-    $source = new SourceFactory;
+    $source = app(SourceFactory::class);
     $capture = $source->source($this->upstream, config('phpinnacle-ferry.origins.kafka'));
     expect($capture['message.key.columns'])->toBe('public._reference0:tenant_id,row_id');
     expect($capture['column.include.list'])
@@ -197,7 +206,7 @@ it('creates and persists one UUID key through the tabbed record builder for both
             'public._reference0.tenant_id,public._reference0.row_id,public._reference0.name',
         );
     expect($capture['transforms'])->toBe('unwrap');
-    $sink = new SinkConfigFactory(app(TransformFactory::class))->make(
+    $sink = new SinkConfigFactory(app(TransformFactory::class), app(ReplicaSchemaResolver::class))->make(
         app(DestinationFactory::class)->resolve($replica),
         $replica,
         $this->object,
@@ -241,7 +250,7 @@ it('preserves destination constants when adding a UUID key', function () {
     $form = ReplicaForm::configure(
         FormSchema::make($livewire)->statePath('data')->record($replica)->operation('edit'),
     );
-    $form->fill(ReplicaForm::fill($replica->toArray()));
+    $form->fill($replica->toArray());
     $mapping = $form->getComponentByStatePath('mapping');
     $properties = $mapping->getSourceSchema()['properties'];
     expect(array_keys($properties))->toBe(array_keys($replica->schema->toArray()['properties']));
@@ -257,8 +266,10 @@ it('preserves destination constants when adding a UUID key', function () {
     $rows = $mapping->getState();
     $rows[$mapping->getSourceRowIndex('record_id')]['target'] = 'id';
     $mapping->state($rows);
-    $replica->fill(ReplicaForm::forUpdate($form->getState(), $replica, app(DestinationFactory::class)))->save();
-    expect(array_keys($replica->fresh()->transformedSchema()->toArray()['properties']))->toBe([
+    $replica->fill($form->getState())->save();
+    expect(array_keys(
+        app(ReplicaSchemaResolver::class)->transformedSchema($replica->fresh())->toArray()['properties'],
+    ))->toBe([
         'record_id',
         ...array_keys($properties),
     ]);
@@ -269,7 +280,7 @@ it('validates UUID field names and all physical key parts in its native tab', fu
     $page = Livewire::test(\PHPinnacle\Ferry\Tests\Fixtures\ReplicaForm::class, ['state' => [
         'upstream_id' => $this->upstream->id,
         'source' => 'object-0',
-        'destination' => 'dynamic',
+        'type' => DestinationType::Dynamic->value,
     ]]);
     $page
         ->set('data.transforms', ['uuid' => ['type' => 'insert_uuid', 'data' => $data]])
@@ -299,11 +310,10 @@ it('validates UUID field names and all physical key parts in its native tab', fu
 ]);
 
 it('rejects duplicate UUID sources through the Eidos picker validation', function () {
-    $form = ReplicaForm::configure(FormSchema::make(SchemaHost::make())->statePath('data'));
-    $form->fill([
+    $form = TestCase::replicaForm([
         'upstream_id' => $this->upstream->id,
         'source' => 'object-0',
-        'destination' => 'dynamic',
+        'type' => DestinationType::Dynamic->value,
         'transforms' => [[
             'type' => 'insert_uuid',
             'data' => ['fields' => ["$['row_id']", "$['row_id']"], 'output' => 'record_id'],

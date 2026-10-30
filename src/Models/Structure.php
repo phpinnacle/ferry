@@ -3,13 +3,14 @@
 namespace PHPinnacle\Ferry\Models;
 
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use PHPinnacle\Ferry\Data\StructurePlan;
 use PHPinnacle\Ferry\Enums\StructureStatus;
-use PHPinnacle\Ferry\Jobs\Structure\PrepareStructureJob;
+use PHPinnacle\Ferry\Observers\StructureObserver;
 
 /**
  * @property string $upstream_id
@@ -23,6 +24,7 @@ use PHPinnacle\Ferry\Jobs\Structure\PrepareStructureJob;
  * @property CarbonImmutable $updated_at
  * @property-read Upstream $upstream
  */
+#[ObservedBy(StructureObserver::class)]
 class Structure extends Model
 {
     use HasUuids;
@@ -242,9 +244,6 @@ class Structure extends Model
             $this->discardDraftItems();
             $this->beginStructureRun();
             $this->save();
-            if ($this->run_id !== null) {
-                PrepareStructureJob::dispatch($this->upstream_id, $this->run_id)->afterCommit();
-            }
         });
     }
 
@@ -266,11 +265,6 @@ class Structure extends Model
     {
         static::creating(function (self $structure) {
             $structure->beginStructureRun();
-        });
-        static::created(function (self $structure) {
-            if ($structure->run_id !== null) {
-                PrepareStructureJob::dispatch($structure->upstream_id, $structure->run_id)->afterCommit();
-            }
         });
     }
 

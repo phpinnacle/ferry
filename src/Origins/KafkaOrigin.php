@@ -15,6 +15,7 @@ use PHPinnacle\Ferry\Origins\Kafka\SinkConfigFactory;
 use PHPinnacle\Ferry\Origins\Kafka\SourceFactory;
 use PHPinnacle\Ferry\Rules\ReplicaSchema;
 use PHPinnacle\Ferry\Services\DestinationFactory;
+use PHPinnacle\Ferry\Services\ReplicaSchemaResolver;
 use PHPinnacle\Franz\Exception\ApiException;
 use PHPinnacle\Franz\Request\ConnectorConfigRequest;
 
@@ -36,6 +37,8 @@ class KafkaOrigin implements Origin
         private readonly SourceFactory $sources,
         private readonly DestinationFactory $destinations,
         private readonly SinkConfigFactory $sinks,
+        private readonly ReplicaSchema $schemas,
+        private readonly ReplicaSchemaResolver $replicaSchemas,
     ) {}
 
     public function name(): string
@@ -185,11 +188,11 @@ class KafkaOrigin implements Origin
             ]));
         }
 
-        ReplicaSchema::assertValid(
+        $this->schemas->assertValid(
             $replica->mapping,
             $this->destinations->staticFor($replica),
-            $replica->primaryKeySources($object),
-            $replica->transformedSchema(),
+            $this->replicaSchemas->primaryKeySources($replica, $object),
+            $this->replicaSchemas->transformedSchema($replica),
             $object->primary_key,
         );
 

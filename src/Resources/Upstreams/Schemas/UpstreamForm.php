@@ -25,6 +25,11 @@ class UpstreamForm
     {
         $config = Group::make()
             ->statePath('config')
+            ->afterStateHydrated(function (Group $component, ?Upstream $record) {
+                if ($record !== null) {
+                    $component->getChildSchemas()['default']->fill($record->config);
+                }
+            })
             ->schema(fn (Get $get) => $get->enum('driver', Driver::class, isNullable: true)?->schema() ?? []);
 
         return $schema

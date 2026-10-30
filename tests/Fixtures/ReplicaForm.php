@@ -8,7 +8,9 @@ use Filament\Schemas\Concerns\InteractsWithSchemas;
 use Filament\Schemas\Contracts\HasSchemas;
 use Filament\Schemas\Schema;
 use Livewire\Component;
+use PHPinnacle\Ferry\Models\Replica;
 use PHPinnacle\Ferry\Resources\Replicas\Schemas\ReplicaForm as ResourceForm;
+use PHPinnacle\Ferry\Tests\TestCase;
 
 class ReplicaForm extends Component implements HasActions, HasSchemas
 {
@@ -18,15 +20,29 @@ class ReplicaForm extends Component implements HasActions, HasSchemas
     /** @var array<string, mixed> */
     public array $data = [];
 
+    public bool $creating = false;
+
+    public ?Replica $record = null;
+
     /** @param array<string, mixed> $state */
-    public function mount(array $state): void
+    public function mount(array $state, bool $creating = false, ?Replica $record = null): void
     {
-        $this->form->fill($state);
+        $this->creating = $creating;
+        if (!$creating) {
+            $this->record = $record ?? TestCase::makeReplica([...$state, 'mapping' => [], 'transforms' => []]);
+        }
+
+        $this->form->fill([...($this->record?->toArray() ?? []), ...$state]);
     }
 
     public function form(Schema $schema): Schema
     {
-        return ResourceForm::configure($schema->statePath('data')->operation('create'));
+        $schema
+            ->statePath('data')
+            ->record($this->record)
+            ->operation($this->creating ? 'create' : 'edit');
+
+        return $this->creating ? ResourceForm::creation($schema) : ResourceForm::configure($schema);
     }
 
     public function validateForm(): void

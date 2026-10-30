@@ -53,9 +53,9 @@ final class Filter implements Transform
     public function block(): InlineBlock
     {
         return InlineBlock::make($this->getKey())
-            ->label(fn () => __('phpinnacle-ferry::resources.transform.filter'))
+            ->label(fn () => __('phpinnacle-ferry::transforms.filter'))
             ->icon(Heroicon::Funnel)
-            ->description(fn () => __('phpinnacle-ferry::resources.transform.filter_description'))
+            ->description(fn () => __('phpinnacle-ferry::transforms.filter_description'))
             ->schema(function (?JsonSchema $input) {
                 $example = match ($input?->singleType()) {
                     'string' => "@ == 'value'",
@@ -71,28 +71,28 @@ final class Filter implements Transform
                 return [
                     Group::make([
                         Select::make('mode')
-                            ->label(__('phpinnacle-ferry::resources.transform.filter_mode'))
+                            ->label(__('phpinnacle-ferry::transforms.filter_mode'))
                             ->options([
-                                'exclude' => __('phpinnacle-ferry::resources.transform.filter_exclude'),
-                                'include' => __('phpinnacle-ferry::resources.transform.filter_include'),
+                                'exclude' => __('phpinnacle-ferry::transforms.filter_exclude'),
+                                'include' => __('phpinnacle-ferry::transforms.filter_include'),
                             ])
                             ->default('exclude')
                             ->selectablePlaceholder(false)
                             ->required(),
                         Select::make('missing_or_null_behavior')
-                            ->label(__('phpinnacle-ferry::resources.transform.filter_missing_or_null_behavior'))
+                            ->label(__('phpinnacle-ferry::transforms.filter_missing_or_null_behavior'))
                             ->options([
-                                'include' => __('phpinnacle-ferry::resources.transform.filter_missing_include'),
-                                'exclude' => __('phpinnacle-ferry::resources.transform.filter_missing_exclude'),
-                                'fail' => __('phpinnacle-ferry::resources.transform.filter_missing_fail'),
+                                'include' => __('phpinnacle-ferry::transforms.filter_missing_include'),
+                                'exclude' => __('phpinnacle-ferry::transforms.filter_missing_exclude'),
+                                'fail' => __('phpinnacle-ferry::transforms.filter_missing_fail'),
                             ])
                             ->default('include')
                             ->selectablePlaceholder(false)
                             ->required(),
                     ])->columns(2)->columnSpanFull(),
                     Textarea::make('condition')
-                        ->label(__('phpinnacle-ferry::resources.transform.filter_condition'))
-                        ->helperText(__('phpinnacle-ferry::resources.transform.filter_condition_help', [
+                        ->label(__('phpinnacle-ferry::transforms.filter_condition'))
+                        ->helperText(__('phpinnacle-ferry::transforms.filter_condition_help', [
                             'example' => $example,
                         ]))
                         ->placeholder($example)

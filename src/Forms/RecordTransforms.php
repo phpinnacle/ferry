@@ -9,34 +9,16 @@ use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Contracts\Transform;
 use PHPinnacle\Ferry\Data\TransformSetting;
 use PHPinnacle\Ferry\Enums\TransformScope;
-use PHPinnacle\Ferry\Models\StructureItem;
 use PHPinnacle\Ferry\Services\TransformRegistry;
 
 /**
  * @phpstan-import-type TransformData from TransformSetting
- * @phpstan-import-type Definition from JsonSchema
  */
 class RecordTransforms extends TabbedBuilder
 {
-    protected ?StructureItem $object = null;
+    protected JsonSchema $inputSchema;
 
-    /** @var Definition */
-    protected array $inputSchema = [];
-
-    public function object(?StructureItem $object): static
-    {
-        $this->object = $object;
-
-        return $this;
-    }
-
-    public function getObject(): ?StructureItem
-    {
-        return $this->object;
-    }
-
-    /** @param Definition $schema */
-    public function inputSchema(array $schema): static
+    public function inputSchema(JsonSchema $schema): static
     {
         $this->inputSchema = $schema;
 
@@ -57,7 +39,7 @@ class RecordTransforms extends TabbedBuilder
         }
 
         return app(TransformRegistry::class)->previewRecordSchema(
-            JsonSchema::fromArray($this->inputSchema),
+            $this->inputSchema,
             array_map(TransformSetting::fromArray(...), $items),
         );
     }
@@ -66,7 +48,7 @@ class RecordTransforms extends TabbedBuilder
     {
         parent::setUp();
 
-        $this->addActionLabel(__('phpinnacle-ferry::resources.replica.fields.add_transform'));
+        $this->addActionLabel(__('phpinnacle-ferry::transforms.add'));
         $this->blocks(fn (TransformRegistry $registry) => array_values(array_map(
             fn (Transform $transform) => $transform->block(),
             array_filter(
@@ -75,12 +57,23 @@ class RecordTransforms extends TabbedBuilder
             ),
         )));
         $this->live();
-        $this->rules(fn () => [$this->validateSettings(...)]);
+        $this->rules(fn (TransformRegistry $transforms) => [
+            fn (string $attribute, mixed $value, Closure $fail) => $this->validateSettings(
+                $transforms,
+                $attribute,
+                $value,
+                $fail,
+            ),
+        ]);
     }
 
     /** @param Closure(string): PotentiallyTranslatedString $fail */
-    private function validateSettings(string $attribute, mixed $value, Closure $fail): void
-    {
+    private function validateSettings(
+        TransformRegistry $transforms,
+        string $attribute,
+        mixed $value,
+        Closure $fail,
+    ): void {
         if ($value !== null && !is_array($value)) {
             $fail('phpinnacle-ferry::validation.replica_transforms')->translate();
 
@@ -89,8 +82,8 @@ class RecordTransforms extends TabbedBuilder
 
         /** @var array<string, TransformData>|null $value */
         if (
-            app(TransformRegistry::class)->resultSchema(
-                JsonSchema::fromArray($this->inputSchema),
+            $transforms->resultSchema(
+                $this->inputSchema,
                 array_map(TransformSetting::fromArray(...), array_values($value ?? [])),
                 null,
                 TransformScope::Record,

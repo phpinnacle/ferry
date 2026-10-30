@@ -57,7 +57,7 @@ final class Trim implements Transform
     {
         return InlineBlock::make($this->getKey())
             ->color('success')
-            ->label(fn () => __('phpinnacle-ferry::resources.transform.trim'))
+            ->label(fn () => __('phpinnacle-ferry::transforms.trim'))
             ->icon(Heroicon::ArrowsPointingIn);
     }
 

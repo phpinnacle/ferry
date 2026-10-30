@@ -28,7 +28,7 @@ class TransformFactory
         array $fixedValues = [],
     ): array {
         $pipeline = [];
-        $columns = $replica->columnMap($object);
+        $columns = $replica->columnMap();
         $reserved = array_fill_keys([
             ...array_keys($object->schema->properties()),
             ...array_values($columns),

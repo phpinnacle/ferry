@@ -57,6 +57,24 @@ function ferry_upstream_form(?Upstream $record = null): Schema
     return $schema;
 }
 
+it('hydrates hidden connection settings directly from its record without exposing them in model serialization', function () {
+    $upstream = TestCase::makeUpstream();
+    $form = UpstreamForm::configure(
+        Schema::make(SchemaHost::make())->record($upstream)->statePath('data')->operation('edit'),
+    );
+    $form->fill($upstream->attributesToArray());
+
+    expect($upstream->attributesToArray())->not->toHaveKey('config');
+    expect($form->getComponentByStatePath('config.host')->getState())->toBe('localhost');
+    expect($form->getComponentByStatePath('config.password')->getState())->toBeNull();
+
+    $form->getComponentByStatePath('config.host')->state('updated.internal');
+    $upstream->update($form->getState());
+
+    expect($upstream->fresh()->config['host'])->toBe('updated.internal');
+    expect($upstream->fresh()->attributesToArray())->not->toHaveKey('config');
+});
+
 it('offers configured origins and saves the selected key', function () {
     $schema = ferry_upstream_form();
     $field = $schema->getComponentByStatePath('origin');

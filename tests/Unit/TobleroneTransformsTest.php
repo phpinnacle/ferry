@@ -8,6 +8,7 @@ use PHPinnacle\Ferry\Data\FieldMapping;
 use PHPinnacle\Ferry\Enums\FieldKind;
 use PHPinnacle\Ferry\Models\Replica;
 use PHPinnacle\Ferry\Origins\Kafka\TransformFactory;
+use PHPinnacle\Ferry\Services\ReplicaSchemaResolver;
 use PHPinnacle\Ferry\Tests\Fixtures\SchemaHost;
 use PHPinnacle\Ferry\Tests\Fixtures\StructureItems;
 use PHPinnacle\Ferry\Transformations\BooleanToString;
@@ -142,7 +143,7 @@ it('compiles the new Toblerone chain before renames without changing the key', f
         ],
     ]);
     $replica = new Replica(['schema' => $object->schema, 'mapping' => [$mapping]]);
-    expect($replica->outputSchema($mapping)?->toArray())->toBe([
+    expect(app(ReplicaSchemaResolver::class)->outputSchema($replica, $mapping)?->toArray())->toBe([
         'type' => ['string', 'null'],
         'enum' => ['active', '', null],
         'minLength' => 0,
@@ -180,7 +181,7 @@ it('applies the Toblerone chain to constants before renames after inserting thei
     $object = StructureItems::make();
     $replica = new Replica(['schema' => $object->schema, 'mapping' => [$mapping]]);
 
-    expect($replica->outputSchema($mapping)?->toArray())->toBe([
+    expect(app(ReplicaSchemaResolver::class)->outputSchema($replica, $mapping)?->toArray())->toBe([
         'type' => 'string',
         'enum' => [''],
         'minLength' => 0,

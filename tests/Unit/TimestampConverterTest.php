@@ -6,6 +6,7 @@ use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Data\FieldMapping;
 use PHPinnacle\Ferry\Models\Replica;
 use PHPinnacle\Ferry\Origins\Kafka\TransformFactory;
+use PHPinnacle\Ferry\Services\ReplicaSchemaResolver;
 use PHPinnacle\Ferry\Services\TransformRegistry;
 use PHPinnacle\Ferry\Tests\Fixtures\SchemaHost;
 use PHPinnacle\Ferry\Tests\Fixtures\StructureItems;
@@ -147,7 +148,7 @@ it('runs timestamp chains before renaming while preserving tombstone deletes', f
     $replica = new Replica(['schema' => $object->schema, 'mapping' => [$mapping]]);
     $config = app(TransformFactory::class)->pipeline($replica, $object);
 
-    expect($replica->outputSchema($mapping)?->toArray())->toBe(['type' => 'string']);
+    expect(app(ReplicaSchemaResolver::class)->outputSchema($replica, $mapping)?->toArray())->toBe(['type' => 'string']);
     expect($config)
         ->toMatchArray([
             'transforms' => 'field_0_0,field_0_1,rename_values',

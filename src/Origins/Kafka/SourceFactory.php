@@ -14,6 +14,10 @@ class SourceFactory
 
     private const int IDENTIFIER_LENGTH = 63;
 
+    public function __construct(
+        private readonly TransformRegistry $transforms,
+    ) {}
+
     /**
      * @param array{
      *     signal: array{topic: string, bootstrap_servers: string, group_id: string, ...},
@@ -63,7 +67,7 @@ class SourceFactory
             }
 
             foreach ($replica->transforms as $setting) {
-                foreach (app(TransformRegistry::class)
+                foreach ($this->transforms
                     ->getOrFail($setting->type)
                     ->sourceFields($setting->data) as $column) {
                     if ($object->field($column) !== null) {

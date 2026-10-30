@@ -6,6 +6,7 @@ use Illuminate\Support\ViewErrorBag;
 use Illuminate\Validation\ValidationException;
 use PHPinnacle\Eidos\Forms\FieldBinding;
 use PHPinnacle\Eidos\Forms\FieldMapping;
+use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Forms\FieldTransforms;
 use PHPinnacle\Ferry\Services\TransformRegistry;
 use PHPinnacle\Ferry\Tests\Fixtures\SchemaHost;
@@ -62,10 +63,12 @@ it('validates transform settings on unconnected sources', function (
     $source = ['properties' => ['input' => ['type' => $type]]];
     $field = $binding
         ? FieldBinding::make('widget')->jsonSchema($source)->simple(TextInput::make('column')->default('output'))
-        : FieldMapping::make('widget')->jsonSchema(source: $source, dest: [
+        : FieldMapping::make('widget')->jsonSchema(source: $source, target: [
             'properties' => ['output' => ['type' => $type]],
         ]);
-    $field->sourceSettings([FieldTransforms::make('transforms')->inputSchema(['type' => $type])]);
+    $field->sourceSettings([FieldTransforms::make('transforms')->inputSchema(JsonSchema::fromArray([
+        'type' => $type,
+    ]))]);
     $schema = Schema::make(SchemaHost::make())->statePath('data')->components([$field]);
     $schema->fill(['widget' => []]);
     $settingsKey = $field->getSourceRowIndexes()['input'];
@@ -97,7 +100,7 @@ it('uses a generic value label independently of replica labels', function () {
         'phpinnacle-ferry',
     );
     $field = FieldMapping::make('mapping')
-        ->jsonSchema(dest: ['properties' => ['target' => ['type' => 'string']]])
+        ->jsonSchema(target: ['properties' => ['target' => ['type' => 'string']]])
         ->withBuiltinStaticForms();
     $schema = Schema::make(SchemaHost::make())->statePath('data')->components([$field]);
     $schema->fill();

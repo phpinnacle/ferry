@@ -102,7 +102,9 @@ it('shows connector error callouts only for failed connectors with a saved error
     string $formClass,
     string $modelClass,
 ) {
-    $record = new $modelClass;
+    $record = $modelClass === Replica::class
+        ? TestCase::makeReplica(['mapping' => []])
+        : TestCase::makeUpstream();
     $record->setRelation(
         'connector',
         $status === null
@@ -132,13 +134,17 @@ it('shows connector error callouts only for failed connectors with a saved error
     'replicas' => [ReplicaForm::class, Replica::class],
 ]);
 
-it('omits connector error callouts from forms without a saved owner', function (string $formClass, string $modelClass) {
-    $schema = $formClass::configure(FormSchema::make(SchemaHost::make())->model($modelClass)->operation('create'));
+it('omits connector error callouts from forms without a saved owner', function (
+    string $formClass,
+    string $modelClass,
+    string $method,
+) {
+    $schema = $formClass::$method(FormSchema::make(SchemaHost::make())->model($modelClass)->operation('create'));
 
-    expect($schema->getComponent('connectorError', withHidden: true)->isVisible())->toBeFalse();
+    expect($schema->getComponent('connectorError', withHidden: true)?->isVisible() ?? false)->toBeFalse();
 })->with([
-    'upstreams' => [UpstreamForm::class, Upstream::class],
-    'replicas' => [ReplicaForm::class, Replica::class],
+    'upstreams' => [UpstreamForm::class, Upstream::class, 'configure'],
+    'replicas' => [ReplicaForm::class, Replica::class, 'creation'],
 ]);
 
 it('refreshes every connector and continues after an external status check fails', function (bool $fails) {

@@ -7,21 +7,33 @@ use Illuminate\Database\Schema\ColumnDefinition;
 use LogicException;
 use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Data\FieldMapping;
+use PHPinnacle\Ferry\Enums\DestinationType;
 use PHPinnacle\Ferry\Enums\FieldKind;
 use PHPinnacle\Ferry\Models\Replica;
 
 class ReplicaTableManager
 {
+    public function __construct(
+        private readonly ReplicaSchemaResolver $schemas,
+    ) {}
+
     public function create(Replica $replica): void
     {
-        $primaryKey = array_values($replica->primaryKeyMap($replica->sourceObject()));
+        $primaryKey = array_values($replica->primaryKeyMap($this->schemas->primaryKeySources(
+            $replica,
+            $replica->sourceObject(),
+        )));
         $replica
             ->getConnection()
             ->getSchemaBuilder()
             ->create($replica->destination, function (Blueprint $table) use ($replica, $primaryKey) {
                 foreach ($replica->mapping as $mapping) {
                     if ($mapping->target !== null) {
-                        $this->column($table, $mapping, $replica->outputSchema($mapping))->nullable(!in_array(
+                        $this->column(
+                            $table,
+                            $mapping,
+                            $this->schemas->outputSchema($replica, $mapping),
+                        )->nullable(!in_array(
                             $mapping->target,
                             $primaryKey,
                             true,
@@ -40,7 +52,7 @@ class ReplicaTableManager
 
     public function update(Replica $replica): void
     {
-        $changes = $replica->mappingChanges();
+        $changes = $this->mappingChanges($replica);
 
         $replica
             ->getConnection()
@@ -55,7 +67,7 @@ class ReplicaTableManager
                         $this->column(
                             $table,
                             $change['mapping'],
-                            $replica->outputSchema($change['mapping']),
+                            $this->schemas->outputSchema($replica, $change['mapping']),
                         )->nullable();
                     } else {
                         /** @var string $target */
@@ -65,9 +77,91 @@ class ReplicaTableManager
                 }
 
                 foreach ($changes['alter'] as $mapping) {
-                    $this->column($table, $mapping, $replica->outputSchema($mapping))->nullable()->change();
+                    $this
+                        ->column($table, $mapping, $this->schemas->outputSchema($replica, $mapping))
+                        ->nullable()
+                        ->change();
                 }
             });
+    }
+
+    /** @return array{drop: list<string>, columns: list<array{mapping: FieldMapping, from: string|null}>, alter: list<FieldMapping>} */
+    public function mappingChanges(Replica $replica): array
+    {
+        $changes = ['drop' => [], 'columns' => [], 'alter' => []];
+
+        if ($replica->type === DestinationType::Static) {
+            return $changes;
+        }
+
+        /** @var list<FieldMapping> $original */
+        $original = $replica->getOriginal('mapping');
+        $originalSchema = $this->schemas->originalSchema($replica);
+        $previous = [];
+        foreach ($original as $mapping) {
+            if ($mapping->target !== null) {
+                $previous[$mapping->identity()] = $mapping;
+            }
+        }
+
+        $next = [];
+        foreach ($replica->mapping as $mapping) {
+            if ($mapping->target !== null) {
+                $next[$mapping->identity()] = $mapping;
+            }
+        }
+
+        $nextSchema = $this->schemas->transformedSchema($replica);
+        $previousOutputs = array_map(fn (FieldMapping $mapping) => $this->schemas->outputSchema(
+            $replica,
+            $mapping,
+            $originalSchema,
+        ), $previous);
+        $nextOutputs = array_map(fn (FieldMapping $mapping) => $this->schemas->outputSchema(
+            $replica,
+            $mapping,
+            $nextSchema,
+        ), $next);
+        foreach ($previous as $identity => $mapping) {
+            if (
+                !array_key_exists($identity, $next)
+                || self::columnType($nextOutputs[$identity]) !== self::columnType(
+                    $previousOutputs[$identity],
+                )
+            ) {
+                /** @var string $target */
+                $target = $mapping->target;
+                $changes['drop'][] = $target;
+            }
+        }
+
+        foreach ($next as $identity => $mapping) {
+            $existing = $previous[$identity] ?? null;
+            $previousOutput = $previousOutputs[$identity] ?? null;
+            $nextOutput = $nextOutputs[$identity];
+            $previousType = self::columnType($previousOutput);
+            $nextType = self::columnType($nextOutput);
+
+            if (
+                $existing === null
+                || $previousType !== $nextType
+            ) {
+                $changes['columns'][] = ['mapping' => $mapping, 'from' => null];
+            } elseif ($existing->target !== $mapping->target) {
+                $changes['columns'][] = ['mapping' => $mapping, 'from' => $existing->target];
+            }
+
+            if (
+                $existing !== null
+                && $previousType === 'string'
+                && $nextType === 'string'
+                && $previousOutput?->maxLength() !== $nextOutput?->maxLength()
+            ) {
+                $changes['alter'][] = $mapping;
+            }
+        }
+
+        return $changes;
     }
 
     /** @return 'boolean'|'bigInteger'|'decimal'|'text'|'date'|'time'|'dateTime'|'string'|null */
