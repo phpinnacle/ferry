@@ -5,6 +5,7 @@ use Filament\Schemas\Schema as FormSchema;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
+use PHPinnacle\Eidos\Forms\JsonSchemaPicker;
 use PHPinnacle\Ferry\Data\FieldMapping;
 use PHPinnacle\Ferry\Destinations\StaticDestination;
 use PHPinnacle\Ferry\Enums\DestinationType;
@@ -53,10 +54,10 @@ beforeEach(function () {
             'unused' => ['type' => 'string'],
         ],
     ]);
-    $this->action = TestAction::make('insertUuid')->schemaComponent('mapping', 'form');
+    $this->action = TestAction::make('add')->schemaComponent('transforms', 'form');
 });
 
-it('creates and persists one UUID key through the native header action for both destinations', function (
+it('creates and persists one UUID key through the tabbed record builder for both destinations', function (
     DestinationType $type,
 ) {
     $page = Livewire::test(\PHPinnacle\Ferry\Tests\Fixtures\ReplicaForm::class, [
@@ -73,22 +74,40 @@ it('creates and persists one UUID key through the native header action for both 
         ],
     ]);
     $originalRows = $page->get('data.mapping');
-    $page->mountAction($this->action)->assertSchemaStateSet(['sources' => ['tenant_id', 'row_id']]);
+    $page->callAction($this->action, arguments: ['block' => 'insert_uuid'])->assertHasNoErrors();
+    $item = array_key_first($page->get('data.transforms'));
+    $html = $page->effects['html'] ?? implode('', $page->effects['partials'] ?? []);
+    expect($html)->toContain('wire:model.live.blur="data.transforms.' . $item . '.data.output"');
+    expect($page->get('data.transforms.' . $item . '.data.output'))->toBe('id');
+    $sourceAttribute = $type === DestinationType::Static ? 'data-mapping-source-settings' : 'data-binding-source';
+    expect($html)->toContain($sourceAttribute . '="id"');
+    $picker = $page
+        ->instance()
+        ->form
+        ->getComponentByStatePath('transforms')
+        ->getChildSchema($item)
+        ->getComponentByStatePath('fields');
+    expect($picker)->toBeInstanceOf(JsonSchemaPicker::class);
+    expect($picker->isMultiple())->toBeTrue();
+    expect($picker->getState())->toBe(["$['tenant_id']", "$['row_id']"]);
     $page
-        ->setActionData(['field' => 'record_id', 'sources' => ['row_id', 'tenant_id']])
-        ->callMountedAction()
-        ->assertHasNoErrors()
-        ->assertSet('data.schema.x-primary-key', ['record_id'])
-        ->call('$refresh')
+        ->set('data.transforms.' . $item . '.data.fields', ["$['row_id']", "$['tenant_id']"])
+        ->set('data.transforms.' . $item . '.data.output', 'record_id')
         ->assertSee('record_id');
+    $html = $page->effects['html'] ?? implode('', $page->effects['partials'] ?? []);
+    expect($html)->toContain($sourceAttribute . '="record_id"');
+    expect(array_values($page->get('data.transforms')))->toBe([[
+        'type' => 'insert_uuid',
+        'data' => ['fields' => ["$['row_id']", "$['tenant_id']"], 'output' => 'record_id'],
+    ]]);
 
     $form = $page->instance()->form;
     $mapping = $form->getComponentByStatePath('mapping');
-    expect(array_keys($page->get('data.schema.properties')))
+    expect(array_keys($mapping->getSourceSchema()['properties']))
         ->toBe(['record_id', '_idrref', 'tenant_id', 'row_id', 'name', 'unused']);
     expect($mapping->getSources()[0]['id'])->toBe('record_id');
-    expect($page->get('data.mapping.0.source'))->toBe('record_id');
-    expect(array_slice($page->get('data.mapping'), 1))->toBe($originalRows);
+    expect(collect($page->get('data.mapping'))->firstWhere('source', 'record_id'))->not->toBeNull();
+    expect(array_slice($page->get('data.mapping'), 0, count($originalRows)))->toBe($originalRows);
     expect($form->getState(...))->toThrow(ValidationException::class);
     expect(array_column($mapping->getSources(), 'required', 'id'))
         ->toMatchArray(['record_id' => true, 'tenant_id' => true, 'row_id' => true]);
@@ -113,44 +132,41 @@ it('creates and persists one UUID key through the native header action for both 
     $state = $form->getState();
     $index = $form->getComponentByStatePath('mapping')->getSourceRowIndex('record_id');
     $keyTransforms = $form->getComponentByStatePath('mapping.' . $index . '.options.transforms');
-    expect(array_keys($keyTransforms->getAvailableTransforms(app(\PHPinnacle\Ferry\Services\TransformRegistry::class))))
-        ->toBe(['insert_uuid']);
+    expect($keyTransforms->getAvailableTransforms(app(\PHPinnacle\Ferry\Services\TransformRegistry::class)))->toBe([]);
     expect($keyTransforms->getAvailableBlocks())->toBe([]);
-    expect($keyTransforms->isDeletable())->toBeFalse();
-    expect($keyTransforms->isReorderable())->toBeFalse();
-    expect($keyTransforms->isDisabled())->toBeTrue();
-    $editor = $keyTransforms->getAction('fieldTransforms');
-    expect($editor(['block' => 'insert_uuid', 'index' => 0, 'remove' => true])->isDisabled())->toBeTrue();
-    $original = $keyTransforms->getSettings();
-    foreach ([[], [...$original, ...$original], [['type' => 'cast', 'data' => ['type' => 'string']]]] as $invalid) {
-        $keyTransforms->state($invalid);
-        expect($form->getState(...))->toThrow(ValidationException::class);
-        $invalidRows = $state['mapping'];
-        $invalidRows[$index]['options']['transforms'] = $invalid;
-        $record = new Replica(ReplicaForm::forCreate($state, app(DestinationFactory::class)));
-        expect(fn () => ReplicaForm::forUpdate(
-            [...$state, 'mapping' => $invalidRows],
-            $record,
-            app(DestinationFactory::class),
-        ))
-            ->toThrow(ValidationException::class);
-    }
-    $keyTransforms->state([['type' => 'insert_uuid', 'data' => ['fields' => 'row_id']]]);
+    $keyTransforms->state([['type' => 'cast', 'data' => ['type' => 'string']]]);
     expect($form->getState(...))->toThrow(ValidationException::class);
-    $keyTransforms->state($original);
+    $invalidRows = $state['mapping'];
+    $invalidRows[array_search('record_id', array_column($state['mapping'], 'source'), true)]['options']['transforms'] =
+        [['type' => 'cast', 'data' => ['type' => 'string']]];
+    $record = new Replica(ReplicaForm::forCreate($state, app(DestinationFactory::class)));
+    try {
+        ReplicaForm::forUpdate([...$state, 'mapping' => $invalidRows], $record, app(DestinationFactory::class));
+        test()->fail('Invalid key transforms must fail validation.');
+    } catch (ValidationException $exception) {
+        expect($exception->errors())->toHaveKey('data.mapping');
+    }
+    $keyTransforms->state([]);
+    $recordTransforms = $form->getComponentByStatePath('transforms');
+    $original = $recordTransforms->getRawState();
+    $invalid = $original;
+    $invalid[array_key_first($invalid)]['data']['fields'] = ["$['row_id']"];
+    $recordTransforms->state($invalid);
+    expect($form->getState(...))->toThrow(ValidationException::class);
+    $recordTransforms->state($original);
     $generated = collect($state['mapping'])->firstWhere('source', 'record_id');
     expect($generated)->toBe([
         'kind' => 'source',
         'source' => 'record_id',
         'target' => 'id',
-        'options' => ['transforms' => [['type' => 'insert_uuid', 'data' => ['fields' => 'tenant_id,row_id']]]],
+        'options' => ['transforms' => []],
     ]);
     $replica = Replica::create(TestCase::mappedReplicaAttributes($state, app(DestinationFactory::class)))->fresh();
     expect($replica->schema->toArray())->toBe($state['schema']);
-    expect(array_key_first($replica->schema->properties()))->toBe('record_id');
-    expect($replica->mapping[0]->source)->toBe('record_id');
+    expect($replica->schema->properties())->not->toHaveKey('record_id');
+    expect(collect($replica->mapping)->firstWhere('source', 'record_id')->target)->toBe('id');
     expect($replica->primaryKeyMap($this->object))->toBe(['record_id' => 'id']);
-    expect($replica->schema->properties()['record_id']->toArray())->toMatchArray([
+    expect($replica->transformedSchema()->properties()['record_id']->toArray())->toMatchArray([
         'type' => 'string',
         'format' => 'uuid',
         'minLength' => 36,
@@ -161,6 +177,12 @@ it('creates and persists one UUID key through the native header action for both 
     );
     $edit->fill(ReplicaForm::fill($replica->toArray()));
     expect($edit->getState()['mapping'])->toBe($state['mapping']);
+    expect($edit->getState()['transforms'])->toBe($state['transforms']);
+    $savedPicker = $edit
+        ->getComponentByStatePath('transforms')
+        ->getChildSchema(array_key_first($edit->getComponentByStatePath('transforms')->getRawState()))
+        ->getComponentByStatePath('fields');
+    expect($savedPicker->getState())->toBe(["$['tenant_id']", "$['row_id']"]);
     expect($edit->getComponentByStatePath('mapping')->getSources()[0]['id'])->toBe('record_id');
 
     $source = new SourceFactory;
@@ -177,7 +199,7 @@ it('creates and persists one UUID key through the native header action for both 
         $this->object,
         'test-topic',
     );
-    $generator = 'field_' . collect($replica->mapping)->search(fn ($row) => $row->source === 'record_id') . '_0';
+    $generator = 'replica_0';
     expect($sink)
         ->toMatchArray([
             'transforms' => $generator . ',rename_keys,rename_values',
@@ -194,7 +216,7 @@ it('creates and persists one UUID key through the native header action for both 
         ->not->toHaveKey('transforms.' . $generator . '.predicate');
     if ($type === DestinationType::Dynamic) {
         $table = $replica->getConnection()->getSchemaBuilder();
-        expect($table->getColumnListing($replica->destination))->toBe(['id', 'name', 'tenant']);
+        expect($table->getColumnListing($replica->destination))->toBe(['name', 'tenant', 'id']);
         expect(collect($table->getIndexes($replica->destination))->firstWhere('primary', true)['columns'])->toBe([
             'id',
         ]);
@@ -219,38 +241,80 @@ it('preserves destination constants when adding a UUID key', function () {
     $mapping = $form->getComponentByStatePath('mapping');
     $properties = $mapping->getSourceSchema()['properties'];
     expect(array_keys($properties))->toBe(array_keys($replica->schema->toArray()['properties']));
-    $mapping
-        ->getAction('insertUuid')
-        ->data(['field' => 'record_id', 'sources' => ['tenant_id', 'row_id']])
-        ->call();
-    expect(array_keys($livewire->data['schema']['properties']))->toBe(['record_id', ...array_keys($properties)]);
+    $transforms = $form->getComponentByStatePath('transforms');
+    $action = $transforms->getAction('add')(['block' => 'insert_uuid']);
+    $action->callBefore();
+    $action->call();
+    $item = array_key_first($transforms->getRawState());
+    $transforms->getChildSchema($item)->getComponentByStatePath('output')->state('record_id');
+    $transforms->callAfterStateUpdated();
+    expect(array_keys($livewire->data['schema']['properties']))->toBe(array_keys($properties));
+    expect(array_keys($mapping->getSourceSchema()['properties']))->toBe(['record_id', ...array_keys($properties)]);
     $rows = $mapping->getState();
     $rows[$mapping->getSourceRowIndex('record_id')]['target'] = 'id';
     $mapping->state($rows);
     $replica->fill(ReplicaForm::forUpdate($form->getState(), $replica, app(DestinationFactory::class)))->save();
-    expect(array_keys($replica->fresh()->schema->toArray()['properties']))->toBe([
+    expect(array_keys($replica->fresh()->transformedSchema()->toArray()['properties']))->toBe([
         'record_id',
         ...array_keys($properties),
     ]);
     expect(collect($replica->fresh()->mapping)->firstWhere('target', 'tenant')->static)->toBe(4);
 });
 
-it('validates generated field names and requires every physical key part in its native modal', function (
-    array $data,
-    array $errors,
-) {
+it('validates UUID field names and all physical key parts in its native tab', function (array $data, array $errors) {
     $page = Livewire::test(\PHPinnacle\Ferry\Tests\Fixtures\ReplicaForm::class, ['state' => [
         'upstream_id' => $this->upstream->id,
         'source' => 'object-0',
         'destination' => 'dynamic',
     ]]);
-    $page->callAction($this->action, data: $data)->assertHasActionErrors($errors);
-    expect($page->get('data.schema.properties'))->not->toHaveKey('record_id');
+    $page
+        ->set('data.transforms', ['uuid' => ['type' => 'insert_uuid', 'data' => $data]])
+        ->call('validateForm')
+        ->assertHasErrors($errors);
 })->with([
-    'missing name' => [['sources' => ['tenant_id', 'row_id']], ['field' => 'required']],
-    'invalid name' => [['field' => 'Bad name', 'sources' => ['tenant_id', 'row_id']], ['field' => 'regex']],
-    'existing field' => [['field' => 'name', 'sources' => ['tenant_id', 'row_id']], ['field']],
-    'missing part' => [['field' => 'record_id', 'sources' => ['row_id']], ['sources' => 'min']],
-    'ordinary field' => [['field' => 'record_id', 'sources' => ['name', 'row_id']], ['sources' => 'in']],
-    'duplicate part' => [['field' => 'record_id', 'sources' => ['row_id', 'row_id']], ['sources.0' => 'distinct']],
+    'missing name' => [
+        ['fields' => ["$['tenant_id']", "$['row_id']"]],
+        ['data.transforms.uuid.data.output' => 'required'],
+    ],
+    'invalid name' => [
+        ['fields' => ["$['tenant_id']", "$['row_id']"], 'output' => 'Bad name'],
+        ['data.transforms.uuid.data.output' => 'regex'],
+    ],
+    'existing name' => [
+        ['fields' => ["$['tenant_id']", "$['row_id']"], 'output' => 'name'],
+        ['data.transforms.uuid.data.output' => 'not_in'],
+    ],
+    'missing part' => [
+        ['fields' => ["$['row_id']"], 'output' => 'record_id'],
+        ['data.transforms.uuid.data.fields' => 'size'],
+    ],
+    'ordinary field' => [
+        ['fields' => ["$['name']", "$['row_id']"], 'output' => 'record_id'],
+        ['data.transforms.uuid.data.fields.0' => \PHPinnacle\Eidos\Validation\ValidPath::class],
+    ],
 ]);
+
+it('rejects duplicate UUID sources through the Eidos picker validation', function () {
+    $form = ReplicaForm::configure(FormSchema::make(SchemaHost::make())->statePath('data'));
+    $form->fill([
+        'upstream_id' => $this->upstream->id,
+        'source' => 'object-0',
+        'destination' => 'dynamic',
+        'transforms' => [[
+            'type' => 'insert_uuid',
+            'data' => ['fields' => ["$['row_id']", "$['row_id']"], 'output' => 'record_id'],
+        ]],
+    ]);
+
+    try {
+        $form->getState();
+        test()->fail('Duplicate UUID sources must fail validation.');
+    } catch (ValidationException $exception) {
+        expect($exception->errors())
+            ->toHaveKey(
+                'data.transforms.'
+                . array_key_first($form->getComponentByStatePath('transforms')->getRawState())
+                . '.data.fields.0',
+            );
+    }
+});

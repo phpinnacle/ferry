@@ -6,10 +6,11 @@ use Closure;
 use Filament\Schemas\Components\Component;
 use Illuminate\Translation\PotentiallyTranslatedString;
 use PHPinnacle\Common\Forms\InlineBuilder;
-use PHPinnacle\Common\Forms\InlineBuilder\Block;
+use PHPinnacle\Common\Forms\InlineBuilder\Block as InlineBlock;
 use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Contracts\Transform;
 use PHPinnacle\Ferry\Data\TransformSetting;
+use PHPinnacle\Ferry\Enums\TransformScope;
 use PHPinnacle\Ferry\Enums\TransformTarget;
 use PHPinnacle\Ferry\Models\StructureItem;
 use PHPinnacle\Ferry\Services\TransformRegistry;
@@ -70,11 +71,15 @@ class FieldTransforms extends InlineBuilder
 
         return array_filter(
             $transforms->all(),
-            fn (Transform $transform) => $transform->getTarget() === $this->target && $transform->accepts($schema),
+            fn (Transform $transform) => (
+                $transform->getScope() === TransformScope::Field
+                && $transform->getTarget() === $this->target
+                && $transform->accepts($schema)
+            ),
         );
     }
 
-    /** @return array<string, Block> */
+    /** @return array<string, InlineBlock> */
     public function getAvailableBlocks(): array
     {
         $blocks = parent::getAvailableBlocks();
@@ -123,7 +128,7 @@ class FieldTransforms extends InlineBuilder
             $setting = new TransformSetting($item['type'], $this->getItemData($index, ['input' => $schema]));
             $settings[] = $setting;
             if ($schema !== null) {
-                $schema = $registry->resultSchema($schema, [$setting], $this->target);
+                $schema = $registry->resultSchema($schema, [$setting], $this->target, TransformScope::Field);
                 if ($schema === null) {
                     $invalid = $setting;
                 }
@@ -140,6 +145,7 @@ class FieldTransforms extends InlineBuilder
             JsonSchema::fromArray($this->evaluate($this->inputSchema)),
             array_map(TransformSetting::fromArray(...), $settings),
             $this->target,
+            TransformScope::Field,
         ) !== null;
     }
 
@@ -155,10 +161,13 @@ class FieldTransforms extends InlineBuilder
         $this->hiddenLabel();
         $this->addActionLabel(__('phpinnacle-ferry::resources.replica.fields.add_transform'));
         $this->placeholder(__('phpinnacle-ferry::resources.replica.fields.transform'));
-        $this->blocks(fn (TransformRegistry $registry) => array_map(
+        $this->blocks(fn (TransformRegistry $registry) => array_values(array_map(
             fn (Transform $transform) => $transform->block(),
-            array_values($registry->all()),
-        ));
+            array_filter(
+                $registry->all(),
+                fn (Transform $transform) => $transform->getScope() === TransformScope::Field,
+            ),
+        )));
         $this->reorderableUsing(self::canReorderItems(...));
         $this->rules(fn (self $component) => [$component->validateSettings(...)]);
     }

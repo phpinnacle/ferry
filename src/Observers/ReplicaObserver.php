@@ -32,7 +32,7 @@ class ReplicaObserver
             return;
         }
 
-        if (!$replica->isDirty(['mapping', 'schema'])) {
+        if (!$replica->isDirty(['mapping', 'schema', 'transforms'])) {
             return;
         }
 

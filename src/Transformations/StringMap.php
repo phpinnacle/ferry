@@ -7,9 +7,10 @@ use Filament\Forms\Components\KeyValue;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Translation\PotentiallyTranslatedString;
-use PHPinnacle\Common\Forms\InlineBuilder\Block;
+use PHPinnacle\Common\Forms\InlineBuilder\Block as InlineBlock;
 use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Contracts\Transform;
+use PHPinnacle\Ferry\Enums\TransformScope;
 use PHPinnacle\Ferry\Enums\TransformTarget;
 
 final class StringMap implements Transform
@@ -22,6 +23,16 @@ final class StringMap implements Transform
     public function getKey(): string
     {
         return 'string_map';
+    }
+
+    public function getScope(): TransformScope
+    {
+        return TransformScope::Field;
+    }
+
+    public function sourceFields(array $params): array
+    {
+        return [];
     }
 
     public function getTarget(): TransformTarget
@@ -71,9 +82,9 @@ final class StringMap implements Transform
         return JsonSchema::fromArray($schema);
     }
 
-    public function block(): Block
+    public function block(): InlineBlock
     {
-        return Block::make($this->getKey())
+        return InlineBlock::make($this->getKey())
             ->color('info')
             ->label(fn () => __('phpinnacle-ferry::resources.transform.string_map'))
             ->description(fn () => __('phpinnacle-ferry::resources.transform.string_map_description'))
@@ -103,12 +114,14 @@ final class StringMap implements Transform
             ]);
     }
 
-    /** @param array{mapping: array<array-key, string>} $params */
-    public function connector(string $field, array $params): array
+    /**
+     * @param array{field: string, mapping: array<array-key, string>} $params
+     */
+    public function connector(array $params): array
     {
         $config = [
             'type' => 'org.phpinnacle.toblerone.StringMapTransform$Value',
-            'field' => $field,
+            'field' => $params['field'],
         ];
         foreach ($params['mapping'] as $source => $replacement) {
             $config['mapping.' . $source] = $replacement;

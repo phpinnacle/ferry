@@ -2,7 +2,7 @@
 
 use Filament\Schemas\Schema;
 use Illuminate\Validation\ValidationException;
-use PHPinnacle\Common\Forms\InlineBuilder\Block;
+use PHPinnacle\Common\Forms\InlineBuilder\Block as InlineBlock;
 use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Contracts\Transform;
 use PHPinnacle\Ferry\Data\FieldMapping;
@@ -56,7 +56,7 @@ it('resolves only the configured transform classes through the container', funct
 });
 
 it('registers application transforms through the shared registry', function () {
-    app(TransformRegistry::class)->register(new FakeTransform('trim', block: Block::make('trim')->label('Trim')));
+    app(TransformRegistry::class)->register(new FakeTransform('trim', block: InlineBlock::make('trim')->label('Trim')));
 
     $registry = $this->app->make(TransformRegistry::class);
 
@@ -68,6 +68,7 @@ it('registers application transforms through the shared registry', function () {
             'cast',
             'filter',
             'insert_uuid',
+            'slug',
             'timestamp_converter',
             'boolean_to_string',
             'string_map',
@@ -138,7 +139,7 @@ it('casts a field to the selected column type', function (string $type, string $
             ?->toArray(),
     )
         ->toBe(['type' => $schemaType])
-        ->and($cast->connector('_fld1', ['type' => $type]))
+        ->and($cast->connector(['field' => '_fld1', 'type' => $type]))
         ->toBe([
             'type' => 'org.apache.kafka.connect.transforms.Cast$Value',
             'spec' => '_fld1:' . $type,
@@ -267,7 +268,7 @@ it('keeps the Kafka null replacement default implicit and persists disabling it'
         $expected['replace_null_with_default'] = 'false';
     }
     expect($schema->getState())->toBe($expected);
-    $config = new Cast()->connector('field', $expected);
+    $config = new Cast()->connector(['field' => 'field'] + $expected);
     expect($config['replace.null.with.default'] ?? 'true')->toBe($setting ?? 'true');
 })->with([null, 'true', 'false']);
 
@@ -289,9 +290,9 @@ it('inserts a string constant without registering a transform', function () {
     $pipeline = app(TransformFactory::class)->pipeline($replica, StructureItems::make());
 
     expect($pipeline)->toMatchArray([
-        'transforms' => 'rename_values,field_0_0',
+        'transforms' => 'field_0_0,rename_values',
         'transforms.field_0_0.type' => 'org.apache.kafka.connect.transforms.InsertField$Value',
-        'transforms.field_0_0.static.field' => 'type',
+        'transforms.field_0_0.static.field' => '__ferry_static_0',
         'transforms.field_0_0.static.value' => 'Customer',
     ]);
 });
@@ -307,9 +308,9 @@ it('casts a typed constant after inserting it', function () {
         ->and($mapping->transforms())
         ->toBe([])
         ->and($transforms['transforms'])
-        ->toBe('rename_values,field_0_0,field_0_0_cast')
+        ->toBe('field_0_0,field_0_0_cast,rename_values')
         ->and($transforms['transforms.field_0_0_cast.spec'])
-        ->toBe('is_active:boolean');
+        ->toBe('__ferry_static_0:boolean');
 });
 
 it('registers optional installed field transforms through the shared registry', function () {
@@ -327,6 +328,7 @@ it('registers optional installed field transforms through the shared registry', 
         'cast',
         'filter',
         'insert_uuid',
+        'slug',
         'timestamp_converter',
         'boolean_to_string',
         'string_map',
@@ -346,7 +348,8 @@ it('registers optional installed field transforms through the shared registry', 
 });
 
 it('serializes substring indexes using the installed Toblerone field format', function (array $params, string $fields) {
-    expect(new Substring()->connector('_description', $params))->toBe([
+    expect(new Substring()->connector(['field' => '_description']
+    + $params))->toBe([
         'type' => 'org.phpinnacle.toblerone.SubstringTransform$Value',
         'fields' => $fields,
     ]);
@@ -357,9 +360,7 @@ it('serializes substring indexes using the installed Toblerone field format', fu
 ]);
 
 it('masks a source field without applying the Apache transform to tombstones', function () {
-    expect(new MaskField()->connector('_fld1', [
-        'replacement' => 'hidden',
-    ]))->toBe([
+    expect(new MaskField()->connector(['field' => '_fld1', 'replacement' => 'hidden']))->toBe([
         'type' => 'org.apache.kafka.connect.transforms.MaskField$Value',
         'fields' => '_fld1',
         'replacement' => 'hidden',
@@ -485,8 +486,10 @@ it('compiles a custom registered transform without building its settings form', 
     $registry = app(TransformRegistry::class);
     $transform = new FakeTransform(
         'headless',
-        block: Block::make('headless')->schema(fn () => throw new LogicException('The worker must not build a form.')),
-        connector: fn (string $field, array $params) => Filter::make()->connector($field, $params),
+        block: InlineBlock::make('headless')->schema(
+            fn () => throw new LogicException('The worker must not build a form.'),
+        ),
+        connector: fn (array $params) => Filter::make()->connector($params),
     );
     $registry->register($transform);
     $factory = app(TransformFactory::class);
@@ -523,7 +526,7 @@ it('compiles a custom registered transform without building its settings form', 
         ->toBe("$[?(@['_marked'] == true)]");
 });
 
-it('persists and executes static chains on their destination without renaming', function () {
+it('persists and executes static chains before their final rename', function () {
     $row = [
         'kind' => 'static',
         'target' => 'discount',
@@ -539,13 +542,13 @@ it('persists and executes static chains on their destination without renaming', 
         ->toBe('integer');
     $pipeline = app(TransformFactory::class)->pipeline(new Replica(['mapping' => [$mapping]]), StructureItems::make());
     expect($pipeline['transforms'])
-        ->toBe('rename_values,field_0_0,field_0_1')
+        ->toBe('field_0_0,field_0_1,rename_values')
         ->and($pipeline['transforms.field_0_0.static.field'])
-        ->toBe('discount')
+        ->toBe('__ferry_static_0')
         ->and($pipeline['transforms.field_0_0.static.value'])
         ->toBe('10')
         ->and($pipeline['transforms.field_0_1.spec'])
-        ->toBe('discount:int64');
+        ->toBe('__ferry_static_0:int64');
 });
 
 it('rejects a missing transform while compiling a pipeline', function () {

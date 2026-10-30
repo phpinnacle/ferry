@@ -163,7 +163,7 @@ it('compiles the new Toblerone chain before renames without changing the key', f
     ]);
 });
 
-it('applies the Toblerone chain to constants after inserting their typed value', function () {
+it('applies the Toblerone chain to constants before renames after inserting their typed value', function () {
     $mapping = new FieldMapping(
         null,
         'status',
@@ -187,13 +187,13 @@ it('applies the Toblerone chain to constants after inserting their typed value',
         'maxLength' => 0,
     ]);
     expect(app(TransformFactory::class)->pipeline($replica, $object))->toMatchArray([
-        'transforms' => 'rename_values,field_0_0,field_0_0_cast,field_0_1,field_0_2,field_0_3',
-        'transforms.field_0_0.static.field' => 'status',
+        'transforms' => 'field_0_0,field_0_0_cast,field_0_1,field_0_2,field_0_3,rename_values',
+        'transforms.field_0_0.static.field' => '__ferry_static_0',
         'transforms.field_0_0.static.value' => 'true',
-        'transforms.field_0_0_cast.spec' => 'status:boolean',
-        'transforms.field_0_1.fields' => 'status',
-        'transforms.field_0_2.fields' => 'status',
-        'transforms.field_0_3.field' => 'status',
+        'transforms.field_0_0_cast.spec' => '__ferry_static_0:boolean',
+        'transforms.field_0_1.fields' => '__ferry_static_0',
+        'transforms.field_0_2.fields' => '__ferry_static_0',
+        'transforms.field_0_3.field' => '__ferry_static_0',
         'transforms.field_0_3.mapping.no' => '',
     ]);
 });

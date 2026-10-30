@@ -271,7 +271,9 @@ it('keeps transforms through creating, filling and updating a replica', function
 
     expect($state)
         ->not
-        ->toHaveKeys(['transforms', 'field_transforms'])
+        ->toHaveKey('field_transforms')
+        ->and($state['transforms'])
+        ->toBe([])
         ->and(array_column($state['mapping'], null, 'source')['_code']['options']['transforms'])
         ->toBe([['type' => 'cast', 'data' => ['type' => 'boolean']]]);
 

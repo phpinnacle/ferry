@@ -29,7 +29,7 @@ beforeEach(function () {
     config(['database.connections.sqlite.host' => 'db.internal', 'database.connections.sqlite.port' => 5432]);
 });
 
-it('orders source transforms and static values around the renames of a sink', function () {
+it('orders field transforms and static values before the renames of a sink', function () {
     $factory = $this->app->make(TransformFactory::class);
 
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
@@ -67,15 +67,15 @@ it('orders source transforms and static values around the renames of a sink', fu
     );
 
     expect($config['transforms'])
-        ->toBe('field_1_0,rename_keys,rename_values,field_2_0,field_2_0_cast')
+        ->toBe('field_1_0,field_2_0,field_2_0_cast,rename_keys,rename_values')
         ->and($config['transforms.field_1_0.spec'])
         ->toBe('_fld1:int64')
         ->and($config['transforms.rename_values.renames'])
-        ->toBe('_idrref:external_id,_fld1:size')
+        ->toBe('_idrref:external_id,_fld1:size,__ferry_static_2:active')
         ->and($config['transforms.field_2_0.static.field'])
-        ->toBe('active')
+        ->toBe('__ferry_static_2')
         ->and($config['transforms.field_2_0_cast.spec'])
-        ->toBe('active:boolean')
+        ->toBe('__ferry_static_2:boolean')
         ->and($config['fields.whitelist'])
         ->toBe('external_id,size,active')
         ->and(array_keys($replica->columnMap($object)))

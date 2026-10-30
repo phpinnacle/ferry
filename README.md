@@ -11,7 +11,7 @@ Ferry manages 1C upstream databases, source structure snapshots, replica mapping
 - Queued structure preparation through a replaceable `Adapter`, with a Rosetta adapter for 1C and ready JSON Schemas stored as `StructureItem` records.
 - Filament `UpstreamResource` with create/edit/list pages, "Test Upstream" and "Fetch structure" actions, a structure status badge and configuration forms supplied by the selected driver.
 - JSON Schema-based mapping and binding forms built on `phpinnacle/eidos`, with Ferry-owned transformation settings and shared JSON Schema compatibility.
-- `Replica` model storing the source object, an editable input JSON Schema snapshot, native mapping rows and the generated destination table name.
+- `Replica` model storing the source object, an editable input JSON Schema snapshot, native mapping rows, ordered record transformations and the generated destination table name.
 - Static destinations: application-registered tables such as customers or products that replicas fill instead of a generated table.
 - Filament `ReplicaResource` that selects an active upstream with a ready structure and an object from the published snapshot, maps source fields to column names and keeps the physical destination table in sync with the record.
 - Kafka Connect connector management built on `phpinnacle/franz`: one Debezium source connector per upstream, one JDBC sink connector per replica, with status and applied configuration stored in `Connector` models.
@@ -99,9 +99,15 @@ Jobs persist the returned objects through `Structure::importItems()`. The struct
 
 A replica selects an active upstream with a ready structure and one object from its published snapshot, then maps source fields by their physical column names to destination columns. For dynamic destinations, column names must be unique, start with a lowercase letter, and contain only lowercase letters, digits and underscores. Every effective primary-key column must be explicitly bound to a destination column before a mapping can be saved; constants do not satisfy a key binding. Key fields display required markers on the left of the editor. A source without a primary key cannot configure a destination. Creating a pending replica creates no destination table. The first complete mapping save creates `{prefix}{code}` in the Ferry connection, with non-null key columns and a primary key in the effective replica key order. Other mapped columns are nullable and typed from the source, their transformations or static values.
 
-**Generate UUID key** in either editor opens a native modal for a new field name and the source primary-key fields. All physical key parts are selected by default and required. Submitting prepends a UUID string source with length 36 to the input schema and mapping rows, with an `insert_uuid` transform in its row’s `options.transforms`; bind this new source to the destination key. The edited input schema stores the added property and replaces its `x-primary-key` with that field. Original key parts become optional ordinary mappings. The shared source still captures the full physical key and never captures the generated field.
+The record transformation editor is a Common `TabbedBuilder` above the mapping. Its catalog contains every registered transform with `TransformScope::Record`. Add, edit, remove or reorder native tabs; their saved order is the record pipeline order. Incomplete settings remain editable and do not produce a generated field until their output can be determined. Saving validates every tab, including inactive tabs, and rejects invalid dependencies or order.
+
+The **Generate UUID key** tab uses the Eidos JSON Schema picker with multiple selection for the complete physical primary key and an editable output field name, defaulting to `id`. Selections are stored as JSONPath strings. All physical key parts are required and their order is fixed; the connector receives their physical field names. The effective schema adds a UUID string of length 36 and replaces its `x-primary-key` with the output field; bind that field to the destination key. The physical input snapshot remains unchanged. The shared source still captures the physical key and never captures the generated field.
 
 The sink runs `org.phpinnacle.toblerone.InsertUuid$Key` before selecting and renaming key fields. JDBC reads the UUID from `record_key` for both upserts and tombstone deletes; no value placeholder is inserted. Install this SMT on the Kafka Connect worker. Its existing default UUID namespace is used.
+
+The **Generate slug** tab uses the Eidos JSON Schema picker with single selection for a string input, followed by a new output field and optional additional separator characters. It appends a `slug` setting to `replica.transforms`, adds a normal mapping row and places the generated string immediately after its source field in the effective schema and both mapping editors. The SMT preserves null values and source optionality; it does not impose uniqueness or a length limit and may produce an empty string. A generated field can have its own subsequent field transforms. Generated output names use lazy state binding: leaving the field updates the mapping sources without saving the replica. Deleting a generated output updates the mapping sources; unrelated mappings and constants are retained. Renamed outputs need to be bound again. Inputs may refer to earlier generated value fields; key fields are separate from record values. Field names cannot replace existing properties.
+
+`Replica::schema` stores the physical input snapshot. `Replica::transformedSchema()` applies `replica.transforms` to that snapshot before field transforms or destination compatibility checks. `TransformRegistry::previewRecordSchema($schema, $settings)` takes typed `TransformSetting` objects and returns the last valid schema before an incomplete or incompatible setting; the form and dependent tabs share this preview. Record transforms declare `sourceFields()` so the shared source captures their physical dependencies even when those fields have no destination mapping. Generated columns are never requested from Debezium.
 
 String columns use the effective output schema calculated from the saved input schema and transforms: a positive `maxLength` produces `varchar(n)`, while an absent or zero limit produces `varchar` without a length restriction. Untransformed source strings use their saved input schema's length; static strings have no inferred length limit. Transformations such as Mask that discard the source length therefore produce an unbounded column. Changes to string length use `ALTER COLUMN` and preserve stored values, including when the column is renamed. PostgreSQL rejects narrowing a column if existing values exceed the new limit, and the replica save rolls back.
 
@@ -199,7 +205,8 @@ Jason preserves these annotations, and Eidos leaves their meaning to Ferry.
 
 | Annotation | Value | Scope and behavior |
 | --- | --- | --- |
-| `x-primary-key` | Ordered list of strings | Object-level key columns. In `StructureItem.schema`, Rosetta writes the physical primary index and saves the same order in `StructureItem.primary_key`. In the editable `Replica.schema`, this identifies the effective destination key, including a generated UUID field. Key properties are listed in `required`. Source capture always uses the physical model key; sink key selection uses the replica schema. |
+| `x-ferry-target` | `"key"` | Generated properties available only in the Kafka record key. Value transforms cannot read these fields. |
+| `x-primary-key` | Ordered list of strings | Object-level key columns. In `StructureItem.schema`, Rosetta writes the physical primary index and saves the same order in `StructureItem.primary_key`. In `Replica.schema`, this identifies the input key. Record transforms may replace it in `Replica::transformedSchema()`, including with a generated UUID field. Key properties are listed in `required`. Source capture always uses the physical model key; sink key selection uses the effective record schema. |
 | `x-ferry-trans` | String | Full Laravel translation key for a source property label. Resolved in the current interface locale and takes priority over `title`. Used for built-in fields. |
 | `x-ferry-reference` | Boolean `true` | Marks native reference strings, including nullable strings. Rosetta references and identifiers use UUID strings with `format: "uuid"` and length 36. Dynamic SQL tables store annotated references as text, and native text transforms reject them. Mapping compatibility uses the UUID schema independently of this marker. The annotation does not convert values. |
 | `x-ferry-converter` | String | Source converter key from `phpinnacle-ferry.kafka.converters`. Rosetta infers `uuid` for physical names ending in `rref`, and `integer` for `_keyfield`, `_recordertref` and names ending in `_rtref`, including expanded composite columns and tabular sections. It prepares UUID reference string schemas or integer schemas respectively. Other columns omit it, including `_type` discriminators and ordinary UUID fields such as `_predefinedid`. The Kafka source groups captured columns by this annotation to generate `<key>.columns`; it does not infer converters from column names. |
@@ -263,7 +270,7 @@ For reusable presentation annotations such as
 
 Each transformation implements `PHPinnacle\Ferry\Contracts\Transform` and owns its editor block, input compatibility, output JSON Schema and Kafka Connect configuration. Configure its class in `phpinnacle-ferry.kafka.transforms`; `FerryServiceProvider` resolves each class through Laravel's container and registers the resulting objects in the shared `TransformRegistry`. Forms and workers use the same instances, keyed by `getKey()`.
 
-The default list contains Cast, Filter, InsertUuid, TimestampConverter, BooleanToString, StringMap and Toggle. Add the optional string transforms to this list as needed:
+The default list contains Cast, Filter, InsertUuid, Slug, TimestampConverter, BooleanToString, StringMap and Toggle. Add the optional string transforms to this list as needed:
 
 ```php
 // kafka.transforms in config/phpinnacle-ferry.php
@@ -271,6 +278,7 @@ The default list contains Cast, Filter, InsertUuid, TimestampConverter, BooleanT
     \PHPinnacle\Ferry\Transformations\Cast::class,
     \PHPinnacle\Ferry\Transformations\Filter::class,
     \PHPinnacle\Ferry\Transformations\InsertUuid::class,
+    \PHPinnacle\Ferry\Transformations\Slug::class,
     \PHPinnacle\Ferry\Transformations\TimestampConverter::class,
     \PHPinnacle\Ferry\Transformations\BooleanToString::class,
     \PHPinnacle\Ferry\Transformations\StringMap::class,
@@ -281,7 +289,7 @@ The default list contains Cast, Filter, InsertUuid, TimestampConverter, BooleanT
 ];
 ```
 
-Each call to `block()` creates a Common `InlineBuilder\Block` with its own label, icon, description, color and native parameter form. A block's name must match the transformation's `getKey()`. Parameter schema closures receive the preceding `?JsonSchema $input`, the owning `FieldTransforms $component` and optional `?int $index`. Read the selected structure item through `$component->getObject()`. The input is null when a preceding transformation has no valid output. Forms are built when opened, and their components are cloned for each instance.
+`Transform::block()` returns `InlineBlock|TabbedBlock`, using aliases for Common's `InlineBuilder\Block` and `TabbedBuilder\Block`. Field transforms return an `InlineBlock`; record transforms return a native `TabbedBlock`. Each call creates an independent block with its own label, icon and parameter form. A block's name must match the transformation's `getKey()`. Field parameter schema closures receive the preceding `?JsonSchema $input`, the owning `FieldTransforms $component` and optional `?int $index`. Read the selected structure item through `$component->getObject()`. The input is null when a preceding transformation has no valid output. Field forms are built when opened, and their components are cloned for each instance. Record tabs use the native Filament builder lifecycle. For dependent record fields, the owning `RecordTransforms::getInputSchema($itemKey)` returns the schema before that item. Blank or partial live state is represented by a null transform output; the preview keeps the preceding valid schema.
 
 ### Custom transformations
 
@@ -289,16 +297,27 @@ Implement the same contract for an application transform. This example uses Kafk
 
 ```php
 use Filament\Forms\Components\TextInput;
-use PHPinnacle\Common\Forms\InlineBuilder\Block;
+use PHPinnacle\Common\Forms\InlineBuilder\Block as InlineBlock;
 use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Contracts\Transform;
 use PHPinnacle\Ferry\Enums\TransformTarget;
+use PHPinnacle\Ferry\Enums\TransformScope;
 
 final class Redact implements Transform
 {
     public function getKey(): string
     {
         return 'redact';
+    }
+
+    public function getScope(): TransformScope
+    {
+        return TransformScope::Field;
+    }
+
+    public function sourceFields(array $params): array
+    {
+        return [];
     }
 
     public function getTarget(): TransformTarget
@@ -319,9 +338,9 @@ final class Redact implements Transform
         ]);
     }
 
-    public function block(): Block
+    public function block(): InlineBlock
     {
-        return Block::make($this->getKey())
+        return InlineBlock::make($this->getKey())
             ->label('Redact')
             ->schema(fn () => [
                 TextInput::make('replacement')->default('***')->rules(['string'])->required(),
@@ -329,14 +348,14 @@ final class Redact implements Transform
     }
 
     /**
-     * @param array{replacement: string} $params
+     * @param array{field: string, replacement: string} $params
      * @return array<string, string>
      */
-    public function connector(string $field, array $params): array
+    public function connector(array $params): array
     {
         return [
             'type' => 'org.apache.kafka.connect.transforms.MaskField$Value',
-            'fields' => $field,
+            'fields' => $params['field'],
             'replacement' => $params['replacement'],
             'predicate' => 'tombstone',
             'negate' => 'true',
@@ -347,25 +366,25 @@ final class Redact implements Transform
 // Add Redact::class to kafka.transforms in config/phpinnacle-ferry.php.
 ```
 
-`accepts()` receives the complete preceding JSON Schema. `output()` returns the resulting `JsonSchema`, or `null` when settings are incomplete and an output cannot yet be determined. Return the input unchanged only when the transform preserves all its constraints. Each transform declares its parameter array shape and validates it through the block's native Filament form. Parameters can contain structured values such as replacement dictionaries; saved settings preserve these arrays. FieldTransforms uses the forms' native dehydration for schema previews and reordering as well as submission. `connector()` receives the owning field and saved parameters and returns a flat Kafka Connect configuration for one transform. The pipeline factory assigns its alias. Configured transformations are available without booting a Filament panel and must not retain request or form state.
+`accepts()` receives the complete preceding JSON Schema. `output()` returns the resulting `JsonSchema`, or `null` when settings are incomplete and an output cannot yet be determined. Return the input unchanged only when the transform preserves all its constraints. Each transform declares its parameter array shape and validates it through the block's native Filament form. Parameters can contain structured values such as replacement dictionaries; saved settings preserve these arrays. FieldTransforms uses the forms' native dehydration for schema previews and reordering as well as submission. `getScope()` declares `TransformScope::Field` or `TransformScope::Record`; `getTarget()` declares key or value. `sourceFields()` lists physical or previously generated input dependencies for record transforms and returns an empty list for field transforms. `connector()` receives the saved parameters; for field transforms, the factory binds the owning field as the reserved `field` parameter and returns a flat Kafka Connect configuration for one transform. The pipeline factory assigns its alias. Configured transformations are available without booting a Filament panel and must not retain request or form state.
 
-`TransformRegistry::get($key)`, `getOrFail($key)` and `all()` read the catalog. `resultSchema(JsonSchema $input, array $settings, TransformTarget $target = TransformTarget::Value)` accepts a list of `Data\TransformSetting` objects, passes the schema through each transformation and returns null for an incompatible target, input or unavailable output. Each step consumes the preceding output. Form and storage boundaries, including `FieldTransforms::getSettings()`, use ordered `type`/`data` arrays; convert those rows with `TransformSetting::fromArray()` before passing them to the registry.
+`TransformRegistry::get($key)`, `getOrFail($key)` and `all()` read the catalog. `resultSchema(JsonSchema $input, array $settings, ?TransformTarget $target = TransformTarget::Value, TransformScope $scope = TransformScope::Field)` accepts a list of `Data\TransformSetting` objects, passes the schema through each transformation and returns null for an incompatible scope, target, input or unavailable output. A null target allows both key and value transforms in the replica list. Each step consumes the preceding output. Form and storage boundaries, including `FieldTransforms::getSettings()`, use ordered `type`/`data` arrays; convert those rows with `TransformSetting::fromArray()` before passing them to the registry.
 
 Cast replaces value constraints with the selected scalar type and preserves nullability; repeated casts use that result. Trim, Substring and Mask accept strings, including formatted and nullable strings, but reject `date`, `time`, `date-time` and schemas with `x-ferry-reference: true`. Ordinary UUID strings remain supported. Their outputs retain nullability and discard the source format, enum, pattern and length bounds.
 
-Forms and previews use `accepts()`, `output()` and `block()` without calling `connector()`. `TransformRegistry::mappingSchema($mapping, $inputSchema)` starts from the replica input snapshot or native static value and applies its ordered transforms. `Replica::outputSchema($mapping)` uses its saved input snapshot. `FieldMapping::canMapTo($output, $target)` checks destination compatibility. A mapped output must have a supported scalar type. `ReplicaTableManager` translates it into SQL columns; decimal precision and scale come from the output schema.
+Forms and previews use `accepts()`, `output()` and `block()` without calling `connector()`. `TransformRegistry::mappingSchema($mapping, $inputSchema)` reads the source property from the supplied effective record schema, or derives a schema from the native static value, then applies the mapping's ordered field transforms. `Replica::outputSchema($mapping)` supplies its effective record schema. `FieldMapping::canMapTo($output, $target)` checks destination compatibility. A mapped output must have a supported scalar type. `ReplicaTableManager` translates it into SQL columns; decimal precision and scale come from the output schema.
 
 ### Connector pipelines
 
-`Origins\Kafka\TransformFactory::pipeline($replica, $object, keyMap: [], fixedValues: [])` uses the shared registry's `connector()` implementations and returns the complete flat Kafka Connect configuration: ordered aliases, `transforms.*` properties and required tombstone predicates. It applies source transforms, key/value renames, constants with their transforms, and destination fixed values in that order. Tombstones pass through to the JDBC sink so both static and dynamic destinations propagate deletions. Pass the source-to-destination key map to retain and rename its source key fields using [Apache ReplaceField](https://docs.confluent.io/kafka-connectors/transforms/current/replacefield-ak.html). Both sink modes pass every mapped source key component. The default empty key map omits key selection and renaming. A missing transformation fails assembly through the registry's `transform_missing` error.
+`Origins\Kafka\TransformFactory::pipeline($replica, $object, keyMap: [], fixedValues: [])` uses the shared registry's `connector()` implementations and returns the complete flat Kafka Connect configuration: ordered aliases, `transforms.*` properties and required tombstone predicates. It applies `replica.transforms` in list order, then source and constant transforms in mapping-row order, then destination fixed values, and finally key/value renames. Static and fixed fields use temporary names until the final value projection, preventing collisions with physical fields; destination fixed values take precedence. The final projection includes only mapped and fixed fields. Tombstones pass through to the JDBC sink so both static and dynamic destinations propagate deletions. Pass the source-to-destination key map to retain and rename its source key fields using [Apache ReplaceField](https://docs.confluent.io/kafka-connectors/transforms/current/replacefield-ak.html). Both sink modes pass every mapped source key component. The default empty key map omits key selection and renaming. A missing transformation fails assembly through the registry's `transform_missing` error.
 
-All transformations, including Filter, are prohibited on physical source primary-key fields in static and dynamic destinations. The editor hides the Transform add button on those cards and saving enforces the same restriction. Existing physical-key transforms remain visible and removable and block saving and origin configuration assembly until removed. Non-key fields continue to support value transformations. Generated key fields use key transformations.
+All transformations, including Filter, are prohibited on physical source primary-key fields in static and dynamic destinations. The editor hides the Transform add button on those cards and saving enforces the same restriction. Existing physical-key transforms remain visible and removable and block saving and origin configuration assembly until removed. Non-key fields continue to support value transformations. Generated key fields are produced by record-level key transforms and cannot have field transforms.
 
-The transformation editor uses Common's `InlineBuilder`. Run `php artisan filament:assets` to publish the shared editor assets.
+Field transformations use Common's `InlineBuilder`; record transformations use its `TabbedBuilder`. Run `php artisan filament:assets` to publish the shared editor assets.
 
-Transform settings are ordered `['type' => 'mask', 'data' => ['replacement' => '***']]` entries; `data` retains the native parameter types and may be omitted when empty. Each source row in `Replica.mapping` stores its ordered transforms under `options['transforms']`. There is one field transform catalog. `getTarget()` declares `TransformTarget::Key` or `TransformTarget::Value` execution. The editor and schema validation keep key and value chains separate. Generated key fields keep exactly the injected key generator, with its transform editor disabled; physical source key fields still prohibit transforms. Native Filament forms validate parameters and type chains; `ReplicaSchema` checks destination compatibility. The sink applies source chains in mapping order to the extracted row, before renames. Static values are inserted after renames, followed immediately by each constant’s transforms on its target field. Saving a configured replica refreshes its desired sink configuration; the shared source connector changes only when its generated configuration changes. Kafka compiles the source and sink configurations before applying either one. A missing transformation raises the registry’s `transform_missing` error during activation or update; there is no automatic pause for configuration changes.
+Transform settings are ordered `['type' => 'mask', 'data' => ['replacement' => '***']]` entries; `data` retains the native parameter types and may be omitted when empty. Each mapping row stores its ordered field transforms under `options['transforms']`. Native Filament forms validate parameters and type chains; `ReplicaSchema` checks destination compatibility. Saving a configured replica refreshes its desired sink configuration; the shared source connector changes only when its generated configuration changes. Kafka compiles the source and sink configurations before applying either one. A missing transformation raises the registry’s `transform_missing` error during activation or update; there is no automatic pause for configuration changes.
 
-`Replica.transforms` separately stores an ordered `list<TransformSetting>` for record-level settings in a JSON column, defaulting to an empty list. This attribute is storage only: the form does not edit it, and source capture, compatibility checks, and connector pipelines do not interpret or execute it.
+`Replica.transforms` stores an ordered `list<TransformSetting>` for record-level settings in a JSON column, defaulting to an empty list. The record editor submits `type`/`data` rows, which the replica form converts to typed settings. These settings determine the effective record schema, source capture dependencies, and the first steps of the connector pipeline.
 
 ### Built-in transforms
 
@@ -383,7 +402,7 @@ Conversion runs before mapping renames and skips tombstones, preserving JDBC del
 
 These transforms run on the selected value field before renames, also support replica constants, and preserve tombstones through Toblerone's native behavior. Install [Toblerone v0.0.5 or later](https://github.com/phpinnacle/toblerone/releases/tag/v0.0.5) on every Connect worker. Ferry emits native `org.phpinnacle.toblerone.BooleanToStringTransform$Value`, `StringMapTransform$Value` and `ToggleTransform$Value` configurations; streamed values are transformed on the worker, not in PHP.
 
-Static values use rows with `kind: static`, a required `target`, and a native string, boolean, integer or float in `static`. Their type comes from the native value; `1.0` stays a float through JSON serialization. They compile to `InsertField` plus a cast when the native value requires it. Optional `options['transforms']` run next on `target`; their output JSON Schema is calculated from the native value and the registered definitions. No separate source name or rename is needed.
+Static values use rows with `kind: static`, a required `target`, and a native string, boolean, integer or float in `static`. Their type comes from the native value; `1.0` stays a float through JSON serialization. They compile to `InsertField` plus a cast when the native value requires it. Optional `options['transforms']` run next on the temporary field, before the final projection renames it to `target`; their output JSON Schema is calculated from the native value and the registered definitions. No separate source name is stored in the mapping row.
 
 Register the optional Trim, Substring, and Mask implementations as shown above. The mapping supplies the selected source field; administrators do not enter a second field name.
 
@@ -418,7 +437,7 @@ use PHPinnacle\Ferry\Forms\FieldTransforms;
 ])
 ```
 
-Replica forms use the inherited `addable(false)` and native validation rules to prohibit transforms on physical primary-key fields while keeping existing items visible and removable. A generated key instead requires its single Key transform, with adding, deletion and reordering disabled. `object()` accepts the selected `?StructureItem`, which transformation blocks can read through `getObject()`. `inputSchema(array|Closure)` supplies the original source property definition. The field passes this complete schema through `TransformRegistry::resultSchema()` to determine compatible additions. Mapping consumers use the same result in their `outputSchema()` callbacks for hints and connection checks. For `FieldBinding` static source settings, pass `fn () => $inputSchema()->toArray()` to `FieldTransforms::inputSchema()`; Eidos supplies this closure through the source-settings callback.
+Replica forms use the inherited `addable(false)` and native validation rules to prohibit field transforms on physical primary-key fields and generated key fields while keeping existing items visible and removable. Generated keys are produced by record transforms. `object()` accepts the selected `?StructureItem`, which transformation blocks can read through `getObject()`. `inputSchema(array|Closure)` supplies the source property definition after record transforms. The field passes this complete schema through `TransformRegistry::resultSchema()` to determine compatible additions. Mapping consumers use the same result in their `outputSchema()` callbacks for hints and connection checks. For `FieldBinding` static source settings, pass `fn () => $inputSchema()->toArray()` to `FieldTransforms::inputSchema()`; Eidos supplies this closure through the source-settings callback.
 
 An empty editor shows a muted `+ Transform` aligned with the source title, without a frame, shadow, background, or hover tooltip. Hovering the enabled plus button or Transform label, or focusing the editor, emphasizes the text and plus icon together. Empty footer space leaves them muted. In `FieldMapping`, it can start or complete a connection in either direction, including inverse mode. Only `+ Transform` opens the catalog in an empty editor. With transforms, a native Filament input frame contains a persistent `+` button and compact chips; its free space also opens the catalog. One row is reserved so the first chip does not change the input height. Further chips wrap while the add button stays on the first row. The Add transform button stays visible but disabled when no compatible transforms are available.
 

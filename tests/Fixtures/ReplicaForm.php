@@ -29,6 +29,11 @@ class ReplicaForm extends Component implements HasActions, HasSchemas
         return ResourceForm::configure($schema->statePath('data')->operation('create'));
     }
 
+    public function validateForm(): void
+    {
+        $this->form->getState();
+    }
+
     public function render(): string
     {
         return '<div>{{ $this->form }}<x-filament-actions::modals /></div>';

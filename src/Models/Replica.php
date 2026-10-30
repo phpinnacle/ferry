@@ -17,6 +17,7 @@ use PHPinnacle\Ferry\Data\TransformSetting;
 use PHPinnacle\Ferry\Enums\ConnectorStatus;
 use PHPinnacle\Ferry\Enums\DestinationType;
 use PHPinnacle\Ferry\Enums\ReplicaStatus;
+use PHPinnacle\Ferry\Enums\TransformScope;
 use PHPinnacle\Ferry\Models\Concerns\HasConnector;
 use PHPinnacle\Ferry\Observers\ReplicaObserver;
 use PHPinnacle\Ferry\Services\ReplicaTableManager;
@@ -138,9 +139,21 @@ class Replica extends Model
         }
     }
 
+    public function transformedSchema(): ?JsonSchema
+    {
+        return app(TransformRegistry::class)->resultSchema(
+            $this->schema,
+            $this->transforms,
+            null,
+            TransformScope::Record,
+        );
+    }
+
     public function outputSchema(FieldMapping $mapping, ?JsonSchema $schema = null): ?JsonSchema
     {
-        return app(TransformRegistry::class)->mappingSchema($mapping, $schema ?? $this->schema);
+        $schema ??= $this->transformedSchema();
+
+        return $schema === null ? null : app(TransformRegistry::class)->mappingSchema($mapping, $schema);
     }
 
     /** @return list<string> */
@@ -162,21 +175,37 @@ class Replica extends Model
         $original = $this->getOriginal('mapping');
         /** @var JsonSchema $originalSchema */
         $originalSchema = $this->getOriginal('schema');
-        $previous = array_filter($original, static fn (FieldMapping $mapping) => $mapping->target !== null);
-        $schema = array_filter($this->mapping, static fn (FieldMapping $mapping) => $mapping->target !== null);
-        $next = array_combine(
-            array_map(static fn (FieldMapping $mapping) => $mapping->identity(), $schema),
-            $schema,
+        /** @var list<TransformSetting> $originalTransforms */
+        $originalTransforms = $this->getOriginal('transforms');
+        $originalSchema = app(TransformRegistry::class)->resultSchema(
+            $originalSchema,
+            $originalTransforms,
+            null,
+            TransformScope::Record,
         );
-        foreach ($previous as $mapping) {
-            $replacement = $next[$mapping->identity()] ?? null;
-
+        $previous = [];
+        foreach ($original as $mapping) {
+            if ($mapping->target !== null) {
+                $previous[$mapping->identity()] = $mapping;
+            }
+        }
+        $next = [];
+        foreach ($this->mapping as $mapping) {
+            if ($mapping->target !== null) {
+                $next[$mapping->identity()] = $mapping;
+            }
+        }
+        $nextSchema = $this->transformedSchema();
+        $previousOutputs = array_map(fn (FieldMapping $mapping) => $this->outputSchema(
+            $mapping,
+            $originalSchema,
+        ), $previous);
+        $nextOutputs = array_map(fn (FieldMapping $mapping) => $this->outputSchema($mapping, $nextSchema), $next);
+        foreach ($previous as $identity => $mapping) {
             if (
-                $replacement === null
-                || ReplicaTableManager::columnType($this->outputSchema(
-                    $replacement,
-                )) !== ReplicaTableManager::columnType(
-                    $this->outputSchema($mapping, $originalSchema),
+                !array_key_exists($identity, $next)
+                || ReplicaTableManager::columnType($nextOutputs[$identity]) !== ReplicaTableManager::columnType(
+                    $previousOutputs[$identity],
                 )
             ) {
                 /** @var string $target */
@@ -185,15 +214,10 @@ class Replica extends Model
             }
         }
 
-        $previous = array_combine(
-            array_map(static fn (FieldMapping $mapping) => $mapping->identity(), $previous),
-            $previous,
-        );
-
-        foreach ($schema as $mapping) {
-            $existing = $previous[$mapping->identity()] ?? null;
-            $previousOutput = $existing === null ? null : $this->outputSchema($existing, $originalSchema);
-            $nextOutput = $this->outputSchema($mapping);
+        foreach ($next as $identity => $mapping) {
+            $existing = $previous[$identity] ?? null;
+            $previousOutput = $previousOutputs[$identity] ?? null;
+            $nextOutput = $nextOutputs[$identity];
             $previousType = ReplicaTableManager::columnType($previousOutput);
             $nextType = ReplicaTableManager::columnType($nextOutput);
 
@@ -245,7 +269,7 @@ class Replica extends Model
     public function primaryKeySources(StructureItem $object): array
     {
         /** @var list<string> */
-        return $this->schema->annotation('x-primary-key') ?? $object->primary_key;
+        return $this->transformedSchema()?->annotation('x-primary-key') ?? $object->primary_key;
     }
 
     /** @return array<string, string> */

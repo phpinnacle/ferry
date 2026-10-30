@@ -5,9 +5,10 @@ namespace PHPinnacle\Ferry\Transformations;
 use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Components\Group;
 use Filament\Support\Icons\Heroicon;
-use PHPinnacle\Common\Forms\InlineBuilder\Block;
+use PHPinnacle\Common\Forms\InlineBuilder\Block as InlineBlock;
 use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Contracts\Transform;
+use PHPinnacle\Ferry\Enums\TransformScope;
 use PHPinnacle\Ferry\Enums\TransformTarget;
 
 final class Substring implements Transform
@@ -20,6 +21,16 @@ final class Substring implements Transform
     public function getKey(): string
     {
         return 'substring';
+    }
+
+    public function getScope(): TransformScope
+    {
+        return TransformScope::Field;
+    }
+
+    public function sourceFields(array $params): array
+    {
+        return [];
     }
 
     public function getTarget(): TransformTarget
@@ -44,9 +55,9 @@ final class Substring implements Transform
         ]);
     }
 
-    public function block(): Block
+    public function block(): InlineBlock
     {
-        return Block::make($this->getKey())
+        return InlineBlock::make($this->getKey())
             ->color('info')
             ->label(fn () => __('phpinnacle-ferry::resources.transform.substring'))
             ->icon(Heroicon::Scissors)
@@ -76,13 +87,18 @@ final class Substring implements Transform
             ]);
     }
 
-    /** @param array<string, string> $params */
-    public function connector(string $field, array $params): array
+    /**
+     * @param array<string, string> $params
+     */
+    public function connector(array $params): array
     {
         return [
             'type' => 'org.phpinnacle.toblerone.SubstringTransform$Value',
             'fields' =>
-                $field . ':' . $params['start'] . (array_key_exists('end', $params) ? ':' . $params['end'] : ''),
+                $params['field']
+                    . ':'
+                    . $params['start']
+                    . (array_key_exists('end', $params) ? ':' . $params['end'] : ''),
         ];
     }
 }

@@ -3,9 +3,10 @@
 namespace PHPinnacle\Ferry\Transformations;
 
 use Filament\Support\Icons\Heroicon;
-use PHPinnacle\Common\Forms\InlineBuilder\Block;
+use PHPinnacle\Common\Forms\InlineBuilder\Block as InlineBlock;
 use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Contracts\Transform;
+use PHPinnacle\Ferry\Enums\TransformScope;
 use PHPinnacle\Ferry\Enums\TransformTarget;
 
 final class Toggle implements Transform
@@ -18,6 +19,16 @@ final class Toggle implements Transform
     public function getKey(): string
     {
         return 'toggle';
+    }
+
+    public function getScope(): TransformScope
+    {
+        return TransformScope::Field;
+    }
+
+    public function sourceFields(array $params): array
+    {
+        return [];
     }
 
     public function getTarget(): TransformTarget
@@ -42,20 +53,21 @@ final class Toggle implements Transform
         return JsonSchema::fromArray($schema);
     }
 
-    public function block(): Block
+    public function block(): InlineBlock
     {
-        return Block::make($this->getKey())
+        return InlineBlock::make($this->getKey())
             ->color('success')
             ->label(fn () => __('phpinnacle-ferry::resources.transform.toggle'))
             ->description(fn () => __('phpinnacle-ferry::resources.transform.toggle_description'))
             ->icon(Heroicon::ArrowsRightLeft);
     }
 
-    public function connector(string $field, array $params): array
+    /** @param array{field: string} $params */
+    public function connector(array $params): array
     {
         return [
             'type' => 'org.phpinnacle.toblerone.ToggleTransform$Value',
-            'fields' => $field,
+            'fields' => $params['field'],
         ];
     }
 }

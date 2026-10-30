@@ -80,9 +80,14 @@ readonly class ReplicaSchema
         array $mappings,
         ?StaticDestination $destination,
         array $sourcePrimaryKey,
-        JsonSchema $sourceSchema,
+        ?JsonSchema $sourceSchema,
         array $physicalPrimaryKey,
     ): void {
+        if ($sourceSchema === null) {
+            throw ValidationException::withMessages([
+                'data.transforms' => __('phpinnacle-ferry::validation.replica_transforms'),
+            ]);
+        }
         $sources = [];
         foreach ($mappings as $mapping) {
             if ($mapping->source !== null && $mapping->target !== null) {
@@ -100,18 +105,13 @@ readonly class ReplicaSchema
         $fields = $destinationSchema->properties();
         foreach ($mappings as $mapping) {
             $sourceIsKey = in_array($mapping->source, $sourcePrimaryKey, true);
-            if (in_array($mapping->source, $physicalPrimaryKey, true) && $mapping->transforms() !== []) {
-                throw ValidationException::withMessages([
-                    'data.mapping' => __('phpinnacle-ferry::validation.primary_key_transforms_prohibited'),
-                ]);
-            }
             if (
-                $sourceIsKey
-                && !in_array($mapping->source, $physicalPrimaryKey, true)
-                && count($mapping->transforms()) !== 1
+                ($sourceIsKey
+                || in_array($mapping->source, $physicalPrimaryKey, true))
+                && $mapping->transforms() !== []
             ) {
                 throw ValidationException::withMessages([
-                    'data.mapping' => __('phpinnacle-ferry::validation.key_transform_required'),
+                    'data.mapping' => __('phpinnacle-ferry::validation.primary_key_transforms_prohibited'),
                 ]);
             }
             if ($mapping->target === null) {

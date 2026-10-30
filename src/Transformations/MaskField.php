@@ -4,9 +4,10 @@ namespace PHPinnacle\Ferry\Transformations;
 
 use Filament\Forms\Components\TextInput;
 use Filament\Support\Icons\Heroicon;
-use PHPinnacle\Common\Forms\InlineBuilder\Block;
+use PHPinnacle\Common\Forms\InlineBuilder\Block as InlineBlock;
 use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Contracts\Transform;
+use PHPinnacle\Ferry\Enums\TransformScope;
 use PHPinnacle\Ferry\Enums\TransformTarget;
 
 final class MaskField implements Transform
@@ -19,6 +20,16 @@ final class MaskField implements Transform
     public function getKey(): string
     {
         return 'mask';
+    }
+
+    public function getScope(): TransformScope
+    {
+        return TransformScope::Field;
+    }
+
+    public function sourceFields(array $params): array
+    {
+        return [];
     }
 
     public function getTarget(): TransformTarget
@@ -43,9 +54,9 @@ final class MaskField implements Transform
         ]);
     }
 
-    public function block(): Block
+    public function block(): InlineBlock
     {
-        return Block::make($this->getKey())
+        return InlineBlock::make($this->getKey())
             ->color('warning')
             ->label(fn () => __('phpinnacle-ferry::resources.transform.mask'))
             ->icon(Heroicon::EyeSlash)
@@ -59,12 +70,14 @@ final class MaskField implements Transform
             ]);
     }
 
-    /** @param array<string, string> $params */
-    public function connector(string $field, array $params): array
+    /**
+     * @param array<string, string> $params
+     */
+    public function connector(array $params): array
     {
         return [
             'type' => 'org.apache.kafka.connect.transforms.MaskField$Value',
-            'fields' => $field,
+            'fields' => $params['field'],
             'replacement' => $params['replacement'],
             'predicate' => 'tombstone',
             'negate' => 'true',

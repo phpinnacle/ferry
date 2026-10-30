@@ -23,7 +23,8 @@ it('binds JSONPath predicates to the selected field without changing literals or
     string $predicate,
     string $condition,
 ) {
-    $config = new Filter()->connector('_fld1', [
+    $config = new Filter()->connector([
+        'field' => '_fld1',
         'mode' => 'include',
         'condition' => $predicate,
         'missing_or_null_behavior' => 'fail',
@@ -56,7 +57,8 @@ it('binds JSONPath predicates to the selected field without changing literals or
 ]);
 
 it('uses literal field names in JSONPath', function (string $field, string $path) {
-    $config = new Filter()->connector($field, [
+    $config = new Filter()->connector([
+        'field' => $field,
         'mode' => 'exclude',
         'condition' => '@ == true',
         'missing_or_null_behavior' => 'include',
@@ -70,7 +72,8 @@ it('uses literal field names in JSONPath', function (string $field, string $path
 ]);
 
 it('preserves filter modes, explicit missing behavior and tombstones', function (string $mode, string $missing) {
-    expect(new Filter()->connector('_fld1', [
+    expect(new Filter()->connector([
+        'field' => '_fld1',
         'mode' => $mode,
         'condition' => '@ == false',
         'missing_or_null_behavior' => $missing,

@@ -28,34 +28,57 @@ class TransformFactory
         array $fixedValues = [],
     ): array {
         $pipeline = [];
-        $after = [];
-
+        $columns = $replica->columnMap($object);
+        $reserved = array_fill_keys([
+            ...array_keys($object->schema->properties()),
+            ...array_values($columns),
+            ...$replica->constantColumns(),
+            ...array_keys($fixedValues),
+        ], true);
+        foreach ($replica->mapping as $mapping) {
+            if ($mapping->source !== null) {
+                $reserved[$mapping->source] = true;
+            }
+        }
+        foreach ($replica->transforms as $index => $setting) {
+            $pipeline['replica_' . $index] = $this->transforms->getOrFail($setting->type)->connector($setting->data);
+        }
         foreach ($replica->mapping as $index => $mapping) {
             if ($mapping->kind === FieldKind::Static) {
                 if ($mapping->target === null) {
                     continue;
                 }
-                $after += self::constant('field_' . $index . '_0', $mapping);
-                /** @var string $target */
-                $target = $mapping->target;
-                foreach ($mapping->transforms() as $position => $setting) {
-                    $name = sprintf('field_%d_%d', $index, $position + 1);
-                    $after[$name] = $this->transforms->getOrFail($setting->type)->connector($target, $setting->data);
-                }
-
-                continue;
+                $source = self::temporaryField('__ferry_static_' . $index, $reserved);
+                $columns[$source] = $mapping->target;
+                $pipeline += self::constant('field_' . $index . '_0', $source, $mapping);
+                $offset = 1;
+            } else {
+                /** @var string $source */
+                $source = $mapping->source;
+                $offset = 0;
             }
-
-            /** @var string $source */
-            $source = $mapping->source;
-
             foreach ($mapping->transforms() as $position => $setting) {
-                $name = sprintf('field_%d_%d', $index, $position);
-
-                $pipeline[$name] = $this->transforms->getOrFail($setting->type)->connector($source, $setting->data);
+                $name = sprintf('field_%d_%d', $index, $position + $offset);
+                $pipeline[$name] = $this->transforms->getOrFail($setting->type)->connector(['field' => $source]
+                + $setting->data);
             }
         }
 
+        foreach ($fixedValues as $field => $value) {
+            $source = self::temporaryField('__ferry_fixed_' . $field, $reserved);
+            $columns[$source] = $field;
+            $pipeline['insert_' . $field] = [
+                'type' => 'org.apache.kafka.connect.transforms.InsertField$Value',
+                'static.field' => $source,
+                'static.value' => $value,
+            ];
+            // Destination-owned values take precedence over mapped values.
+            foreach ($columns as $column => $target) {
+                if ($column !== $source && $target === $field) {
+                    unset($columns[$column]);
+                }
+            }
+        }
         if ($keyMap !== []) {
             $pipeline['rename_keys'] = [
                 'type' => 'org.apache.kafka.connect.transforms.ReplaceField$Key',
@@ -65,19 +88,22 @@ class TransformFactory
         }
         $pipeline['rename_values'] = [
             'type' => 'org.apache.kafka.connect.transforms.ReplaceField$Value',
-            'renames' => self::renames($replica->columnMap($object)),
+            'include' => implode(',', array_keys($columns)),
+            'renames' => self::renames($columns),
         ];
-        $pipeline += $after;
-
-        foreach ($fixedValues as $field => $value) {
-            $pipeline['insert_' . $field] = [
-                'type' => 'org.apache.kafka.connect.transforms.InsertField$Value',
-                'static.field' => $field,
-                'static.value' => $value,
-            ];
-        }
 
         return self::configuration($pipeline);
+    }
+
+    /** @param array<string, true> $reserved */
+    private static function temporaryField(string $name, array &$reserved): string
+    {
+        while (array_key_exists($name, $reserved)) {
+            $name .= '_';
+        }
+        $reserved[$name] = true;
+
+        return $name;
     }
 
     /** @param array<string, string> $columns */
@@ -112,14 +138,12 @@ class TransformFactory
     }
 
     /** @return array<string, array<string, string>> */
-    private static function constant(string $name, FieldMapping $mapping): array
+    private static function constant(string $name, string $field, FieldMapping $mapping): array
     {
-        /** @var string $target */
-        $target = $mapping->target;
         $transforms = [
             $name => [
                 'type' => 'org.apache.kafka.connect.transforms.InsertField$Value',
-                'static.field' => $target,
+                'static.field' => $field,
                 'static.value' => match ($mapping->static) {
                     true => 'true',
                     false => 'false',
@@ -137,7 +161,7 @@ class TransformFactory
         if ($cast !== null) {
             $transforms[$name . '_cast'] = [
                 'type' => 'org.apache.kafka.connect.transforms.Cast$Value',
-                'spec' => $target . ':' . $cast,
+                'spec' => $field . ':' . $cast,
             ];
         }
 

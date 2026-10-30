@@ -5,12 +5,13 @@ use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Schema;
 use Illuminate\Validation\ValidationException;
-use PHPinnacle\Common\Forms\InlineBuilder\Block;
+use PHPinnacle\Common\Forms\InlineBuilder\Block as InlineBlock;
 use PHPinnacle\Common\Forms\InlineBuilder\BuilderAction;
 use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Contracts\Transform;
 use PHPinnacle\Ferry\Data\FieldMapping;
 use PHPinnacle\Ferry\Data\TransformSetting;
+use PHPinnacle\Ferry\Enums\TransformScope;
 use PHPinnacle\Ferry\Enums\TransformTarget;
 use PHPinnacle\Ferry\Forms\FieldTransforms;
 use PHPinnacle\Ferry\Models\Replica;
@@ -42,7 +43,7 @@ beforeEach(function () {
 it('builds parameter forms when opening a transform rather than rendering its menu', function () {
     $builds = 0;
     app(TransformRegistry::class)->register(
-        new FakeTransform('custom', block: Block::make('custom')->schema(function () use (&$builds) {
+        new FakeTransform('custom', block: InlineBlock::make('custom')->schema(function () use (&$builds) {
             $builds++;
 
             return [TextInput::make('value')->required()];
@@ -58,7 +59,7 @@ it('builds parameter forms when opening a transform rather than rendering its me
 
 it('preserves the registered block availability condition', function () {
     $registry = app(TransformRegistry::class);
-    $registry->register(new FakeTransform('custom', block: Block::make('custom')->addable(false)));
+    $registry->register(new FakeTransform('custom', block: InlineBlock::make('custom')->addable(false)));
 
     expect($this->field->getAvailableTransforms($registry))->toHaveKey('custom');
     expect($this->field->getAvailableBlocks())->not->toHaveKey('custom');
@@ -378,7 +379,7 @@ it('identifies the failing transform when its input or output schema is unavaila
             'unavailable',
             accepts: fn () => $accepts,
             output: fn () => null,
-            block: Block::make('unavailable')->label('Unavailable transform'),
+            block: InlineBlock::make('unavailable')->label('Unavailable transform'),
         ),
     );
     $this->field->state([
@@ -566,6 +567,16 @@ it('registers independent transform implementations and uses their native blocks
             return 'custom';
         }
 
+        public function getScope(): TransformScope
+        {
+            return TransformScope::Field;
+        }
+
+        public function sourceFields(array $params): array
+        {
+            return [];
+        }
+
         public function getTarget(): TransformTarget
         {
             return TransformTarget::Value;
@@ -581,14 +592,14 @@ it('registers independent transform implementations and uses their native blocks
             return JsonSchema::fromArray(['type' => 'string', 'maxLength' => strlen($params['value'])]);
         }
 
-        public function connector(string $field, array $params): array
+        public function connector(array $params): array
         {
-            return ['type' => 'example.Custom', 'field' => $field, 'value' => $params['value']];
+            return ['type' => 'example.Custom', 'field' => $params['field'], 'value' => $params['value']];
         }
 
-        public function block(): Block
+        public function block(): InlineBlock
         {
-            return Block::make($this->getKey())
+            return InlineBlock::make($this->getKey())
                 ->label('Custom')
                 ->schema([
                     TextInput::make('value')->required(),
@@ -612,7 +623,10 @@ it('registers independent transform implementations and uses their native blocks
             'transforms' => $this->field->getSettings(),
         ]),
     ]]);
-    $config = app(TransformFactory::class)->pipeline($replica, new StructureItem);
+    $config = app(TransformFactory::class)->pipeline($replica, new StructureItem(['schema' => JsonSchema::fromArray([
+        'type' => 'object',
+        'properties' => [],
+    ])]));
     expect($config['transforms.field_0_0.type'])->toBe('example.Custom');
     expect($config['transforms.field_0_0.field'])->toBe('name');
     expect($config['transforms.field_0_0.value'])->toBe('hello');
@@ -623,7 +637,7 @@ it('passes the selected object and preceding schema to each settings form', func
     $context = [];
     $this->field->object($object);
     app(TransformRegistry::class)->register(
-        new FakeTransform('custom', block: Block::make('custom')->schema(
+        new FakeTransform('custom', block: InlineBlock::make('custom')->schema(
             function (FieldTransforms $component, ?JsonSchema $input) use (&$context) {
                 $context = [$component->getObject(), $input->singleType()];
 

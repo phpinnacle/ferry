@@ -189,7 +189,7 @@ class KafkaOrigin implements Origin
             $replica->mapping,
             $this->destinations->staticFor($replica),
             $replica->primaryKeySources($object),
-            $replica->schema,
+            $replica->transformedSchema(),
             $object->primary_key,
         );
 

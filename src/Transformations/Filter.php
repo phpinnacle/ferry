@@ -6,9 +6,10 @@ use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Schemas\Components\Group;
 use Filament\Support\Icons\Heroicon;
-use PHPinnacle\Common\Forms\InlineBuilder\Block;
+use PHPinnacle\Common\Forms\InlineBuilder\Block as InlineBlock;
 use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Contracts\Transform;
+use PHPinnacle\Ferry\Enums\TransformScope;
 use PHPinnacle\Ferry\Enums\TransformTarget;
 
 final class Filter implements Transform
@@ -21,6 +22,16 @@ final class Filter implements Transform
     public function getKey(): string
     {
         return 'filter';
+    }
+
+    public function getScope(): TransformScope
+    {
+        return TransformScope::Field;
+    }
+
+    public function sourceFields(array $params): array
+    {
+        return [];
     }
 
     public function getTarget(): TransformTarget
@@ -39,9 +50,9 @@ final class Filter implements Transform
         return $input;
     }
 
-    public function block(): Block
+    public function block(): InlineBlock
     {
-        return Block::make($this->getKey())
+        return InlineBlock::make($this->getKey())
             ->label(fn () => __('phpinnacle-ferry::resources.transform.filter'))
             ->icon(Heroicon::Funnel)
             ->description(fn () => __('phpinnacle-ferry::resources.transform.filter_description'))
@@ -92,12 +103,14 @@ final class Filter implements Transform
             });
     }
 
-    /** @param array<string, string> $params */
-    public function connector(string $field, array $params): array
+    /**
+     * @param array<string, string> $params
+     */
+    public function connector(array $params): array
     {
         return [
             'type' => 'io.confluent.connect.transforms.Filter$Value',
-            'filter.condition' => $this->condition($field, $params['condition']),
+            'filter.condition' => $this->condition($params['field'], $params['condition']),
             'filter.type' => $params['mode'],
             'missing.or.null.behavior' => $params['missing_or_null_behavior'],
             'predicate' => 'tombstone',

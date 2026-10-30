@@ -11,7 +11,6 @@ use PHPinnacle\Ferry\Enums\FieldKind;
 use PHPinnacle\Ferry\Enums\ReplicaStatus;
 use PHPinnacle\Ferry\Enums\StructureStatus;
 use PHPinnacle\Ferry\Models\Replica;
-use PHPinnacle\Ferry\Origins\Kafka\TransformFactory;
 use PHPinnacle\Ferry\Services\ReplicaTableManager;
 use PHPinnacle\Ferry\Services\TransformRegistry;
 use PHPinnacle\Ferry\Tests\Fakes\Transform as FakeTransform;
@@ -29,7 +28,7 @@ beforeEach(function () {
     Queue::fake();
 });
 
-it('stores ordered record transforms without applying them', function () {
+it('stores and serializes ordered record transforms', function () {
     $replica = TestCase::makeReplica(['mapping' => []]);
     expect($replica->fresh()->transforms)->toBe([]);
 
@@ -46,9 +45,7 @@ it('stores ordered record transforms without applying them', function () {
         ->and($saved->toArray()['transforms'])
         ->toBe($serialized)
         ->and(json_decode($saved->getRawOriginal('transforms'), true, flags: JSON_THROW_ON_ERROR))
-        ->toBe($serialized)
-        ->and(app(TransformFactory::class)->pipeline($saved, StructureItems::make())['transforms'])
-        ->toBe('rename_values');
+        ->toBe($serialized);
 });
 
 it('rolls back a replica and its table when creation fails', function () {

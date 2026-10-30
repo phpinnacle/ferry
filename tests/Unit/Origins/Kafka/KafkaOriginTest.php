@@ -318,7 +318,7 @@ it('extracts new record state at the source and preserves deletes for every dest
         expect($sink['transforms'])
             ->toBe(
                 $static
-                    ? 'rename_keys,rename_values,field_1_0,field_2_0,insert_type,insert_profile_id'
+                    ? 'field_1_0,field_2_0,insert_type,insert_profile_id,rename_keys,rename_values'
                     : 'rename_keys,rename_values',
             );
 

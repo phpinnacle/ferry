@@ -4,10 +4,11 @@ namespace PHPinnacle\Ferry\Transformations;
 
 use Filament\Forms\Components\Select;
 use Filament\Support\Icons\Heroicon;
-use PHPinnacle\Common\Forms\InlineBuilder\Block;
+use PHPinnacle\Common\Forms\InlineBuilder\Block as InlineBlock;
 use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Contracts\Transform;
 use PHPinnacle\Ferry\Enums\KafkaType;
+use PHPinnacle\Ferry\Enums\TransformScope;
 use PHPinnacle\Ferry\Enums\TransformTarget;
 
 final class Cast implements Transform
@@ -20,6 +21,16 @@ final class Cast implements Transform
     public function getKey(): string
     {
         return 'cast';
+    }
+
+    public function getScope(): TransformScope
+    {
+        return TransformScope::Field;
+    }
+
+    public function sourceFields(array $params): array
+    {
+        return [];
     }
 
     public function getTarget(): TransformTarget
@@ -54,9 +65,9 @@ final class Cast implements Transform
         return JsonSchema::fromArray($schema);
     }
 
-    public function block(): Block
+    public function block(): InlineBlock
     {
-        return Block::make($this->getKey())
+        return InlineBlock::make($this->getKey())
             ->label(fn () => __('phpinnacle-ferry::resources.transform.cast'))
             ->description(fn () => __('phpinnacle-ferry::resources.transform.cast_description'))
             ->icon(Heroicon::ArrowPath)
@@ -89,12 +100,14 @@ final class Cast implements Transform
             ]);
     }
 
-    /** @param array<string, string> $params */
-    public function connector(string $field, array $params): array
+    /**
+     * @param array<string, string> $params
+     */
+    public function connector(array $params): array
     {
         return [
             'type' => 'org.apache.kafka.connect.transforms.Cast$Value',
-            'spec' => sprintf('%s:%s', $field, $params['type']),
+            'spec' => sprintf('%s:%s', $params['field'], $params['type']),
             ...(
                 array_key_exists('replace_null_with_default', $params)
                     ? ['replace.null.with.default' => $params['replace_null_with_default']]

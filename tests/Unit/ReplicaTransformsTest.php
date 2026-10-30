@@ -1,0 +1,195 @@
+<?php
+
+use Filament\Schemas\Schema;
+use PHPinnacle\Eidos\Forms\JsonSchema;
+use PHPinnacle\Ferry\Data\FieldMapping;
+use PHPinnacle\Ferry\Data\TransformSetting;
+use PHPinnacle\Ferry\Enums\FieldKind;
+use PHPinnacle\Ferry\Enums\TransformScope;
+use PHPinnacle\Ferry\Forms\FieldTransforms;
+use PHPinnacle\Ferry\Models\Replica;
+use PHPinnacle\Ferry\Origins\Kafka\TransformFactory;
+use PHPinnacle\Ferry\Services\TransformRegistry;
+use PHPinnacle\Ferry\Tests\Fixtures\SchemaHost;
+use PHPinnacle\Ferry\Tests\Fixtures\StructureItems;
+use PHPinnacle\Ferry\Transformations\Slug;
+use PHPinnacle\Ferry\Transformations\Trim;
+use Tests\TestCase;
+
+require_once __DIR__ . '/../Fixtures/StructureItems.php';
+require_once __DIR__ . '/../Fixtures/SchemaHost.php';
+
+uses(TestCase::class);
+
+it('runs record transforms before field chains and renames regardless of mapping order', function () {
+    app(TransformRegistry::class)->register(Trim::make());
+    $object = StructureItems::make([
+        'sources' => [
+            'name' => ['type' => 'string'],
+            'tail' => ['type' => 'integer'],
+        ],
+    ]);
+    $replica = new Replica([
+        'schema' => $object->schema,
+        'transforms' => [
+            new TransformSetting('insert_uuid', ['fields' => ["$['_idrref']"], 'output' => 'uuid']),
+            new TransformSetting('slug', ['input' => "$['name']", 'output' => 'slug']),
+            new TransformSetting('slug', ['input' => "$['slug']", 'output' => 'other_slug']),
+        ],
+        'mapping' => [
+            new FieldMapping('name', 'title', ['transforms' => [['type' => 'trim']]]),
+            new FieldMapping(null, 'name', ['transforms' => [['type' => 'trim']]], ' A constant ', FieldKind::Static),
+            new FieldMapping('slug', 'slug'),
+            new FieldMapping('other_slug', 'other_slug'),
+            new FieldMapping('uuid', 'id'),
+        ],
+    ]);
+
+    $config = app(TransformFactory::class)->pipeline($replica, $object, ['uuid' => 'id']);
+
+    expect($config)->toMatchArray([
+        'transforms' => 'replica_0,replica_1,replica_2,field_0_0,field_1_0,field_1_1,rename_keys,rename_values',
+        'transforms.replica_0.type' => 'org.phpinnacle.toblerone.InsertUuid$Key',
+        'transforms.replica_1.input' => 'name',
+        'transforms.replica_1.output' => 'slug',
+        'transforms.replica_2.input' => 'slug',
+        'transforms.field_0_0.fields' => 'name',
+        'transforms.field_1_0.static.field' => '__ferry_static_1',
+        'transforms.field_1_1.fields' => '__ferry_static_1',
+        'transforms.rename_values.renames' => 'name:title,slug:slug,other_slug:other_slug,uuid:id,__ferry_static_1:name',
+    ]);
+    expect(array_keys($replica->transformedSchema()->properties()))
+        ->toBe(['uuid', 'name', 'slug', 'other_slug', 'tail']);
+    expect($replica->primaryKeySources($object))->toBe(['uuid']);
+});
+
+it('keeps record transforms out of field editors and field transforms out of record chains', function () {
+    $registry = app(TransformRegistry::class);
+    $field = FieldTransforms::make('transforms')->inputSchema(['type' => 'object', 'properties' => []]);
+    Schema::make(SchemaHost::make())->components([$field])->fill();
+    expect($field->getAvailableTransforms($registry))->not->toHaveKeys(['insert_uuid', 'slug']);
+    expect($registry->resultSchema(
+        JsonSchema::fromArray(['type' => 'object']),
+        [new TransformSetting('filter')],
+        null,
+        TransformScope::Record,
+    ))->toBeNull();
+});
+
+it('derives nullable slug schemas without carrying source length or format constraints', function () {
+    $input = JsonSchema::fromArray([
+        'type' => 'object',
+        'properties' => [
+            'name' => ['type' => ['string', 'null'], 'format' => 'email', 'maxLength' => 20],
+        ],
+        'required' => ['name'],
+    ]);
+
+    $output = Slug::make()->output($input, ['input' => "$['name']", 'output' => 'slug']);
+
+    expect($output->properties()['slug']->toArray())->toBe(['type' => ['string', 'null']]);
+    expect($output->required())->toBe(['name', 'slug']);
+    expect(Slug::make()->output($input, ['input' => "$['missing']", 'output' => 'slug']))->toBeNull();
+});
+
+it('keeps internal constants separate from physical fields and preserves fixed value precedence', function () {
+    $schema = JsonSchema::fromArray([
+        'type' => 'object',
+        'properties' => [
+            '__ferry_static_1' => ['type' => 'string'],
+            'name' => ['type' => 'string'],
+        ],
+    ]);
+    $replica = new Replica([
+        'schema' => $schema,
+        'mapping' => [
+            new FieldMapping('name', 'profile_id'),
+            new FieldMapping(null, 'name', [], true, FieldKind::Static),
+        ],
+    ]);
+
+    $config = app(TransformFactory::class)->pipeline(
+        $replica,
+        StructureItems::make(['sources' => ['__ferry_static_1' => ['type' => 'string']]]),
+        fixedValues: ['profile_id' => 'fixed'],
+    );
+
+    expect($config)->toMatchArray([
+        'transforms' => 'field_1_0,field_1_0_cast,insert_profile_id,rename_values',
+        'transforms.field_1_0.static.field' => '__ferry_static_1_',
+        'transforms.field_1_0_cast.spec' => '__ferry_static_1_:boolean',
+        'transforms.rename_values.include' => '__ferry_static_1_,__ferry_fixed_profile_id',
+        'transforms.rename_values.renames' => '__ferry_static_1_:name,__ferry_fixed_profile_id:profile_id',
+    ]);
+});
+
+it('rejects a key-only UUID as input to a value slug transform', function () {
+    $schema = JsonSchema::fromArray(['type' => 'object', 'properties' => ['id' => ['type' => 'string']]]);
+    $settings = [
+        new TransformSetting('insert_uuid', ['fields' => ["$['id']"], 'output' => 'uuid']),
+        new TransformSetting('slug', ['input' => "$['uuid']", 'output' => 'slug']),
+    ];
+
+    expect(app(TransformRegistry::class)->resultSchema($schema, $settings, null, TransformScope::Record))->toBeNull();
+});
+
+it('previews only the valid prefix of an incomplete record chain', function () {
+    $schema = JsonSchema::fromArray([
+        'type' => 'object',
+        'properties' => ['name' => ['type' => 'string']],
+    ]);
+    $settings = [
+        new TransformSetting('slug', ['input' => "$['name']", 'output' => 'slug']),
+        new TransformSetting('slug', ['input' => "$['slug']", 'output' => '']),
+        new TransformSetting('slug', ['input' => "$['name']", 'output' => 'later_slug']),
+    ];
+    $registry = app(TransformRegistry::class);
+
+    $preview = $registry->previewRecordSchema($schema, $settings);
+
+    expect(array_keys($preview->properties()))->toBe(['name', 'slug']);
+    expect($registry->resultSchema($schema, $settings, null, TransformScope::Record))->toBeNull();
+    expect($registry->previewRecordSchema($schema, []))->toBe($schema);
+});
+
+it('preserves mapping change order when dropping, replacing, renaming and adding columns together', function () {
+    $schema = [
+        'type' => 'object',
+        'properties' => [
+            'removed_first' => ['type' => 'string'],
+            'flag' => ['type' => 'boolean'],
+            'name' => ['type' => 'string', 'maxLength' => 10],
+            'removed_last' => ['type' => 'string'],
+            'added' => ['type' => 'integer'],
+        ],
+    ];
+    $replica = new Replica([
+        'schema' => JsonSchema::fromArray($schema),
+        'mapping' => [
+            new FieldMapping('removed_first', 'removed_first'),
+            new FieldMapping('flag', 'flag'),
+            new FieldMapping('name', 'name'),
+            new FieldMapping('removed_last', 'removed_last'),
+        ],
+    ]);
+    $replica->syncOriginal();
+    $schema['properties']['flag'] = ['type' => 'integer'];
+    $schema['properties']['name']['maxLength'] = 20;
+    $replica->schema = JsonSchema::fromArray($schema);
+    $renamed = new FieldMapping('name', 'display_name');
+    $added = new FieldMapping('added', 'added');
+    $changed = new FieldMapping('flag', 'flag');
+    $replica->mapping = [$renamed, $added, $changed];
+
+    $changes = $replica->mappingChanges();
+
+    expect($changes)->toEqual([
+        'drop' => ['removed_first', 'flag', 'removed_last'],
+        'columns' => [
+            ['mapping' => $renamed, 'from' => 'name'],
+            ['mapping' => $added, 'from' => null],
+            ['mapping' => $changed, 'from' => null],
+        ],
+        'alter' => [$renamed],
+    ]);
+});

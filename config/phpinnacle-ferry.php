@@ -16,6 +16,7 @@ return [
             \PHPinnacle\Ferry\Transformations\Cast::class,
             \PHPinnacle\Ferry\Transformations\Filter::class,
             \PHPinnacle\Ferry\Transformations\InsertUuid::class,
+            \PHPinnacle\Ferry\Transformations\Slug::class,
             \PHPinnacle\Ferry\Transformations\TimestampConverter::class,
             \PHPinnacle\Ferry\Transformations\BooleanToString::class,
             \PHPinnacle\Ferry\Transformations\StringMap::class,

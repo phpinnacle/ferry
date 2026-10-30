@@ -24,12 +24,13 @@ use PHPinnacle\Ferry\Data\TransformSetting;
 use PHPinnacle\Ferry\Destinations\StaticDestination;
 use PHPinnacle\Ferry\Enums\ConnectorStatus;
 use PHPinnacle\Ferry\Enums\DestinationType;
+use PHPinnacle\Ferry\Enums\TransformScope;
 use PHPinnacle\Ferry\Enums\TransformTarget;
 use PHPinnacle\Ferry\Forms\FieldTransforms;
+use PHPinnacle\Ferry\Forms\RecordTransforms;
 use PHPinnacle\Ferry\Models\Replica;
 use PHPinnacle\Ferry\Models\StructureItem;
 use PHPinnacle\Ferry\Models\Upstream;
-use PHPinnacle\Ferry\Resources\Replicas\Actions\InsertUuidAction;
 use PHPinnacle\Ferry\Rules\ReplicaSchema;
 use PHPinnacle\Ferry\Services\DestinationFactory;
 use PHPinnacle\Ferry\Services\TransformRegistry;
@@ -43,8 +44,8 @@ use PHPinnacle\Ferry\Services\TransformRegistry;
  * @phpstan-type SchemaState list<MappingData>
  * @phpstan-type FormState list<MappingData|array{kind: 'static', target: string, static: null}>
  * @phpstan-type CreateState array{name: string, upstream_id: string, code: string, source: string, destination: string}
- * @phpstan-type EditState array{name: string, mapping: FormState, schema: Definition}
- * @phpstan-type FillState array{upstream_id: string, source: string, type: value-of<DestinationType>, destination: string, mapping: SchemaState, schema: Definition}
+ * @phpstan-type EditState array{name: string, mapping: FormState, schema: Definition, transforms?: list<TransformData>}
+ * @phpstan-type FillState array{upstream_id: string, source: string, type: value-of<DestinationType>, destination: string, mapping: SchemaState, schema: Definition, transforms: list<TransformData>}
  */
 class ReplicaForm
 {
@@ -85,7 +86,7 @@ class ReplicaForm
 
     /**
      * @param EditState $data
-     * @return array{name: string, mapping: SchemaState, schema: JsonSchema}
+     * @return array{name: string, mapping: SchemaState, schema: JsonSchema, transforms: list<TransformSetting>}
      */
     public static function forUpdate(
         array $data,
@@ -112,13 +113,25 @@ class ReplicaForm
             }
         }
         $schema = JsonSchema::fromArray($data['schema']);
+        $transforms = array_map(TransformSetting::fromArray(...), $data['transforms'] ?? []);
+        $effectiveSchema = app(TransformRegistry::class)->resultSchema(
+            $schema,
+            $transforms,
+            null,
+            TransformScope::Record,
+        );
+        if ($effectiveSchema === null) {
+            throw ValidationException::withMessages([
+                'data.transforms' => __('phpinnacle-ferry::validation.replica_transforms'),
+            ]);
+        }
         /** @var list<string> $primaryKey */
-        $primaryKey = $data['schema']['x-primary-key'] ?? $object->primary_key;
+        $primaryKey = $effectiveSchema->annotation('x-primary-key') ?? $object->primary_key;
         ReplicaSchema::assertValid(
             array_map(SchemaMapping::fromArray(...), $mappings),
             $destination,
             $primaryKey,
-            $schema,
+            $effectiveSchema,
             $object->primary_key,
         );
 
@@ -126,6 +139,7 @@ class ReplicaForm
             'name' => $data['name'],
             'mapping' => $mappings,
             'schema' => $schema,
+            'transforms' => $transforms,
         ];
     }
 
@@ -287,6 +301,7 @@ class ReplicaForm
             ->schema(function (
                 Get $get,
                 DestinationFactory $destinations,
+                TransformRegistry $registry,
             ) {
                 $upstreamId = $get->string('upstream_id', isNullable: true);
                 $source = $get->string('source', isNullable: true);
@@ -296,9 +311,15 @@ class ReplicaForm
                         ? Upstream::query()->find($upstreamId)?->structure->publishedItem($source)
                         : null;
                 $destination = $destinations->get(self::staticKey($selectedDestination));
-                /** @var Definition $sourceSchema */
-                $sourceSchema = $get('schema') ?? self::sourceSchema($object);
-                $input = JsonSchema::fromArray($sourceSchema);
+                /** @var Definition $inputSchema */
+                $inputSchema = $get('schema') ?? self::sourceSchema($object);
+                /** @var array<string, TransformData> $settings */
+                $settings = $get->array('transforms', isNullable: true) ?? [];
+                $input = $registry->previewRecordSchema(
+                    JsonSchema::fromArray($inputSchema),
+                    array_map(TransformSetting::fromArray(...), array_values($settings)),
+                );
+                $sourceSchema = $input->toArray();
                 foreach ($input->properties() as $name => $property) {
                     /** @var string|null $translation */
                     $translation = $property->annotation('x-ferry-trans');
@@ -320,22 +341,20 @@ class ReplicaForm
                     return [];
                 }
 
-                $mapping->headerActions([InsertUuidAction::make($object)])->sourceSettings(
+                $mapping->sourceSettings(
                     function (FieldMapping|FieldBinding $component, string $source, ?Closure $inputSchema = null) use (
                         $object,
                     ) {
                         $sourceSchema = $component->getSourceSchema();
                         $static = $inputSchema !== null;
-                        $sourceIsKey = !$static && in_array($source, $object->primary_key ?? [], true);
                         /** @var list<string> $primaryKey */
                         $primaryKey = $sourceSchema['x-primary-key'] ?? [];
-                        $generatedKey = !$static
-                        && !$sourceIsKey
-                        && in_array(
-                            $source,
-                            $primaryKey,
-                            true,
-                        );
+                        $sourceIsKey =
+                            !$static
+                            && (
+                                in_array($source, $primaryKey, true)
+                                || in_array($source, $object->primary_key ?? [], true)
+                            );
                         $inputSchema ??= fn () => JsonSchema::fromArray($sourceSchema)->properties()[$source];
                         /** @var string $label */
                         $label = $sourceSchema['properties'][$source]['title'] ?? $source;
@@ -350,16 +369,11 @@ class ReplicaForm
                                         : $label,
                                 )
                                 ->object($object)
-                                ->target($generatedKey ? TransformTarget::Key : TransformTarget::Value)
-                                ->addable(!$sourceIsKey && !$generatedKey)
-                                ->deletable(!$generatedKey)
-                                ->reorderable(!$generatedKey)
-                                ->disabled($generatedKey)
+                                ->target($sourceIsKey ? TransformTarget::Key : TransformTarget::Value)
+                                ->addable(!$sourceIsKey)
                                 ->rule('max:0', $sourceIsKey)
-                                ->rule('size:1', $generatedKey)
                                 ->validationMessages([
                                     'max' => __('phpinnacle-ferry::validation.primary_key_transforms_prohibited'),
-                                    'size' => __('phpinnacle-ferry::validation.key_transform_required'),
                                 ])
                                 ->inputSchema(fn () => $inputSchema()->toArray())
                                 ->dehydrated(
@@ -369,8 +383,37 @@ class ReplicaForm
                     },
                 );
 
-                return [$mapping];
+                return [
+                    RecordTransforms::make('transforms')
+                        ->label(__('phpinnacle-ferry::resources.replica.fields.record_transforms'))
+                        ->object($object)
+                        ->inputSchema($inputSchema)
+                        ->afterStateUpdated(self::syncMapping(...)),
+                    $mapping,
+                ];
             });
+    }
+
+    private static function syncMapping(RecordTransforms $component): void
+    {
+        /** @var FieldMapping|FieldBinding $mapping */
+        $mapping = $component->getContainer()->getComponentByStatePath('mapping');
+        $sourceSchema = $component->getInputSchema()->toArray();
+        $properties = $sourceSchema['properties'] ?? [];
+        /** @var FormState $rows */
+        $rows = $mapping->getRawState() ?? [];
+        $rows = array_values(array_filter(
+            $rows,
+            fn (array $row) => $row['kind'] === 'static' || array_key_exists($row['source'], $properties),
+        ));
+        if ($mapping instanceof FieldMapping) {
+            $mapping->jsonSchema(source: $sourceSchema);
+        } else {
+            $mapping->jsonSchema($sourceSchema);
+        }
+        $mapping->state($rows);
+        $defaultState = null;
+        $mapping->hydrateState($defaultState);
     }
 
     /** @param Definition $sourceSchema */
@@ -525,6 +568,7 @@ class ReplicaForm
         $source = $get->string('source', isNullable: true);
         $set('schema', self::sourceSchema($source !== null ? $upstream?->structure->publishedItem($source) : null));
         $set('mapping', []);
+        $set('transforms', []);
         $container = $component->getRootContainer();
         $container->clearCachedChildSchemas();
         $defaultState = null;

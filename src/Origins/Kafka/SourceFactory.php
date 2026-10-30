@@ -6,6 +6,7 @@ use Illuminate\Support\Facades\Config;
 use PHPinnacle\Ferry\Models\Replica;
 use PHPinnacle\Ferry\Models\StructureItem;
 use PHPinnacle\Ferry\Models\Upstream;
+use PHPinnacle\Ferry\Services\TransformRegistry;
 
 class SourceFactory
 {
@@ -57,6 +58,16 @@ class SourceFactory
                 if ($mapping->source !== null && $mapping->isUsed()) {
                     if ($object->field($mapping->source) !== null) {
                         $sourceColumns[] = $mapping->source;
+                    }
+                }
+            }
+
+            foreach ($replica->transforms as $setting) {
+                foreach (app(TransformRegistry::class)
+                    ->getOrFail($setting->type)
+                    ->sourceFields($setting->data) as $column) {
+                    if ($object->field($column) !== null) {
+                        $sourceColumns[] = $column;
                     }
                 }
             }
