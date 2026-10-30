@@ -23,12 +23,20 @@ it('updates parent mapping output after native dictionary changes and Livewire r
     app(DestinationFactory::class)->register(customers_destination());
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
     TestCase::makeItem($upstream, ['fields' => ['active' => JsonSchema::fromArray(['type' => 'boolean'])]]);
-    $page = Livewire::test(ReplicaForm::class, ['state' => [
-        'upstream_id' => $upstream->id,
-        'source' => 'object-0',
-        'type' => DestinationType::Static->value,
-        'destination' => 'customers',
-    ]]);
+    $page = Livewire::test(ReplicaForm::class, [
+        'state' => [
+            'upstream_id' => $upstream->id,
+            'source' => 'object-0',
+            'type' => DestinationType::Static->value,
+            'destination' => 'customers',
+            'name' => 'Dictionary replica',
+            'mapping' => [
+                ['kind' => 'source', 'source' => '_idrref', 'target' => 'customer_id', 'options' => []],
+                ['kind' => 'static', 'target' => 'name', 'static' => 'Customer', 'options' => []],
+                ['kind' => 'static', 'target' => 'tax_number', 'static' => '123', 'options' => []],
+            ],
+        ],
+    ]);
     $mapping = $page->instance()->form->getComponentByStatePath('mapping');
     $path = 'mapping.' . $mapping->getSourceRowIndex('active') . '.options.transforms';
     $action = TestAction::make('fieldTransforms')->schemaComponent($path, 'form');
@@ -48,22 +56,9 @@ it('updates parent mapping output after native dictionary changes and Livewire r
         'maxLength' => 0,
     ]);
 
-    $savedTransforms = $page->instance()->form->getComponentByStatePath($path)->getSettings();
-    $reopened = Livewire::test(ReplicaForm::class, [
-        'record' => $page->instance()->record,
-        'state' => [
-            'upstream_id' => $upstream->id,
-            'source' => 'object-0',
-            'type' => DestinationType::Static->value,
-            'destination' => 'customers',
-            'mapping' => [[
-                'kind' => 'source',
-                'source' => 'active',
-                'target' => null,
-                'options' => ['transforms' => $savedTransforms],
-            ]],
-        ],
-    ]);
+    $replica = $page->instance()->record;
+    $replica->update($page->instance()->form->getState());
+    $reopened = Livewire::test(ReplicaForm::class, ['record' => $replica->fresh(), 'state' => []]);
     expect(
         $reopened
             ->instance()

@@ -46,7 +46,7 @@ it('calculates a composed output schema from input schema and mapping options', 
     ]);
 
     $key = new FieldMapping(source: 'id', target: 'id');
-    app(ReplicaSchema::class)->assertValid([$mapping, $key], null, ['id'], $schema, ['id']);
+    app(ReplicaSchema::class)->assertValid([$mapping, $key], null, ['id'], $schema);
 
     expect($registry->mappingSchema($mapping, $schema)->toArray())
         ->toBe(['type' => ['string', 'null'], 'maxLength' => 100])
@@ -61,7 +61,6 @@ it('calculates a composed output schema from input schema and mapping options', 
         null,
         ['id'],
         $schema,
-        ['id'],
     ))
         ->toThrow(ValidationException::class);
 });
@@ -79,28 +78,3 @@ it('round-trips source and static mappings without synthetic transforms', functi
         ->and(FieldMapping::fromArray(json_decode(json_encode($constant), true)))
         ->toEqual($constant);
 });
-
-it('preserves native static values in ready mapping rows', function (string|int|float|bool $value) {
-    $mapping = FieldMapping::fromArray(['kind' => 'static', 'target' => 'status', 'static' => $value, 'options' => []]);
-
-    $schema = JsonSchema::fromArray(['properties' => ['id' => ['type' => 'integer']]]);
-    app(ReplicaSchema::class)->assertValid(
-        [$mapping, new FieldMapping('id', 'id')],
-        null,
-        ['id'],
-        $schema,
-        ['id'],
-    );
-
-    expect($mapping->static)
-        ->toBe($value)
-        ->and($mapping->transforms())
-        ->toBe([])
-        ->and($mapping->jsonSerialize())
-        ->toBe(['kind' => 'static', 'target' => 'status', 'static' => $value, 'options' => []]);
-})->with([
-    'false' => [false],
-    'zero' => [0],
-    'decimal' => [1.0],
-    'string' => ['true'],
-]);

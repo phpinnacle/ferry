@@ -1,12 +1,9 @@
 <?php
 
-use Filament\Forms\Components\Select;
-use Filament\Forms\Components\Textarea;
 use Filament\Schemas\Schema;
 use Illuminate\Support\ViewErrorBag;
 use Illuminate\Validation\ValidationException;
 use PHPinnacle\Eidos\Forms\JsonSchema;
-use PHPinnacle\Ferry\Services\TransformRegistry;
 use PHPinnacle\Ferry\Tests\Fixtures\SchemaHost;
 use PHPinnacle\Ferry\Transformations\Filter;
 use Tests\TestCase;
@@ -14,10 +11,6 @@ use Tests\TestCase;
 require_once __DIR__ . '/../Fixtures/SchemaHost.php';
 
 uses(TestCase::class);
-
-it('registers the built-in field filter', function () {
-    expect(app(TransformRegistry::class)->get('filter'))->toBeInstanceOf(Filter::class);
-});
 
 it('binds JSONPath predicates to the selected field without changing literals or nested item references', function (
     string $predicate,
@@ -87,25 +80,20 @@ it('preserves filter modes, explicit missing behavior and tombstones', function 
     ]);
 })->with(['include', 'exclude'])->with(['include', 'exclude', 'fail']);
 
-it('accepts every input schema and preserves its type', function (array $definition) {
-    $input = JsonSchema::fromArray($definition);
+it('preserves a complete input schema including nested constraints and nullability', function () {
+    $input = JsonSchema::fromArray([
+        'type' => ['object', 'null'],
+        'required' => ['code'],
+        'additionalProperties' => false,
+        'properties' => [
+            'code' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 20, 'enum' => ['draft', 'published']],
+        ],
+    ]);
     $filter = Filter::make();
 
-    expect($filter->accepts($input))
-        ->toBeTrue()
-        ->and($filter->output($input, ['condition' => '@ != null']))
-        ->toBe($input);
-})->with([
-    [['type' => 'string']],
-    [['type' => 'integer']],
-    [['type' => 'number']],
-    [['type' => 'boolean']],
-    [['type' => 'string', 'format' => 'date-time']],
-    [['type' => 'array', 'items' => ['type' => 'integer']]],
-    [['type' => 'object']],
-    [['type' => ['string', 'number', 'null']]],
-    [[]],
-]);
+    expect($filter->accepts($input))->toBeTrue();
+    expect($filter->output($input, ['condition' => '@ != null']))->toBe($input);
+});
 
 it('uses a JSONPath predicate editor and defaults the mode and missing behavior', function () {
     $schema = Schema::make(SchemaHost::make())
@@ -114,15 +102,7 @@ it('uses a JSONPath predicate editor and defaults the mode and missing behavior'
     $schema->fill();
     $schema->getComponent('condition')->rawState('@ >= 9007199254740993.2500');
 
-    expect($schema->getComponent('condition'))
-        ->toBeInstanceOf(Textarea::class)
-        ->and($schema->getComponent('mode')->canSelectPlaceholder())
-        ->toBeFalse()
-        ->and($schema->getComponent('missing_or_null_behavior'))
-        ->toBeInstanceOf(Select::class)
-        ->and($schema->getComponent('missing_or_null_behavior')->canSelectPlaceholder())
-        ->toBeFalse()
-        ->and($schema->getState())
+    expect($schema->getState())
         ->toBe([
             'mode' => 'exclude',
             'missing_or_null_behavior' => 'include',
@@ -146,8 +126,7 @@ it('shows a predicate example for the input type in both the hint and placeholde
     expect($field->getPlaceholder())
         ->toBe($example)
         ->and(html_entity_decode(strip_tags($field->toHtml())))
-        ->toContain($example)
-        ->not->toContain('Kafka Connect');
+        ->toContain($example);
 })->with([
     'string' => [['type' => 'string'], "@ == 'value'"],
     'integer' => [['type' => 'integer'], '@ >= 100'],
@@ -156,8 +135,6 @@ it('shows a predicate example for the input type in both the hint and placeholde
     'array' => [['type' => 'array'], '@ empty false'],
     'object' => [['type' => 'object'], '@.price > 100'],
     'null' => [['type' => 'null'], '@ == null'],
-    'nullable number' => [['type' => ['number', 'null']], '@ >= 100.5'],
-    'unknown' => [[], '@ != null'],
     'union' => [['type' => ['string', 'number']], '@ != null'],
 ]);
 

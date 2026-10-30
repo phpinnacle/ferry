@@ -56,7 +56,7 @@ class FerryServiceProvider extends PackageServiceProvider
         });
 
         $this->app->bind(OriginFactory::class, function () {
-            /** @var array<string, array{driver: string, ...}> $config */
+            /** @var array<string, array{driver: 'kafka', ...}> $config */
             $config = Config::array('phpinnacle-ferry.origins');
 
             return new OriginFactory($this->app, $config);

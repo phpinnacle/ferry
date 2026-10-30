@@ -79,9 +79,8 @@ it('inverts effective boolean enums and preserves nullability', function () {
 it('projects exact one-pass string replacements and discards obsolete string constraints', function () {
     $input = JsonSchema::fromArray([
         'type' => ['string', 'null'],
-        'format' => 'email',
-        'maxLength' => 4,
-        'pattern' => '^draft$',
+        'maxLength' => 9,
+        'pattern' => '^[a-zA-Z]*$',
         'enum' => ['draft', 'published', 'unknown', 'Draft', '', null],
     ]);
     $params = ['mapping' => ['draft' => 'published', 'published' => '', '' => 'empty']];
@@ -93,11 +92,28 @@ it('projects exact one-pass string replacements and discards obsolete string con
     ]);
     expect(
         StringMap::make()
-            ->output(JsonSchema::fromArray(['type' => 'string', 'maxLength' => 4]), $params)
+            ->output(JsonSchema::fromArray(['type' => 'string', 'maxLength' => 4]), [
+                'mapping' => ['new' => 'published', 'done' => ''],
+            ])
             ?->toArray(),
     )
         ->toBe(['type' => 'string', 'maxLength' => 9]);
     expect(StringMap::make()->output($input, []))->toBeNull();
+});
+
+it('drops the source format when mapping formatted strings to plain text', function () {
+    $input = JsonSchema::fromArray(['type' => 'string', 'format' => 'email', 'enum' => ['user@example.com']]);
+
+    expect(
+        StringMap::make()
+            ->output($input, ['mapping' => ['user@example.com' => 'ready']])
+            ->toArray(),
+    )->toBe([
+        'type' => 'string',
+        'enum' => ['ready'],
+        'minLength' => 5,
+        'maxLength' => 5,
+    ]);
 });
 
 it('preserves empty and whitespace boolean labels through native forms', function () {

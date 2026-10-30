@@ -27,10 +27,16 @@ it('succeeds when the database can be reached', function () {
 });
 
 it('fails when the connection cannot be opened', function () {
-    $result = app(UpstreamFactory::class)->test([
+    $factory = Mockery::mock(LaravelConnectionFactory::class);
+    $factory
+        ->shouldReceive('make')
+        ->once()
+        ->andThrow(new PDOException('Connection failed for secret-user with secret-password; SQL: select 1'));
+
+    $result = new UpstreamFactory($factory)->test([
         'driver' => 'pgsql',
-        'host' => '127.0.0.1',
-        'port' => 1,
+        'host' => 'database.example',
+        'port' => 5432,
         'database' => 'unreachable',
         'username' => 'secret-user',
         'password' => 'secret-password',

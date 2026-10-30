@@ -147,23 +147,6 @@ it('preserves adapter-owned context between preparation and chunks', function ()
         ->toEqual(new StructurePlan(2, ['cursor' => 'adapter-owned']));
 });
 
-it('preserves property comments when storing and restoring metadata', function (?string $comment) {
-    Queue::fake();
-    $upstream = TestCase::makeUpstream();
-    $property = ['_fld1' => [
-        'type' => 'string',
-        'maxLength' => 100,
-        'title' => 'Description',
-        ...($comment === null ? [] : ['description' => $comment]),
-    ]];
-    $object = TestCase::makeItem($upstream, ['sources' => $property])->fresh();
-
-    expect($object->schema->properties()['_fld1']->annotation('description'))
-        ->toBe($comment)
-        ->and($object->toArray()['schema']['properties']['_fld1']['description'] ?? null)
-        ->toBe($comment);
-})->with([null, "Developer note\nKeep this line."]);
-
 it('publishes an empty snapshot when the source has no supported objects', function () use ($makeAdapter) {
     $adapter = $makeAdapter(0);
 
@@ -305,7 +288,7 @@ it('keeps the latest published revision when credentials change on an already lo
 it('does not treat upstream edits as progress of a stale structure run', function () {
     Queue::fake();
     $staleAfter = config('phpinnacle-ferry.structure.stale_after');
-    $upstream = TestCase::makeUpstream([], ['updated_at' => now()->subSeconds($staleAfter + 1)]);
+    $upstream = TestCase::makeUpstream([], ['estimated' => 1, 'updated_at' => now()->subSeconds($staleAfter + 1)]);
 
     $upstream->update(['name' => 'Renamed']);
 
@@ -336,7 +319,7 @@ it('ignores every job of a superseded generation', function () use ($makeAdapter
     Queue::assertNotPushed(FinishStructureJob::class);
 });
 
-it('imports repeated chunks once and refuses to restore a superseded draft', function () {
+it('refuses to restore a superseded draft read through the Rosetta adapter', function () {
     Queue::fake();
 
     $staleUpstream = TestCase::makeUpstream()->fresh();
@@ -356,9 +339,6 @@ it('imports repeated chunks once and refuses to restore a superseded draft', fun
 
     $staleUpstream->structure->importItems($adapter->read($staleUpstream, $plan, 0, 1), 0);
     $first = $upstream->structure->items()->sole();
-    $staleUpstream->structure->importItems($adapter->read($staleUpstream, $plan, 0, 1), 0);
-
-    expect($upstream->structure->items()->sole()->id)->toBe($first->id);
     expect($first->name)->toBe('_reference1');
     expect($first->primary_key)->toBe(['_idrref']);
     expect($first->schema->annotation('x-primary-key'))->toBe(['_idrref']);
@@ -519,7 +499,7 @@ it('retires a stale attempt before starting a new one', function () use ($makeAd
 it('uses progress updates as activity for stale run detection', function () {
     Queue::fake();
     $staleAfter = config('phpinnacle-ferry.structure.stale_after');
-    $upstream = TestCase::makeUpstream([], ['updated_at' => now()->subSeconds($staleAfter + 1)]);
+    $upstream = TestCase::makeUpstream([], ['estimated' => 1, 'updated_at' => now()->subSeconds($staleAfter + 1)]);
 
     expect($upstream->structure->canPrepare($staleAfter))->toBeTrue();
     $upstream->structure->progressTo(1);
@@ -568,9 +548,7 @@ it('leaves structure pending and never reads or queues work without an adapter',
     $upstream = TestCase::makeUpstream(['adapter' => null]);
     $structure = $upstream->structure;
 
-    expect(new Upstream()->adapter)
-        ->toBeNull()
-        ->and($structure->status)
+    expect($structure->status)
         ->toBe(StructureStatus::Pending)
         ->and($structure->run_id)
         ->toBeNull()

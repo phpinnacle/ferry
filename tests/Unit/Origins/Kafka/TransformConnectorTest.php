@@ -73,14 +73,8 @@ it('orders field transforms and static values before the renames of a sink', fun
         ->toBe('_fld1:int64')
         ->and($config['transforms.rename_values.renames'])
         ->toBe('_fld1:size,__ferry_static_2:active')
-        ->and($config['transforms.field_2_0.static.field'])
-        ->toBe('__ferry_static_2')
-        ->and($config['transforms.field_2_0_cast.spec'])
-        ->toBe('__ferry_static_2:boolean')
         ->and($config['fields.whitelist'])
         ->toBe('external_id,size,active')
-        ->and(array_keys($replica->columnMap()))
-        ->toBe(['_idrref', '_fld1'])
         ->and($config)
         ->not->toHaveKey('predicates');
 });

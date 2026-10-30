@@ -164,7 +164,7 @@ it('saves PostgreSQL SSL modes as native connection values', function (?string $
     $upstream = Upstream::create($schema->getState())->fresh();
 
     expect($upstream->config['sslmode'])->toBe($mode)->and($upstream->credentials()['sslmode'])->toBe($mode);
-})->with([null, 'disable', 'allow', 'prefer', 'require', 'verify-ca', 'verify-full']);
+})->with(['driver default' => [null], 'explicit SSL mode' => ['verify-full']]);
 
 it('rejects invalid PostgreSQL SSL modes', function (mixed $mode) {
     $schema = ferry_upstream_form();

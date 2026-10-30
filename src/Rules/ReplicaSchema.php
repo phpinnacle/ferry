@@ -82,14 +82,12 @@ readonly class ReplicaSchema
     /**
      * @param list<FieldMapping> $mappings
      * @param list<string> $sourcePrimaryKey
-     * @param list<string> $physicalPrimaryKey
      */
     public function assertValid(
         array $mappings,
         ?StaticDestination $destination,
         array $sourcePrimaryKey,
         ?JsonSchema $sourceSchema,
-        array $physicalPrimaryKey,
     ): void {
         if ($sourceSchema === null) {
             throw ValidationException::withMessages([
@@ -115,16 +113,6 @@ readonly class ReplicaSchema
         $fields = $destinationSchema->properties();
         foreach ($mappings as $mapping) {
             $sourceIsKey = in_array($mapping->source, $sourcePrimaryKey, true);
-            if (
-                ($sourceIsKey
-                || in_array($mapping->source, $physicalPrimaryKey, true))
-                && $mapping->transforms() !== []
-            ) {
-                throw ValidationException::withMessages([
-                    'data.mapping' => __('phpinnacle-ferry::validation.primary_key_transforms_prohibited'),
-                ]);
-            }
-
             if ($mapping->target === null) {
                 continue;
             }

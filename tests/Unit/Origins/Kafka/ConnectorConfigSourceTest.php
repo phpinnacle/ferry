@@ -212,7 +212,7 @@ it('never lets an unscoped source connector capture the whole database', functio
         ->toBe('kafka');
 });
 
-it('captures every source primary-key column independently of the static value mapping', function (
+it('captures declared source keys before a pending static replica is mapped', function (
     array $primaryKey,
     string $columns,
     ?string $key,
@@ -221,22 +221,30 @@ it('captures every source primary-key column independently of the static value m
         key: 'names',
         label: 'Names',
         table: 'names',
-        primaryKey: ['name'],
-        schema: SchemaBuilder::make(Schema::object(['name' => Schema::string()]))
-            ->required(['name'])
+        primaryKey: ['tenant_id', 'record_id'],
+        schema: SchemaBuilder::make(Schema::object([
+            'tenant_id' => Schema::integer(),
+            'record_id' => Schema::string(),
+            'name' => Schema::string(),
+        ]))
+            ->required(['tenant_id', 'record_id'])
             ->build(),
     ));
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
-    $object = TestCase::makeItem($upstream, [
+    TestCase::makeItem($upstream, [
         'name' => 'customers',
         'primary_key' => $primaryKey,
-        'sources' => ['display_name' => ['type' => 'string']],
+        'sources' => [
+            'tenant_id' => ['type' => 'integer'],
+            'record_id' => ['type' => 'string'],
+            'display_name' => ['type' => 'string'],
+        ],
     ]);
     TestCase::makeReplica([
         'upstream_id' => $upstream->id,
         'type' => DestinationType::Static,
         'destination' => 'names',
-        'mapping' => [new FieldMapping(source: 'display_name', target: 'name')],
+        'mapping' => [],
     ]);
 
     $config = app(SourceFactory::class)->source($upstream, config('phpinnacle-ferry.origins.kafka'));
@@ -251,10 +259,10 @@ it('captures every source primary-key column independently of the static value m
 })->with([
     'composite in declared order' => [
         ['tenant_id', 'record_id'],
-        'public.customers.tenant_id,public.customers.record_id,public.customers.display_name',
+        'public.customers.tenant_id,public.customers.record_id',
         'public.customers:tenant_id,record_id',
     ],
-    'without a declared primary key' => [[], 'public.customers.display_name', null],
+    'without a declared primary key' => [[], '', null],
 ]);
 
 it('uses the key and column names supplied by a non-Rosetta adapter', function () {

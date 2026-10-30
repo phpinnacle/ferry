@@ -251,6 +251,41 @@ it('uses current configuration when old jobs are still pending', function () {
         ->toBe($expected);
 });
 
+it('compiles both configurations before saving either connector', function () {
+    $replica = TestCase::makeReplica();
+    $source = $replica->upstream->connector;
+    $sink = $replica->connector;
+    $previousSource = $source->config;
+    $previousSink = $sink->config;
+    $previousJobs = DB::table('jobs')->count();
+    $origin = Mockery::mock(Origin::class);
+    $origin
+        ->shouldReceive('make')
+        ->once()
+        ->with($replica->upstream)
+        ->andReturn(
+            $source->fill(['config' => [...$previousSource, 'revision' => 'changed']]),
+        );
+    $origin
+        ->shouldReceive('make')
+        ->once()
+        ->with($replica)
+        ->andReturnUsing(function () use ($source, $previousSource) {
+            expect($source->fresh()->config)->toBe($previousSource);
+
+            throw new RuntimeException('Sink compilation failed');
+        });
+    ferry_use_origin($origin);
+
+    expect(fn () => $replica->update(['name' => 'Changed']))
+        ->toThrow(RuntimeException::class, 'Sink compilation failed');
+
+    expect($source->fresh()->config)->toBe($previousSource);
+    expect($sink->fresh()->config)->toBe($previousSink);
+    expect($replica->fresh()->name)->toBe('Test replica');
+    expect(DB::table('jobs')->count())->toBe($previousJobs);
+});
+
 it('keeps pending state and retries after an external failure', function () {
     $replica = TestCase::makeReplica();
     $sinkId = $replica->connector_id;
@@ -306,6 +341,15 @@ it('removes sinks before dropping tables and keeps sibling capture', function (b
     $upstream = $replica->upstream;
     $sibling = $keepSibling ? TestCase::makeReplica(['code' => 'sibling', 'upstream_id' => $upstream->id]) : null;
     ferry_drain_connectors();
+    $origin = Mockery::mock(FakeOrigin::class)->makePartial();
+    $origin
+        ->shouldReceive('remove')
+        ->once()
+        ->andReturnUsing(function (Connector $connector) use ($replica) {
+            expect($connector->id)->toBe($replica->connector_id);
+            expect(Schema::hasTable($replica->destination))->toBeTrue();
+        });
+    ferry_use_origin($origin);
     $replica->refresh()->delete();
     expect(Schema::hasTable($replica->destination))
         ->toBeTrue()

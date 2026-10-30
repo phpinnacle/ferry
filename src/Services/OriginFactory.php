@@ -11,7 +11,7 @@ use PHPinnacle\Ferry\Origins\KafkaOrigin;
 
 class OriginFactory
 {
-    /** @param array<string, array{driver: string, ...}> $config */
+    /** @param array<string, array{driver: 'kafka', ...}> $config */
     public function __construct(
         private readonly Container $container,
         private readonly array $config,
@@ -23,10 +23,6 @@ class OriginFactory
 
         return match ($config['driver']) {
             'kafka' => $this->container->make(KafkaOrigin::class, ['name' => $name, 'config' => $config]),
-            default => throw new InvalidArgumentException(sprintf(
-                'Unsupported origin driver [%s].',
-                $config['driver'],
-            )),
         };
     }
 

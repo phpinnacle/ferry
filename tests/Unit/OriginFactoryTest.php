@@ -48,10 +48,3 @@ it('rejects an unknown origin name', function () {
     expect(fn () => app(OriginFactory::class)->create('missing'))
         ->toThrow(InvalidArgumentException::class, 'Unknown origin [missing].');
 });
-
-it('rejects an unsupported driver name', function () {
-    config(['phpinnacle-ferry.origins.custom' => ['driver' => 'missing']]);
-
-    expect(fn () => app(OriginFactory::class)->create('custom'))
-        ->toThrow(InvalidArgumentException::class, 'Unsupported origin driver [missing].');
-});

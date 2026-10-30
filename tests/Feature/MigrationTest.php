@@ -18,7 +18,7 @@ it('stores adapter-independent structures on a fresh installation and cascades o
     $upstream = TestCase::makeUpstream(['adapter' => null]);
     $schema = JsonSchema::fromArray([
         'type' => 'object',
-        'properties' => ['record_id' => ['type' => 'string']],
+        'properties' => ['tenant_id' => ['type' => 'integer'], 'record_id' => ['type' => 'string']],
     ]);
     $item = StructureItem::create([
         'upstream_id' => $upstream->id,

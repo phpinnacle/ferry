@@ -6,7 +6,6 @@ use Illuminate\Support\Facades\Queue;
 use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
 use PHPinnacle\Eidos\Enums\MappingMode;
-use PHPinnacle\Eidos\Forms\JsonSchemaPicker;
 use PHPinnacle\Ferry\Data\FieldMapping;
 use PHPinnacle\Ferry\Destinations\StaticDestination;
 use PHPinnacle\Ferry\Enums\DestinationType;
@@ -79,7 +78,6 @@ it('creates and persists one UUID key through the tabbed record builder for both
     $page->callAction($this->action, arguments: ['block' => 'insert_uuid'])->assertHasNoErrors();
     $item = array_key_first($page->get('data.transforms'));
     $html = $page->effects['html'] ?? implode('', $page->effects['partials'] ?? []);
-    expect($html)->toContain('wire:model.live.blur="data.transforms.' . $item . '.data.output"');
     expect($page->get('data.transforms.' . $item . '.data.output'))->toBe('id');
     $sourceAttribute = $type === DestinationType::Static ? 'data-mapping-source-settings' : 'data-binding-source';
     expect($html)->toContain($sourceAttribute . '="id"');
@@ -89,8 +87,6 @@ it('creates and persists one UUID key through the tabbed record builder for both
         ->getComponentByStatePath('transforms')
         ->getChildSchema($item)
         ->getComponentByStatePath('fields');
-    expect($picker)->toBeInstanceOf(JsonSchemaPicker::class);
-    expect($picker->isMultiple())->toBeTrue();
     expect($picker->getState())->toBe(["$['tenant_id']", "$['row_id']"]);
     $page
         ->set('data.transforms.' . $item . '.data.fields', ["$['row_id']", "$['tenant_id']"])
@@ -228,16 +224,19 @@ it('preserves destination constants when adding a UUID key', function () {
         'upstream_id' => $this->upstream->id,
         'type' => DestinationType::Static,
         'destination' => 'keyed',
-        'mapping' => [
-            new FieldMapping('name', 'name'),
-            new FieldMapping(null, 'tenant', [], 4, FieldKind::Static),
-        ],
+        'mapping' => [],
     ]);
     $livewire = SchemaHost::make();
     $form = ReplicaForm::configure(
         FormSchema::make($livewire)->statePath('data')->record($replica)->operation('edit'),
     );
-    $form->fill($replica->toArray());
+    $form->fill([
+        ...$replica->toArray(),
+        'mapping' => [
+            new FieldMapping('name', 'name')->jsonSerialize(),
+            new FieldMapping(null, 'tenant', [], 4, FieldKind::Static)->jsonSerialize(),
+        ],
+    ]);
     $mapping = $form->getComponentByStatePath('mapping');
     $properties = $mapping->getSourceSchema()->toArray()['properties'];
     expect(array_keys($properties))->toBe(array_keys($replica->schema->toArray()['properties']));

@@ -11,7 +11,6 @@ use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
-use Illuminate\Support\Facades\Config;
 use Illuminate\Translation\PotentiallyTranslatedString;
 use PHPinnacle\Common\Concerns\FormSlug;
 use PHPinnacle\Eidos\Forms\BuiltinStaticForms;
@@ -115,22 +114,7 @@ class ReplicaForm
                     ->label(__('phpinnacle-ferry::resources.replica.fields.code'))
                     ->maxLength(255)
                     ->scopedUnique(ignoreRecord: true)
-                    ->required()
-                    ->live(onBlur: true)
-                    ->hint(function (?string $state, Get $get, DestinationFactory $destinations) {
-                        $key = $get->enum('type', DestinationType::class, isNullable: true) === DestinationType::Static
-                            ? $get->string('destination', isNullable: true)
-                            : null;
-                        $table = $key !== null
-                            ? $destinations->get($key)->table ?? ''
-                            : Config::string('phpinnacle-ferry.replica.table_prefix') . ($state ?? '');
-
-                        return sprintf(
-                            '%s: %s',
-                            __('phpinnacle-ferry::resources.replica.fields.destination'),
-                            $table,
-                        );
-                    }),
+                    ->required(),
                 Select::make('upstream_id')
                     ->label(__('phpinnacle-ferry::resources.replica.fields.upstream'))
                     ->options(self::upstreamOptions(...))
@@ -221,7 +205,6 @@ class ReplicaForm
             $destinations->staticFor($record),
             $primaryKey,
             $schema,
-            $object->primary_key,
         );
     }
 

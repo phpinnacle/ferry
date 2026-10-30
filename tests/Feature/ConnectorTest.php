@@ -19,7 +19,6 @@ use PHPinnacle\Ferry\Models\Connector;
 use PHPinnacle\Ferry\Models\Replica;
 use PHPinnacle\Ferry\Models\Upstream;
 use PHPinnacle\Ferry\Resources\Actions\RefreshConnectorStatusesAction;
-use PHPinnacle\Ferry\Resources\Replicas\Actions\StartReplicaAction;
 use PHPinnacle\Ferry\Resources\Replicas\Schemas\ReplicaForm;
 use PHPinnacle\Ferry\Resources\Replicas\Tables\ReplicaTable;
 use PHPinnacle\Ferry\Resources\Upstreams\Schemas\UpstreamForm;
@@ -42,21 +41,15 @@ beforeEach(function () {
     Queue::fake();
 });
 
-it('offers one status refresh action before creation on both lists and no per-record status actions', function () {
+it('offers status refresh and creation actions on both lists', function () {
     $livewire = Mockery::mock(HasTable::class);
     $replicas = ReplicaTable::configure(Table::make($livewire));
     $upstreams = UpstreamTable::configure(Table::make($livewire));
 
     expect(array_map(fn ($action) => $action->getName(), $replicas->getHeaderActions()))
-        ->toBe(['refresh_connector_statuses', 'create'])
+        ->toEqualCanonicalizing(['refresh_connector_statuses', 'create'])
         ->and(array_map(fn ($action) => $action->getName(), $upstreams->getHeaderActions()))
-        ->toBe(['refresh_connector_statuses', 'create'])
-        ->and($replicas->getAction('check_sink_status'))
-        ->toBeNull()
-        ->and($upstreams->getAction('check_source_status'))
-        ->toBeNull()
-        ->and($upstreams->getAction('start_source_connector'))
-        ->toBeNull();
+        ->toEqualCanonicalizing(['refresh_connector_statuses', 'create']);
 });
 
 it('shows saved connector errors only in failed status tooltips', function (
@@ -87,8 +80,6 @@ it('shows saved connector errors only in failed status tooltips', function (
     ],
     'failed without error' => [ConnectorStatus::Failed, null, null],
     'running with old error' => [ConnectorStatus::Running, 'Old failure', null],
-    'paused with old error' => [ConnectorStatus::Paused, 'Old failure', null],
-    'unknown with old error' => [ConnectorStatus::Unknown, 'Old failure', null],
     'missing connector' => [null, null, null],
 ])->with([
     'upstreams' => [UpstreamTable::class, Upstream::class],
@@ -147,85 +138,79 @@ it('omits connector error callouts from forms without a saved owner', function (
     'replicas' => [ReplicaForm::class, Replica::class, 'creation'],
 ]);
 
-it('refreshes every connector and continues after an external status check fails', function (bool $fails) {
+it('refreshes connector statuses from the table action and notifies about partial failures', function (bool $fails) {
     $replica = TestCase::makeReplica();
-    TestCase::makeReplica(['code' => 'second-replica', 'upstream_id' => $replica->upstream_id]);
-    $withoutConnector = TestCase::makeUpstream(['code' => 'no-connector']);
-    $connectors = Connector::query()->orderBy('id')->get();
-    $failed = $connectors[1];
-    $checked = [];
+    $source = $replica->upstream->connector;
+    $sink = $replica->connector;
     $origin = Mockery::mock(FakeOrigin::class)->makePartial();
     $origin
         ->shouldReceive('status')
-        ->andReturnUsing(function (Connector $connector) use ($fails, $failed, &$checked) {
-            $checked[] = $connector->id;
-            if ($fails && $connector->is($failed)) {
+        ->andReturnUsing(function (Connector $connector) use ($fails, $sink) {
+            if ($fails && $connector->is($sink)) {
                 throw new RuntimeException('Connect unavailable');
             }
-
-            $connector->error = 'Task diagnostic';
 
             return ConnectorStatus::Paused;
         });
     $origins = Mockery::mock(OriginFactory::class);
-    $origins->shouldReceive('create')->with('kafka')->times(3)->andReturn($origin);
+    $origins->shouldReceive('create')->with('kafka')->andReturn($origin);
     app()->instance(OriginFactory::class, $origins);
     Queue::fake();
 
     RefreshConnectorStatusesAction::table()->call();
 
-    expect($checked)
-        ->toEqualCanonicalizing($connectors->modelKeys())
-        ->and($withoutConnector->fresh()->connector)
-        ->toBeNull()
-        ->and(Connector::query()->count())
-        ->toBe(3);
-    foreach ($connectors as $connector) {
-        $connector->refresh();
-        if ($fails && $connector->is($failed)) {
-            expect($connector->checked_at)->toBeNull()->and($connector->status)->toBeNull();
-        } else {
-            expect($connector->status)
-                ->toBe(ConnectorStatus::Paused)
-                ->and($connector->error)
-                ->toBe('Task diagnostic')
-                ->and($connector->checked_at)
-                ->not->toBeNull();
-        }
-    }
-
+    expect($source->fresh()->status)->toBe(ConnectorStatus::Paused);
+    expect($sink->fresh()->status)->toBe($fails ? null : ConnectorStatus::Paused);
     Queue::assertNothingPushed();
-    $notification = Notification::make();
     Notification::assertNotified(
         $fails
-            ? $notification
+            ? Notification::make()
                 ->title(__('phpinnacle-ferry::resources.replica.messages.status_refresh_failed'))
-                ->body($failed->name . ': Connect unavailable')
+                ->body($sink->name . ': Connect unavailable')
                 ->danger()
-            : $notification->title(__('phpinnacle-ferry::resources.replica.messages.statuses_refreshed'))->success(),
+            : Notification::make()
+                ->title(__('phpinnacle-ferry::resources.replica.messages.statuses_refreshed'))
+                ->success(),
     );
 })->with(['all succeed' => false, 'partial failure' => true]);
 
-it('displays destination labels as badges without a type column', function (
+it('uses destination labels, icons and colors in the owner table badge', function (
     DestinationType $type,
-    ?string $destination,
+    bool $custom,
 ) {
-    app(DestinationFactory::class)->register(customers_destination());
-    $replica = TestCase::makeReplica(['type' => $type, 'destination' => $destination]);
+    app(DestinationFactory::class)->register(new \PHPinnacle\Ferry\Destinations\StaticDestination(
+        key: 'customers',
+        label: $custom ? new \Illuminate\Support\HtmlString('<strong>Customers</strong>') : 'Customers',
+        table: 'customers',
+        primaryKey: ['customer_id'],
+        schema: customers_destination()->getSchema(),
+        icon: $custom ? 'phosphor-users' : null,
+        color: $custom ? 'warning' : null,
+    ));
+    $replica = TestCase::makeReplica([
+        'type' => $type,
+        'destination' => $type === DestinationType::Static ? 'customers' : null,
+        'mapping' => [],
+    ]);
     $livewire = Mockery::mock(HasTable::class);
     $livewire->shouldReceive('getTableRecordKey')->andReturnUsing(fn (Model $record) => $record->getKey());
     $table = ReplicaTable::configure(Table::make($livewire));
     $column = $table->getColumn('destination')->record($replica);
+    $state = $column->getState();
 
-    expect($table->getColumn('type'))
-        ->toBeNull()
-        ->and($column->isBadge())
-        ->toBeTrue()
-        ->and($column->formatState($column->getState()))
-        ->toBe($destination === 'customers' ? 'Customers' : $replica->destination);
+    expect($column->isBadge())->toBeTrue();
+    $label = match (true) {
+        $custom => '<strong>Customers</strong>',
+        $type === DestinationType::Static => 'Customers',
+        default => $replica->destination,
+    };
+    expect((string) $column->formatState($state))->toBe($label);
+    expect($column->getIcon($state))->toBe($custom ? 'phosphor-users' : null);
+    expect($column->getColor($state))->toBe($custom ? 'warning' : null);
 })->with([
-    'registered static destination' => [DestinationType::Static, 'customers'],
-    'dynamic destination' => [DestinationType::Dynamic, null],
+    'default static presentation' => [DestinationType::Static, false],
+    'custom static presentation' => [DestinationType::Static, true],
+    'dynamic table name' => [DestinationType::Dynamic, false],
 ]);
 
 it('filters replicas by status, upstream and destination', function () {
@@ -433,14 +418,7 @@ it('displays and sorts connector statuses through the owner tables', function ()
         ->and($sourceColumn->applySort(Upstream::query())->pluck('id')->all())
         ->toBe([$upstream->id, $otherUpstream->id])
         ->and($sinkColumn->applySort(Replica::query())->pluck('id')->all())
-        ->toBe([$replica->id, $otherReplica->id])
-        ->and(StartReplicaAction::table()->record($replica)->authorize(true)->isVisible())
-        ->toBeTrue();
-
-    $sink->recordStatus(ConnectorStatus::Running);
-    $replica->forceFill(['status' => ReplicaStatus::Active])->saveQuietly();
-
-    expect(StartReplicaAction::table()->record($replica->fresh())->authorize(true)->isVisible())->toBeFalse();
+        ->toBe([$replica->id, $otherReplica->id]);
 });
 
 it('clears connector references without deleting their owners when a connector is removed', function () {

@@ -3,10 +3,8 @@
 use GuzzleHttp\Psr7\HttpFactory;
 use GuzzleHttp\Psr7\Response;
 use Illuminate\Support\Facades\Queue;
-use Illuminate\Validation\ValidationException;
 use PHPinnacle\Eidos\Forms\JsonSchema;
 use PHPinnacle\Ferry\Data\FieldMapping;
-use PHPinnacle\Ferry\Destinations\StaticDestination;
 use PHPinnacle\Ferry\Enums\ConnectorStatus;
 use PHPinnacle\Ferry\Enums\DestinationType;
 use PHPinnacle\Ferry\Enums\Driver as DatabaseDriver;
@@ -25,8 +23,6 @@ use PHPinnacle\Ferry\Services\ReplicaSchemaResolver;
 use PHPinnacle\Ferry\Tests\TestCase;
 use PHPinnacle\Franz\Client;
 use PHPinnacle\Franz\Exception\ApiException;
-use PHPinnacle\Jason\Schema;
-use PHPinnacle\Jason\SchemaBuilder;
 use Psr\Http\Client\ClientInterface;
 use Psr\Http\Message\RequestFactoryInterface;
 use Psr\Http\Message\RequestInterface;
@@ -49,7 +45,8 @@ beforeEach(function () {
     ]);
 });
 
-function ferry_replica(): PHPinnacle\Ferry\Models\Replica
+/** @param array<string, mixed> $attributes */
+function ferry_replica(array $attributes = []): PHPinnacle\Ferry\Models\Replica
 {
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
 
@@ -58,17 +55,17 @@ function ferry_replica(): PHPinnacle\Ferry\Models\Replica
     return TestCase::makeReplica([
         'upstream_id' => $upstream->id,
         'source' => 'object-0',
+        ...$attributes,
     ], ['status' => ReplicaStatus::Active]);
 }
 
 function ferry_kafka_origin(
     RecordingConnectClient $http,
     ?RecordingSignalProducer $signals = null,
-    ?DestinationFactory $destinations = null,
 ): KafkaOrigin {
     $factory = new HttpFactory;
     $client = new Client('http://connect.example:8083', $http, $factory, $factory);
-    $destinations ??= new DestinationFactory(app(ReplicaSchemaResolver::class));
+    $destinations = new DestinationFactory(app(ReplicaSchemaResolver::class));
     $transforms = app(TransformFactory::class);
 
     $config = config('phpinnacle-ferry.origins.kafka');
@@ -86,8 +83,6 @@ function ferry_kafka_origin(
         app(SourceFactory::class),
         $destinations,
         new SinkConfigFactory($transforms, app(ReplicaSchemaResolver::class)),
-        app(\PHPinnacle\Ferry\Rules\ReplicaSchema::class),
-        app(ReplicaSchemaResolver::class),
     );
 }
 
@@ -260,199 +255,81 @@ it('uses each named origin target host only for its sink', function () {
     }
 });
 
-it('extracts new record state at the source and preserves deletes for every destination', function (bool $static) {
-    $replica = ferry_replica();
-    app(DestinationFactory::class)->register(new StaticDestination(
-        key: 'customers',
-        label: 'Customers',
-        table: 'customers',
-        primaryKey: ['customer_id'],
-        schema: SchemaBuilder::make(Schema::object([
-            'customer_id' => SchemaBuilder::make()->type('string')->format('uuid')->build(),
-            'name' => Schema::string(),
-            'tax_number' => Schema::string(),
-        ]))
-            ->required(['customer_id', 'name', 'tax_number'])
-            ->build(),
-        fixedValues: customers_destination()->getFixedValues(),
-    ));
-    if ($static) {
-        $replica->forceFill([
-            'type' => DestinationType::Static,
-            'destination' => 'customers',
-            'mapping' => [
-                new FieldMapping(source: '_idrref', target: 'customer_id'),
-                FieldMapping::fromArray([
-                    'kind' => 'static',
-                    'target' => 'name',
-                    'static' => 'Customer',
-                    'options' => [],
-                ]),
-                FieldMapping::fromArray([
-                    'kind' => 'static',
-                    'target' => 'tax_number',
-                    'static' => '123',
-                    'options' => [],
-                ]),
-            ],
-        ])->saveQuietly();
-    }
+it('extracts source records and preserves deletes for static and dynamic destinations', function (bool $static) {
+    app(DestinationFactory::class)->register(customers_destination());
+    $replica = ferry_replica(
+        $static
+            ? [
+                'type' => DestinationType::Static,
+                'destination' => 'customers',
+                'mapping' => [
+                    new FieldMapping('_idrref', 'customer_id'),
+                    FieldMapping::fromArray([
+                        'kind' => 'static',
+                        'target' => 'name',
+                        'static' => 'Customer',
+                        'options' => [],
+                    ]),
+                    FieldMapping::fromArray([
+                        'kind' => 'static',
+                        'target' => 'tax_number',
+                        'static' => '123',
+                        'options' => [],
+                    ]),
+                ],
+            ] : [],
+    );
+    $origin = new OriginFactory(app(), config('phpinnacle-ferry.origins'))->create('kafka');
 
-    $settings = config('phpinnacle-ferry.origins.kafka');
-    $origins = new OriginFactory(app(), [
-        'kafka' => $settings,
-        'analytics' => $settings,
+    $source = $origin->make($replica->upstream)->config;
+    $sink = $origin->make($replica)->config;
+
+    expect($source)->toMatchArray([
+        'transforms' => 'unwrap',
+        'transforms.unwrap.type' => 'io.debezium.transforms.ExtractNewRecordState',
+        'transforms.unwrap.delete.tombstone.handling.mode' => 'tombstone',
     ]);
-
-    foreach (['kafka', 'analytics'] as $name) {
-        $origin = $origins->create($name);
-        $source = $origin->make($replica->upstream)->config;
-        $sink = $origin->make($replica)->config;
-
-        expect($source)->toMatchArray([
-            'transforms' => 'unwrap',
-            'transforms.unwrap.type' => 'io.debezium.transforms.ExtractNewRecordState',
-            'transforms.unwrap.delete.tombstone.handling.mode' => 'tombstone',
-        ]);
-        expect($sink)->not->toHaveKeys([
+    expect($sink)
+        ->toMatchArray([
+            'connector.class' => 'io.confluent.connect.jdbc.JdbcSinkConnector',
+            'table.name.format' => $static ? 'customers' : $replica->destination,
+            'delete.enabled' => 'true',
+            'pk.mode' => 'record_key',
+            'transforms.rename_keys.include' => '_idrref',
+            'transforms.rename_keys.renames' => $static ? '_idrref:customer_id' : '_idrref:external_id',
+            'transforms' => $static
+                ? 'field_1_0,field_2_0,insert_type,insert_profile_id,rename_keys,rename_values'
+                : 'rename_keys,rename_values',
+        ])
+        ->not->toHaveKeys([
             'transforms.unwrap.type',
             'transforms.unwrap.delete.tombstone.handling.mode',
             'transforms.drop_tombstones.type',
         ]);
-        expect($sink['transforms'])
-            ->toBe(
-                $static
-                    ? 'field_1_0,field_2_0,insert_type,insert_profile_id,rename_keys,rename_values'
-                    : 'rename_keys,rename_values',
-            );
-
-        expect($sink['delete.enabled'])->toBe('true');
-        expect($sink['pk.mode'])->toBe('record_key');
-        expect($sink['transforms.rename_keys.include'])->toBe('_idrref');
-        expect($sink['transforms.rename_keys.renames'])->toBe($static ? '_idrref:customer_id' : '_idrref:external_id');
-    }
 })->with(['dynamic' => [false], 'static' => [true]]);
 
-it('builds sink configuration through the destination registry', function (?string $destination) {
-    $replica = ferry_replica();
-    $destinations = app(DestinationFactory::class);
-    $destinations->register(customers_destination());
-    if ($destination !== null) {
-        $replica->forceFill([
-            'type' => DestinationType::Static,
-            'destination' => $destination,
-            'mapping' => [
-                new FieldMapping(source: '_idrref', target: 'customer_id'),
-                FieldMapping::fromArray([
-                    'kind' => 'static',
-                    'target' => 'name',
-                    'static' => 'Customer',
-                    'options' => [],
-                ]),
-                FieldMapping::fromArray([
-                    'kind' => 'static',
-                    'target' => 'tax_number',
-                    'static' => '123',
-                    'options' => [],
-                ]),
-            ],
-        ])->saveQuietly();
-    }
-
-    $http = new RecordingConnectClient;
-    $connector = ferry_kafka_origin($http, destinations: $destinations)->make($replica);
-    expect($connector->config['connector.class'])
-        ->toBe('io.confluent.connect.jdbc.JdbcSinkConnector')
-        ->and($connector->config['table.name.format'])
-        ->toBe($destination ?? $replica->destination)
-        ->and($connector->config['delete.enabled'])
-        ->toBe('true')
-        ->and($http->requests)
-        ->toBe([]);
-})->with(['dynamic' => [null], 'static' => ['customers']]);
-
 it('rejects unsupported source drivers during assembly', function (bool $source) {
-    $replica = ferry_replica();
-    $upstream = $replica->upstream;
-    $upstream->forceFill(['driver' => DatabaseDriver::Sqlsrv])->saveQuietly();
-    $replica->unsetRelation('upstream');
+    $upstream = TestCase::makeUpstream(['driver' => DatabaseDriver::Sqlsrv], [
+        'status' => StructureStatus::Ready,
+        'generation' => 1,
+    ]);
+    TestCase::makeItem($upstream);
+    $replica = TestCase::makeReplica(['upstream_id' => $upstream->id]);
     $http = new RecordingConnectClient;
-    expect(fn () => ferry_kafka_origin($http)->make($source ? $upstream : $replica))
-        ->toThrow(LogicException::class)
-        ->and($http->requests)
-        ->toBe([]);
-})->with([true, false]);
 
-it('rejects missing source objects and incompatible mappings during assembly', function (bool $missing) {
+    expect(fn () => ferry_kafka_origin($http)->make($source ? $upstream : $replica))->toThrow(LogicException::class);
+    expect($http->requests)->toBe([]);
+})->with(['upstream' => true, 'replica' => false]);
+
+it('rejects a source object missing from the current snapshot during assembly', function () {
     $replica = ferry_replica();
-    if ($missing) {
-        $replica->upstream->structure->publishedItem($replica->source)->delete();
-    } else {
-        $replica->mapping = [new FieldMapping(source: 'missing', target: 'external_id')];
-    }
+    $replica->upstream->structure->publishedItem($replica->source)->delete();
 
     $http = new RecordingConnectClient;
     expect(fn () => ferry_kafka_origin($http)->make($replica))
-        ->toThrow($missing ? LogicException::class : ValidationException::class)
-        ->and($http->requests)
-        ->toBe([]);
-})->with([true, false]);
-
-it('rejects all saved primary-key transforms during assembly', function (
-    DestinationType $type,
-    string $transform,
-    array $parameters,
-) {
-    $replica = ferry_replica();
-    $destination = new StaticDestination(
-        'keyed',
-        'Keyed',
-        'keyed',
-        ['id'],
-        SchemaBuilder::make(Schema::object([
-            'id' => Schema::string(),
+        ->toThrow(LogicException::class, __('phpinnacle-ferry::resources.replica.errors.source_object_missing', [
+            'code' => $replica->code,
         ]))
-            ->required(['id'])
-            ->build(),
-    );
-    $destinations = new DestinationFactory(app(ReplicaSchemaResolver::class));
-    $destinations->register($destination);
-    $replica->type = $type;
-    $replica->destination = $type === DestinationType::Static ? 'keyed' : $replica->destination;
-    $replica->mapping = [new FieldMapping(source: '_idrref', target: 'id', options: [
-        'transforms' => [['type' => $transform, 'data' => $parameters]],
-    ])];
-    $http = new RecordingConnectClient;
-    expect(fn () => ferry_kafka_origin($http, destinations: $destinations)->make($replica))
-        ->toThrow(ValidationException::class)
-        ->and($http->requests)
-        ->toBe([]);
-})->with([DestinationType::Dynamic, DestinationType::Static])->with([
-    'filter' => ['filter', ['condition' => '@ != null']],
-    'trim' => ['trim', []],
-    'cast' => ['cast', ['type' => 'int64']],
-]);
-
-it('compiles both configurations before saving either connector', function () {
-    $replica = ferry_replica();
-    $source = $replica->upstream->connector;
-    $sink = $replica->connector;
-    $previousSource = $source->config;
-    $previousSink = $sink->config;
-    $replica->forceFill(['mapping' => [new FieldMapping(source: '_idrref', target: 'external_id', options: [
-        'transforms' => [['type' => 'missing', 'data' => []]],
-    ])]])->saveQuietly();
-    $http = new RecordingConnectClient;
-    $origin = ferry_kafka_origin($http);
-    $origins = Mockery::mock(OriginFactory::class);
-    $origins->shouldReceive('for')->andReturn($origin);
-    app()->instance(OriginFactory::class, $origins);
-    expect(fn () => $replica->update(['name' => 'Changed']))
-        ->toThrow(ValidationException::class)
-        ->and($source->fresh()->config)
-        ->toBe($previousSource)
-        ->and($sink->fresh()->config)
-        ->toBe($previousSink)
         ->and($http->requests)
         ->toBe([]);
 });
@@ -546,9 +423,8 @@ it('does not request source snapshots when updating a sink', function () {
     expect($signals->published)->toBe([]);
 });
 
-it('resumes processing and restarts failed tasks when needed', function (bool $failed, bool $source) {
-    $replica = ferry_replica();
-    $connector = $source ? $replica->upstream->connector : $replica->connector;
+it('resumes processing and restarts failed tasks when needed', function (bool $failed) {
+    $connector = ferry_replica()->connector;
     $connector->status = $failed ? ConnectorStatus::Failed : ConnectorStatus::Paused;
     $http = new RecordingConnectClient(...$failed ? [new Response(202), new Response(202)] : [new Response(202)]);
     ferry_kafka_origin($http)->start($connector);
@@ -563,7 +439,7 @@ it('resumes processing and restarts failed tasks when needed', function (bool $f
     if ($failed) {
         expect($http->requests[0]->getUri()->getQuery())->toBe('includeTasks=true&onlyFailed=true');
     }
-})->with(['failed' => true, 'paused' => false])->with(['source' => true, 'sink' => false]);
+})->with(['failed' => true, 'paused' => false]);
 
 it('treats missing resources as successful pause or removal', function (string $operation) {
     $connector = ferry_replica()->connector;

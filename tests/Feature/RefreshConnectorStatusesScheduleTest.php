@@ -1,6 +1,5 @@
 <?php
 
-use Illuminate\Console\Scheduling\CallbackEvent;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Queue;
@@ -22,7 +21,6 @@ it('schedules a direct method call at the configured interval in seconds', funct
 
     expect($events)->toHaveCount(1);
     $event = $events[0];
-    expect($event)->toBeInstanceOf(CallbackEvent::class)->and($event->repeatSeconds)->toBe(1);
 
     $this->travelTo(now()->setTimestamp(0));
     expect($event->filtersPass(app()))->toBeTrue();

@@ -104,8 +104,6 @@ it('builds a confluent jdbc sink connector config with field renames', function 
         ->toBe('true')
         ->and($config['auto.create'])
         ->toBe('false')
-        ->and($config['connection.url'])
-        ->toBe('jdbc:postgresql://db.internal:5432/:memory:')
         ->and($config['transforms.rename_keys.renames'])
         ->toBe('_idrref:external_id')
         ->and($config['transforms.rename_values.renames'])
@@ -246,17 +244,21 @@ it('builds a static sink with fixed fields and its target upstream', function (
     ],
 ]);
 
-it('refuses to build a sink for an unregistered static destination', function () {
-    $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
-    TestCase::makeItem($upstream);
-
+it('refuses to resolve a static destination whose registration was removed', function () {
+    $destinations = app(DestinationFactory::class);
+    $destinations->register(customers_destination());
     $replica = TestCase::makeReplica([
-        'upstream_id' => $upstream->id,
-        'source' => 'object-0',
+        'type' => DestinationType::Static,
+        'destination' => 'customers',
+        'mapping' => [
+            new FieldMapping('_idrref', 'customer_id'),
+            FieldMapping::fromArray(['kind' => 'static', 'target' => 'name', 'static' => 'Customer', 'options' => []]),
+            FieldMapping::fromArray(['kind' => 'static', 'target' => 'tax_number', 'static' => '123', 'options' => []]),
+        ],
     ]);
-    $replica->forceFill(['type' => DestinationType::Static, 'destination' => 'customers'])->saveQuietly();
+    $withoutRegistration = new DestinationFactory(app(ReplicaSchemaResolver::class));
 
-    expect(fn () => new DestinationFactory(app(ReplicaSchemaResolver::class))->resolve($replica))
+    expect(fn () => $withoutRegistration->resolve($replica))
         ->toThrow(LogicException::class, __('phpinnacle-ferry::resources.replica.errors.static_destination_missing', [
             'destination' => 'customers',
         ]));

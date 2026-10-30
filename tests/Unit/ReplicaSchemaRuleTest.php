@@ -21,7 +21,7 @@ $validate = function (mixed $columns) {
 };
 
 it('accepts valid target columns', function () use ($validate) {
-    expect($validate(['external_id', 'title']))->toBeNull();
+    expect($validate(['external_id', 'title', 'idrref']))->toBeNull();
 });
 
 it('requires at least one mapped column', function () use ($validate) {
@@ -49,10 +49,6 @@ it('accepts only snake case latin column names', function (string $column) use (
     'hyphen' => 'column-name',
     'space' => 'column name',
 ]);
-
-it('allows the former technical column name', function () use ($validate) {
-    expect($validate(['idrref']))->toBeNull();
-});
 
 it('requires a declared source primary key for mappings', function () {
     $validator = Validator::make(['mapping' => ['record_id']], ['mapping' => [

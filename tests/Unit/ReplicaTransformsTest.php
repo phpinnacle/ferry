@@ -10,7 +10,6 @@ use PHPinnacle\Ferry\Forms\FieldTransforms;
 use PHPinnacle\Ferry\Models\Replica;
 use PHPinnacle\Ferry\Origins\Kafka\TransformFactory;
 use PHPinnacle\Ferry\Services\ReplicaSchemaResolver;
-use PHPinnacle\Ferry\Services\ReplicaTableManager;
 use PHPinnacle\Ferry\Services\TransformRegistry;
 use PHPinnacle\Ferry\Tests\Fixtures\SchemaHost;
 use PHPinnacle\Ferry\Tests\Fixtures\StructureItems;
@@ -155,46 +154,4 @@ it('previews only the valid prefix of an incomplete record chain', function () {
     expect(array_keys($preview->properties()))->toBe(['name', 'slug']);
     expect($registry->resultSchema($schema, $settings, null, TransformScope::Record))->toBeNull();
     expect($registry->previewRecordSchema($schema, []))->toBe($schema);
-});
-
-it('preserves mapping change order when dropping, replacing, renaming and adding columns together', function () {
-    $schema = [
-        'type' => 'object',
-        'properties' => [
-            'removed_first' => ['type' => 'string'],
-            'flag' => ['type' => 'boolean'],
-            'name' => ['type' => 'string', 'maxLength' => 10],
-            'removed_last' => ['type' => 'string'],
-            'added' => ['type' => 'integer'],
-        ],
-    ];
-    $replica = new Replica([
-        'schema' => JsonSchema::fromArray($schema),
-        'mapping' => [
-            new FieldMapping('removed_first', 'removed_first'),
-            new FieldMapping('flag', 'flag'),
-            new FieldMapping('name', 'name'),
-            new FieldMapping('removed_last', 'removed_last'),
-        ],
-    ]);
-    $replica->syncOriginal();
-    $schema['properties']['flag'] = ['type' => 'integer'];
-    $schema['properties']['name']['maxLength'] = 20;
-    $replica->schema = JsonSchema::fromArray($schema);
-    $renamed = new FieldMapping('name', 'display_name');
-    $added = new FieldMapping('added', 'added');
-    $changed = new FieldMapping('flag', 'flag');
-    $replica->mapping = [$renamed, $added, $changed];
-
-    $changes = app(ReplicaTableManager::class)->mappingChanges($replica);
-
-    expect($changes)->toEqual([
-        'drop' => ['removed_first', 'flag', 'removed_last'],
-        'columns' => [
-            ['mapping' => $renamed, 'from' => 'name'],
-            ['mapping' => $added, 'from' => null],
-            ['mapping' => $changed, 'from' => null],
-        ],
-        'alter' => [$renamed],
-    ]);
 });

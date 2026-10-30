@@ -29,16 +29,21 @@ beforeEach(function () {
 });
 
 it('stores and serializes ordered record transforms', function () {
-    $replica = TestCase::makeReplica(['mapping' => []]);
+    $upstream = TestCase::makeUpstream();
+    TestCase::makeItem($upstream, ['sources' => ['name' => ['type' => 'string']]]);
+    $replica = TestCase::makeReplica(['upstream_id' => $upstream->id, 'mapping' => []]);
     expect($replica->fresh()->transforms)->toBe([]);
 
     $settings = [
-        new TransformSetting('future_first', ['field' => '_description']),
-        new TransformSetting('future_second', ['value' => 'example']),
+        new TransformSetting('insert_uuid', ['fields' => ["$['_idrref']"], 'output' => 'uuid']),
+        new TransformSetting('slug', ['input' => "$['name']", 'output' => 'slug']),
     ];
     $replica->update(['transforms' => $settings]);
     $saved = $replica->fresh();
-    $serialized = array_map(fn (TransformSetting $setting) => $setting->jsonSerialize(), $settings);
+    $serialized = [
+        ['type' => 'insert_uuid', 'data' => ['fields' => ["$['_idrref']"], 'output' => 'uuid']],
+        ['type' => 'slug', 'data' => ['input' => "$['name']", 'output' => 'slug']],
+    ];
 
     expect($saved->transforms)
         ->toEqual($settings)
@@ -468,4 +473,68 @@ it('copies the complete input schema on creation and keeps its own snapshot afte
         ->toBe([])
         ->and(Schema::hasTable($replica->destination))
         ->toBeFalse();
+});
+it('applies combined removals, type replacements, renames and additions without losing retained values', function () {
+    $upstream = TestCase::makeUpstream();
+    TestCase::makeItem($upstream, [
+        'sources' => [
+            'removed_first' => ['type' => 'string'],
+            'flag' => ['type' => 'boolean'],
+            'name' => ['type' => 'string', 'maxLength' => 10],
+            'removed_last' => ['type' => 'string'],
+            'added' => ['type' => 'integer'],
+        ],
+    ]);
+    $replica = TestCase::makeReplica([
+        'upstream_id' => $upstream->id,
+        'mapping' => [
+            TestCase::keyMapping(),
+            new FieldMapping('removed_first', 'removed_first'),
+            new FieldMapping('flag', 'flag'),
+            new FieldMapping('name', 'name'),
+            new FieldMapping('removed_last', 'removed_last'),
+        ],
+    ]);
+    DB::table($replica->destination)->insert([
+        'external_id' => 'row-1',
+        'removed_first' => 'old',
+        'flag' => true,
+        'name' => 'Retained',
+        'removed_last' => 'old',
+    ]);
+    $schema = $replica->schema->toArray();
+    $schema['properties']['flag'] = ['type' => 'integer'];
+    $schema['properties']['name']['maxLength'] = 20;
+
+    $replica->update([
+        'schema' => JsonSchema::fromArray($schema),
+        'mapping' => [
+            TestCase::keyMapping(),
+            new FieldMapping('name', 'display_name'),
+            new FieldMapping('added', 'added'),
+            new FieldMapping('flag', 'flag'),
+        ],
+    ]);
+
+    expect(DB::table($replica->destination)->sole())->toEqual((object) [
+        'external_id' => 'row-1',
+        'display_name' => 'Retained',
+        'added' => null,
+        'flag' => null,
+    ]);
+    expect(Schema::getColumnListing($replica->destination))->toEqualCanonicalizing([
+        'external_id',
+        'display_name',
+        'added',
+        'flag',
+    ]);
+    DB::table($replica->destination)
+        ->where('external_id', 'row-1')
+        ->update(['added' => 7, 'flag' => 2, 'display_name' => 'A longer name']);
+    expect(DB::table($replica->destination)->value('flag'))->toBe(2);
+    expect(
+        collect($replica->getConnection()->getSchemaBuilder()->getColumns($replica->destination))
+            ->firstWhere('name', 'flag')['type_name'],
+    )
+        ->toBe('integer');
 });

@@ -39,6 +39,43 @@ $makeProperty = fn (string $id, string $name, string $label, string $title, obje
     field: $field,
 );
 
+it('imports property comments onto every physical column of scalar and composite fields', function (
+    Field $field,
+    array $columns,
+    ?string $comment,
+) use ($makeObject) {
+    $object = $makeObject(['properties' => [new MetadataProperty(
+        id: 'commented',
+        code: 1,
+        kind: PropertyKind::Field,
+        name: '_fld1',
+        label: 'Label',
+        title: 'Title',
+        field: $field,
+        comment: $comment,
+    )]]);
+
+    foreach ($columns as $column) {
+        if ($comment === null) {
+            expect($object->schema->properties()[$column]->toArray())->not->toHaveKey('description');
+
+            continue;
+        }
+
+        expect($object->schema->properties()[$column]->annotation('description'))
+            ->toBe($comment);
+    }
+})->with([
+    'scalar' => [new StringField(100, false), ['_fld1']],
+    'composite reference' => [
+        new UnionField([new ReferenceField('catalog-a'), new ReferenceField('catalog-b')]),
+        ['_fld1_type', '_fld1_rtref', '_fld1_rrref'],
+    ],
+])->with([
+    'no comment' => [null],
+    'multiline comment' => ["Developer note\nKeep this line."],
+]);
+
 it('lists mappable fields with translated system titles and property titles', function () use (
     $makeObject,
     $makeProperty,
@@ -270,30 +307,26 @@ it('expands references inside nested type definitions without duplicating their 
         ->toEqual(['type' => 'string', 'maxLength' => 30]);
 });
 
-it('projects Rosetta scalar types into JSON Schema', function (Field $field, ?string $type) {
+it('projects scalar formats and omits unsupported Rosetta types', function (Field $field, array $expected) {
     expect(
         new StructureConverter()
             ->field($field)
-            ->singleType(),
+            ->toArray(),
     )
-        ->toBe($type);
+        ->toBe($expected);
 })->with([
-    'limited string' => [new StringField(length: 50, fixed: false), 'string'],
-    'unlimited string' => [new StringField(length: null, fixed: false), 'string'],
-    'reference' => [new ReferenceField('catalog.products'), 'string'],
-    'whole number' => [new NumberField(precision: 10, scale: 0, unsigned: false), 'integer'],
-    'number without scale' => [new NumberField(precision: null, scale: null, unsigned: false), 'integer'],
-    'fractional number' => [new NumberField(precision: 15, scale: 2, unsigned: false), 'number'],
-    'flag' => [new ScalarField(FieldType::Boolean), 'boolean'],
-    'date' => [new ScalarField(FieldType::Date), 'string'],
-    'time' => [new ScalarField(FieldType::Time), 'string'],
-    'date and time' => [new ScalarField(FieldType::DateTime), 'string'],
-    'identifier' => [new ScalarField(FieldType::Id), 'string'],
-    'uuid' => [new ScalarField(FieldType::Uuid), 'string'],
-    'binary' => [new ScalarField(FieldType::Binary), null],
-    'unknown' => [new ScalarField(FieldType::Unknown), null],
-    'undefined' => [new ScalarField(FieldType::Undefined), null],
-    'union' => [new UnionField([new StringField(length: null, fixed: false)]), null],
+    'boolean' => [new ScalarField(FieldType::Boolean), ['type' => 'boolean']],
+    'date' => [new ScalarField(FieldType::Date), ['type' => 'string', 'format' => 'date-time']],
+    'time' => [new ScalarField(FieldType::Time), ['type' => 'string', 'format' => 'date-time']],
+    'date and time' => [new ScalarField(FieldType::DateTime), ['type' => 'string', 'format' => 'date-time']],
+    'UUID without reference semantics' => [
+        new ScalarField(FieldType::Uuid),
+        ['type' => 'string', 'format' => 'uuid', 'minLength' => 36, 'maxLength' => 36],
+    ],
+    'binary' => [new ScalarField(FieldType::Binary), []],
+    'unknown' => [new ScalarField(FieldType::Unknown), []],
+    'undefined' => [new ScalarField(FieldType::Undefined), []],
+    'union' => [new UnionField([new StringField(null, false)]), []],
 ]);
 
 it('projects available Rosetta constraints without rounding numeric metadata', function (

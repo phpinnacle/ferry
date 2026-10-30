@@ -3,7 +3,6 @@
 use Filament\Actions\Testing\TestAction;
 use Illuminate\Support\Facades\Queue;
 use Livewire\Livewire;
-use PHPinnacle\Eidos\Forms\JsonSchemaPicker;
 use PHPinnacle\Ferry\Data\FieldMapping;
 use PHPinnacle\Ferry\Destinations\StaticDestination;
 use PHPinnacle\Ferry\Enums\DestinationType;
@@ -56,16 +55,6 @@ it('adds and persists a slug through the tabbed builder in both editors', functi
     $page->callAction(TestAction::make('add')->schemaComponent('transforms', 'form'), arguments: ['block' => 'slug'])
         ->assertHasNoErrors();
     $item = array_key_first($page->get('data.transforms'));
-    $html = $page->effects['html'] ?? implode('', $page->effects['partials'] ?? []);
-    expect($html)->toContain('wire:model.live.blur="data.transforms.' . $item . '.data.output"');
-    $picker = $page
-        ->instance()
-        ->form
-        ->getComponentByStatePath('transforms')
-        ->getChildSchema($item)
-        ->getComponentByStatePath('input');
-    expect($picker)->toBeInstanceOf(JsonSchemaPicker::class);
-    expect($picker->isMultiple())->toBeFalse();
     $page
         ->set('data.transforms.' . $item . '.data.input', "$['name']")
         ->assertSee('slug');

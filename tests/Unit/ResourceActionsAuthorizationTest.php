@@ -72,14 +72,15 @@ it('authorizes structure preparation against update permission', function (strin
 it('requires access to both resource lists to refresh all connector statuses', function (
     bool $replicas,
     bool $upstreams,
+    bool $allowed,
 ) {
     $this->user->testPermissions['view_any_replica'] = $replicas;
     $this->user->testPermissions['view_any_upstream'] = $upstreams;
 
-    expect(RefreshConnectorStatusesAction::table()->isAuthorized())->toBe($replicas && $upstreams);
+    expect(RefreshConnectorStatusesAction::table()->isAuthorized())->toBe($allowed);
 })->with([
-    'both lists' => [true, true],
-    'replicas only' => [true, false],
-    'upstreams only' => [false, true],
-    'neither list' => [false, false],
+    'both lists' => [true, true, true],
+    'replicas only' => [true, false, false],
+    'upstreams only' => [false, true, false],
+    'neither list' => [false, false, false],
 ]);
