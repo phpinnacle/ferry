@@ -430,6 +430,55 @@ it('accepts UUID transform outputs for reference destinations', function () {
     ]);
 });
 
+it('refreshes transform inputs when a source schema changes without renaming fields', function (DestinationType $type) {
+    app(DestinationFactory::class)->register(customers_destination());
+    $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
+    TestCase::makeItem($upstream, [
+        'sources' => [
+            'first' => ['type' => 'string', 'maxLength' => 10],
+            'second' => ['type' => 'integer'],
+        ],
+    ]);
+    $form = TestCase::replicaForm([
+        'upstream_id' => $upstream->id,
+        'source' => 'object-0',
+        'type' => $type->value,
+        'destination' => $type === DestinationType::Static ? 'customers' : null,
+    ]);
+    $mapping = $form->getComponentByStatePath('mapping');
+    $indexes = $mapping->getSourceRowIndexes();
+    $first = $form->getComponentByStatePath('mapping.' . $indexes['first'] . '.options.transforms');
+    $second = $form->getComponentByStatePath('mapping.' . $indexes['second'] . '.options.transforms');
+    expect($first->getInputSchema()->effectiveMaxLength())->toBe(10);
+    expect($second->getInputSchema()->singleType())->toBe('integer');
+    $source = Schema::fromArray([
+        '$defs' => [
+            'fields' => [
+                'properties' => [
+                    'first' => ['type' => 'boolean'],
+                    'second' => ['type' => 'string', 'maxLength' => 12],
+                ],
+            ],
+        ],
+        'allOf' => [['$ref' => '#/$defs/fields']],
+    ]);
+    if ($mapping instanceof FieldMapping) {
+        $mapping->jsonSchema(source: $source);
+    } else {
+        $mapping->jsonSchema($source);
+    }
+
+    expect($first->getInputSchema()->singleType())->toBe('boolean');
+    expect($second->getInputSchema()->singleType())->toBe('string');
+    expect($second->getInputSchema()->effectiveMaxLength())->toBe(12);
+    $first->state([['type' => 'cast', 'data' => ['type' => 'string']]]);
+    expect($first->getInputSchema()->singleType())->toBe('string');
+    expect($second->getInputSchema()->effectiveMaxLength())->toBe(12);
+    expect($mapping->getSourceSettings()['first']['transforms'])
+        ->toBe([['type' => 'cast', 'data' => ['type' => 'string']]]);
+    expect($mapping->getSourceSettings()['second']['transforms'])->toBe([]);
+})->with([DestinationType::Dynamic, DestinationType::Static]);
+
 it('updates derived mapping sources through Livewire while retaining existing bindings', function (DestinationType $type) {
     app(DestinationFactory::class)->register(customers_destination());
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);

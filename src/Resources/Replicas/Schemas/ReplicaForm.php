@@ -262,15 +262,30 @@ class ReplicaForm
             ),
         };
 
+        $cachedSourceSchema = null;
+        /** @var array<string, Schema> $cachedSourceProperties */
+        $cachedSourceProperties = [];
+        $sourceProperties = function (FieldMapping|FieldBinding $component) use (
+            &$cachedSourceSchema,
+            &$cachedSourceProperties,
+        ) {
+            $schema = $component->getSourceSchema();
+            if ($schema !== $cachedSourceSchema) {
+                $cachedSourceProperties = $schema->resolveReferences()->effectiveProperties();
+                $cachedSourceSchema = $schema;
+            }
+
+            return $cachedSourceProperties;
+        };
         $mapping->sourceSettings(
-            function (FieldMapping|FieldBinding $component, string $source, ?Closure $inputSchema = null) {
-                $sourceSchema = $component->getSourceSchema();
+            function (FieldMapping|FieldBinding $component, string $source, ?Closure $inputSchema = null) use (
+                $sourceProperties,
+            ) {
+                $properties = $sourceProperties($component);
                 $static = $inputSchema !== null;
-                $inputSchema ??= fn () => $sourceSchema->resolveReferences()->effectiveProperties()[$source];
+                $inputSchema ??= fn () => $sourceProperties($component)[$source];
                 /** @var string $label */
-                $label =
-                    ($sourceSchema->resolveReferences()->effectiveProperties()[$source] ?? null)?->annotation('title')
-                    ?? $source;
+                $label = ($properties[$source] ?? null)?->annotation('title') ?? $source;
 
                 /** @var Closure(): Schema $inputSchema */
 
