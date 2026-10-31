@@ -1,6 +1,12 @@
 <?php
 
 return [
+    'connector' => [
+        'actions' => [
+            'config' => 'Connector config',
+            'close' => 'Close',
+        ],
+    ],
     'upstream' => [
         'label' => 'Upstreams',
         'group' => 'Integrations',

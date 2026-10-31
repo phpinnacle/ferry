@@ -1,6 +1,12 @@
 <?php
 
 return [
+    'connector' => [
+        'actions' => [
+            'config' => 'Конфигурация коннектора',
+            'close' => 'Закрыть',
+        ],
+    ],
     'upstream' => [
         'label' => 'Источники',
         'group' => 'Интеграции',

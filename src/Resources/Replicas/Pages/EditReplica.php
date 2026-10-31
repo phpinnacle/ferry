@@ -7,6 +7,7 @@ use Filament\Resources\Pages\EditRecord;
 use Illuminate\Contracts\Support\Htmlable;
 use PHPinnacle\Ferry\Enums\DestinationType;
 use PHPinnacle\Ferry\Models\Replica;
+use PHPinnacle\Ferry\Resources\Actions\ViewConnectorConfigAction;
 use PHPinnacle\Ferry\Resources\Replicas\Actions\PauseReplicaAction;
 use PHPinnacle\Ferry\Resources\Replicas\Actions\StartReplicaAction;
 use PHPinnacle\Ferry\Resources\Replicas\ReplicaResource;
@@ -26,6 +27,7 @@ class EditReplica extends EditRecord
     protected function getHeaderActions(): array
     {
         return [
+            ViewConnectorConfigAction::make(),
             StartReplicaAction::table()->button(),
             PauseReplicaAction::table()->button(),
             DeleteAction::make()

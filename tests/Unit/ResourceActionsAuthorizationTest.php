@@ -8,6 +8,7 @@ use PHPinnacle\Ferry\Models\Upstream;
 use PHPinnacle\Ferry\Policies\ReplicaPolicy;
 use PHPinnacle\Ferry\Policies\UpstreamPolicy;
 use PHPinnacle\Ferry\Resources\Actions\RefreshConnectorStatusesAction;
+use PHPinnacle\Ferry\Resources\Actions\ViewConnectorConfigAction;
 use PHPinnacle\Ferry\Resources\Replicas\Actions\PauseReplicaAction;
 use PHPinnacle\Ferry\Resources\Replicas\Actions\StartReplicaAction;
 use PHPinnacle\Ferry\Resources\Upstreams\Actions\PrepareStructureAction;
@@ -83,4 +84,18 @@ it('requires access to both resource lists to refresh all connector statuses', f
     'replicas only' => [true, false, false],
     'upstreams only' => [false, true, false],
     'neither list' => [false, false, false],
+]);
+
+it('requires update permission to view connector configuration', function (string $model, string $permission) {
+    $action = ViewConnectorConfigAction::make()->record(new $model);
+    $this->user->testPermissions[str_replace('update_', 'view_', $permission)] = true;
+
+    expect($action->isAuthorized())->toBeFalse();
+
+    $this->user->testPermissions[$permission] = true;
+
+    expect($action->isAuthorized())->toBeTrue();
+})->with([
+    'upstream' => [Upstream::class, 'update_upstream'],
+    'replica' => [Replica::class, 'update_replica'],
 ]);

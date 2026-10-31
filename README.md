@@ -494,6 +494,8 @@ Kafka helpers live under `Origins\Kafka`. `SinkConfigFactory` receives `Transfor
 
 Both `Upstream` and `Replica` store a nullable `connector_id`. A new upstream without replicas creates no connector. Checking status does not create one either. `Connector` stores its origin key, upstream id, external name, reported status, error and check timestamp. Its `config` is the desired configuration; `applied_config` is the last configuration successfully applied by the worker. Both configurations use encrypted arrays in TEXT columns and are hidden from serialization. Failed operations leave the desired configuration available for retry and record the connector error.
 
+**Connector config** in the Upstream and Replica edit headers opens the saved desired configuration as formatted JSON with copying support. It is available once a connector configuration exists and requires the owner's `update` permission. The JSON includes connection credentials. Viewing it does not contact the origin, regenerate settings, save form drafts, or dispatch jobs; pending changes may not yet match `applied_config`.
+
 A source connector failure concerns all replicas of its upstream, while a sink connector failure concerns its replica alone. A connector that reports itself as running while one of its tasks has failed is recorded as failed together with the trace of that task, so a stalled transfer stays visible. Both states are shown as badges in the Filament tables and can be refreshed from there.
 
 Refresh the statuses of all saved source and sink connectors from Artisan:
