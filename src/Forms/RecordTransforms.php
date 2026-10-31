@@ -8,6 +8,7 @@ use PHPinnacle\Common\Forms\TabbedBuilder;
 use PHPinnacle\Ferry\Contracts\Transform;
 use PHPinnacle\Ferry\Data\TransformSetting;
 use PHPinnacle\Ferry\Enums\TransformScope;
+use PHPinnacle\Ferry\Services\ReplicaSchemaResolver;
 use PHPinnacle\Ferry\Services\TransformRegistry;
 use PHPinnacle\Jason\Schema;
 
@@ -38,7 +39,7 @@ class RecordTransforms extends TabbedBuilder
             $items[] = $item;
         }
 
-        return app(TransformRegistry::class)->previewRecordSchema(
+        return app(ReplicaSchemaResolver::class)->previewRecordSchema(
             $this->inputSchema,
             array_map(TransformSetting::fromArray(...), $items),
         );
@@ -57,9 +58,9 @@ class RecordTransforms extends TabbedBuilder
             ),
         )));
         $this->live();
-        $this->rules(fn (TransformRegistry $transforms) => [
+        $this->rules(fn (ReplicaSchemaResolver $schemas) => [
             fn (string $attribute, mixed $value, Closure $fail) => $this->validateSettings(
-                $transforms,
+                $schemas,
                 $attribute,
                 $value,
                 $fail,
@@ -69,7 +70,7 @@ class RecordTransforms extends TabbedBuilder
 
     /** @param Closure(string): PotentiallyTranslatedString $fail */
     private function validateSettings(
-        TransformRegistry $transforms,
+        ReplicaSchemaResolver $schemas,
         string $attribute,
         mixed $value,
         Closure $fail,
@@ -82,7 +83,7 @@ class RecordTransforms extends TabbedBuilder
 
         /** @var array<string, TransformData>|null $value */
         if (
-            $transforms->resultSchema(
+            $schemas->resultSchema(
                 $this->inputSchema,
                 array_map(TransformSetting::fromArray(...), array_values($value ?? [])),
                 null,

@@ -11,6 +11,7 @@ use PHPinnacle\Ferry\Enums\KafkaType;
 use PHPinnacle\Ferry\Enums\TransformTarget;
 use PHPinnacle\Ferry\Models\Replica;
 use PHPinnacle\Ferry\Origins\Kafka\TransformFactory;
+use PHPinnacle\Ferry\Services\ReplicaSchemaResolver;
 use PHPinnacle\Ferry\Services\TransformRegistry;
 use PHPinnacle\Ferry\Tests\Fakes\Transform as FakeTransform;
 use PHPinnacle\Ferry\Tests\Fixtures\SchemaHost;
@@ -40,8 +41,10 @@ it('resolves only the configured transform classes through the container', funct
     $registry = app(TransformRegistry::class);
 
     expect(array_keys($registry->all()))->toBe(['configured', 'cast']);
+    expect($registry->find('configured'))->toBe($transform);
+    expect($registry->find('missing'))->toBeNull();
     expect($registry->get('configured'))->toBe($transform);
-    expect($registry->get('cast'))->toBeInstanceOf(Cast::class);
+    expect($registry->find('cast'))->toBeInstanceOf(Cast::class);
 });
 
 it('keeps key and value transformation chains on their declared record targets', function () {
@@ -50,8 +53,9 @@ it('keeps key and value transformation chains on their declared record targets',
     $registry->register($key);
     $schema = Schema::fromArray(['type' => 'string']);
     $settings = [new TransformSetting('custom')];
-    expect($registry->resultSchema($schema, $settings))->toBeNull();
-    expect($registry->resultSchema($schema, $settings, TransformTarget::Key)?->toArray())->toBe($schema->toArray());
+    $schemas = new ReplicaSchemaResolver($registry);
+    expect($schemas->resultSchema($schema, $settings))->toBeNull();
+    expect($schemas->resultSchema($schema, $settings, TransformTarget::Key)?->toArray())->toBe($schema->toArray());
 });
 
 it('uses translated Kafka type labels and stores their native string values', function (string $locale, array $labels) {
@@ -252,12 +256,12 @@ it('casts a typed constant after inserting it', function () {
 it('registers optional installed field transforms through the shared registry', function () {
     $registry = $this->app->make(TransformRegistry::class);
     $registry->register(Trim::make(), Substring::make(), MaskField::make());
-    expect($registry->resultSchema(Schema::fromArray(['type' => 'string']), [
+    expect(app(ReplicaSchemaResolver::class)->resultSchema(Schema::fromArray(['type' => 'string']), [
         new TransformSetting('trim'),
         new TransformSetting('substring', ['start' => '0']),
         new TransformSetting('mask', ['replacement' => '***']),
     ])?->toArray())->toBe(['type' => 'string']);
-    expect($registry->resultSchema(Schema::fromArray(['type' => 'boolean']), [
+    expect(app(ReplicaSchemaResolver::class)->resultSchema(Schema::fromArray(['type' => 'boolean']), [
         new TransformSetting('mask', ['replacement' => '***']),
     ]))->toBeNull();
 });
@@ -391,9 +395,9 @@ it('passes the complete preceding output schema to callbacks in an ordered chain
     );
     $input = Schema::fromArray(['type' => 'string', 'format' => 'email']);
 
-    expect($registry->resultSchema($input, []))->toBe($input);
+    expect(app(ReplicaSchemaResolver::class)->resultSchema($input, []))->toBe($input);
     expect(
-        $registry
+        app(ReplicaSchemaResolver::class)
             ->resultSchema($input, [
                 new TransformSetting('limit', ['length' => '80']),
                 new TransformSetting('limit', ['length' => '40']),
@@ -442,7 +446,7 @@ it('compiles a custom registered transform without building its settings form', 
         ],
         'sources' => [],
     ]);
-    expect($registry->get('headless'))
+    expect($registry->find('headless'))
         ->toBe($transform)
         ->and(
             $factory->pipeline($replica, $object)['transforms.field_0_0.filter.condition'],

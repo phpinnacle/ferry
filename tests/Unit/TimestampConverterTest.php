@@ -34,7 +34,7 @@ it('offers timestamp conversion for supported field types', function (array $inp
 ]);
 
 it('projects timestamp output types without retaining input constraints', function (string $target, array $output) {
-    $transform = app(TransformRegistry::class)->getOrFail('timestamp_converter');
+    $transform = app(TransformRegistry::class)->get('timestamp_converter');
     foreach ([false, true] as $nullable) {
         $input = Schema::fromArray([
             'type' => $nullable ? ['string', 'null'] : 'string',

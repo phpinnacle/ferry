@@ -8,6 +8,7 @@ use PHPinnacle\Ferry\Enums\FieldKind;
 use PHPinnacle\Ferry\Enums\TransformScope;
 use PHPinnacle\Ferry\Models\Replica;
 use PHPinnacle\Ferry\Models\StructureItem;
+use PHPinnacle\Ferry\Services\ReplicaSchemaResolver;
 use PHPinnacle\Ferry\Services\TransformRegistry;
 use PHPinnacle\Jason\Schema;
 
@@ -16,6 +17,7 @@ class TransformFactory
 {
     public function __construct(
         private readonly TransformRegistry $transforms,
+        private readonly ReplicaSchemaResolver $schemas,
     ) {}
 
     /**
@@ -44,7 +46,7 @@ class TransformFactory
         }
 
         foreach ($replica->transforms as $index => $setting) {
-            $pipeline['replica_' . $index] = $this->transforms->getOrFail($setting->type)->connector($setting->data);
+            $pipeline['replica_' . $index] = $this->transforms->get($setting->type)->connector($setting->data);
         }
 
         foreach ($replica->mapping as $index => $mapping) {
@@ -65,7 +67,7 @@ class TransformFactory
 
             foreach ($mapping->transforms() as $position => $setting) {
                 $name = sprintf('field_%d_%d', $index, $position + $offset);
-                $pipeline[$name] = $this->transforms->getOrFail($setting->type)->connector(['field' => $source]
+                $pipeline[$name] = $this->transforms->get($setting->type)->connector(['field' => $source]
                 + $setting->data);
             }
         }
@@ -102,7 +104,7 @@ class TransformFactory
         ];
         if ($columns === []) {
             /** @var Schema $schema */
-            $schema = $this->transforms->resultSchema(
+            $schema = $this->schemas->resultSchema(
                 $object->schema,
                 $replica->transforms,
                 null,

@@ -8,14 +8,14 @@ use Illuminate\Translation\PotentiallyTranslatedString;
 use Illuminate\Validation\ValidationException;
 use PHPinnacle\Ferry\Data\FieldMapping;
 use PHPinnacle\Ferry\Destinations\StaticDestination;
+use PHPinnacle\Ferry\Services\ReplicaSchemaResolver;
 use PHPinnacle\Ferry\Services\ReplicaTableManager;
-use PHPinnacle\Ferry\Services\TransformRegistry;
 use PHPinnacle\Jason\Schema;
 
 readonly class ReplicaSchema
 {
     public function __construct(
-        private TransformRegistry $transforms,
+        private ReplicaSchemaResolver $schemas,
     ) {}
 
     /**
@@ -117,7 +117,7 @@ readonly class ReplicaSchema
                 continue;
             }
 
-            $output = $this->transforms->mappingSchema($mapping, $sourceSchema);
+            $output = $this->schemas->mappingSchema($mapping, $sourceSchema);
             if ($output === null || ReplicaTableManager::columnType($output) === null) {
                 throw ValidationException::withMessages([
                     'data.mapping' => __('phpinnacle-ferry::resources.replica.errors.unsupported_field_type', [

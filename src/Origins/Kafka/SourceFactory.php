@@ -68,7 +68,7 @@ class SourceFactory
 
             foreach ($replica->transforms as $setting) {
                 foreach ($this->transforms
-                    ->getOrFail($setting->type)
+                    ->get($setting->type)
                     ->sourceFields($setting->data) as $column) {
                     if ($object->field($column) !== null) {
                         $sourceColumns[] = $column;

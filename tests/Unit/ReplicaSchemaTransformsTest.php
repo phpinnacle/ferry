@@ -6,6 +6,7 @@ use PHPinnacle\Ferry\Data\FieldMapping;
 use PHPinnacle\Ferry\Data\TransformSetting;
 use PHPinnacle\Ferry\Enums\FieldKind;
 use PHPinnacle\Ferry\Rules\ReplicaSchema;
+use PHPinnacle\Ferry\Services\ReplicaSchemaResolver;
 use PHPinnacle\Ferry\Services\TransformRegistry;
 use PHPinnacle\Ferry\Tests\Fakes\Transform as FakeTransform;
 use PHPinnacle\Jason\Schema;
@@ -49,7 +50,7 @@ it('calculates a composed output schema from input schema and mapping options', 
     $key = new FieldMapping(source: 'id', target: 'id');
     app(ReplicaSchema::class)->assertValid([$mapping, $key], null, ['id'], $schema);
 
-    expect($registry->mappingSchema($mapping, $schema)->toArray())
+    expect(app(ReplicaSchemaResolver::class)->mappingSchema($mapping, $schema)->toArray())
         ->toBe(['type' => ['string', 'null'], 'maxLength' => 100])
         ->and($mapping->transforms())
         ->toEqual([new TransformSetting('pack'), new TransformSetting('join')])

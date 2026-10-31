@@ -18,6 +18,7 @@ use PHPinnacle\Ferry\Forms\FieldTransforms;
 use PHPinnacle\Ferry\Models\Replica;
 use PHPinnacle\Ferry\Models\StructureItem;
 use PHPinnacle\Ferry\Origins\Kafka\TransformFactory;
+use PHPinnacle\Ferry\Services\ReplicaSchemaResolver;
 use PHPinnacle\Ferry\Services\TransformRegistry;
 use PHPinnacle\Ferry\Tests\Fakes\Transform as FakeTransform;
 use PHPinnacle\Ferry\Tests\Fixtures\SchemaHost;
@@ -465,9 +466,13 @@ it('lets a custom array transform participate in the same schema chain', functio
         ['type' => 'join', 'data' => []],
         ['type' => 'trim', 'data' => []],
     ]);
-    expect($registry->resultSchema(Schema::fromArray(['type' => 'array', 'items' => ['type' => 'string']]), [
-        new TransformSetting('join'),
-    ])?->toArray())->toBe(['type' => 'string', 'maxLength' => 20]);
+    expect(
+        app(ReplicaSchemaResolver::class)
+            ->resultSchema(Schema::fromArray(['type' => 'array', 'items' => ['type' => 'string']]), [
+                new TransformSetting('join'),
+            ])
+            ?->toArray(),
+    )->toBe(['type' => 'string', 'maxLength' => 20]);
 });
 
 it('preserves JSONPath predicates when a preceding cast changes type', function (string $type) {
@@ -626,7 +631,7 @@ it('registers independent transform implementations and uses their native blocks
     $registry = app(TransformRegistry::class);
     $registry->register($transform);
 
-    expect($registry->getOrFail('custom'))->toBe($transform);
+    expect($registry->get('custom'))->toBe($transform);
     expect(array_keys($this->field->getAvailableBlocks()))->toContain('custom');
     $action = BuilderAction::make($this->field)->schemaComponent($this->field);
     $action(['block' => 'custom'])->data(['data' => ['value' => 'hello']])->call();

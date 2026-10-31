@@ -11,6 +11,7 @@ use PHPinnacle\Ferry\Contracts\Transform;
 use PHPinnacle\Ferry\Data\TransformSetting;
 use PHPinnacle\Ferry\Enums\TransformScope;
 use PHPinnacle\Ferry\Enums\TransformTarget;
+use PHPinnacle\Ferry\Services\ReplicaSchemaResolver;
 use PHPinnacle\Ferry\Services\TransformRegistry;
 use PHPinnacle\Jason\Schema;
 
@@ -39,7 +40,7 @@ class FieldTransforms extends InlineBuilder
 
     public function getInputSchema(?int $index = null): ?Schema
     {
-        return $this->resolveSettings(app(TransformRegistry::class), $index)['schema'];
+        return $this->resolveSettings(app(ReplicaSchemaResolver::class), $index)['schema'];
     }
 
     /**
@@ -72,7 +73,7 @@ class FieldTransforms extends InlineBuilder
 
         return array_filter(
             $blocks,
-            fn (InlineBlock $block) => $registry->getOrFail($block->getName())->accepts($schema),
+            fn (InlineBlock $block) => $registry->get($block->getName())->accepts($schema),
         );
     }
 
@@ -85,12 +86,12 @@ class FieldTransforms extends InlineBuilder
 
         return array_map(
             static fn (TransformSetting $setting) => $setting->jsonSerialize(),
-            $this->resolveSettings(app(TransformRegistry::class))['settings'],
+            $this->resolveSettings(app(ReplicaSchemaResolver::class))['settings'],
         );
     }
 
     /** @return array{settings: list<TransformSetting>, schema: Schema|null, invalid: TransformSetting|null} */
-    private function resolveSettings(TransformRegistry $registry, ?int $beforeIndex = null): array
+    private function resolveSettings(ReplicaSchemaResolver $schemas, ?int $beforeIndex = null): array
     {
         $settings = [];
         $invalid = null;
@@ -99,7 +100,7 @@ class FieldTransforms extends InlineBuilder
             $setting = new TransformSetting($item['type'], $this->getItemData($index, ['input' => $schema]));
             $settings[] = $setting;
             if ($schema !== null) {
-                $schema = $registry->resultSchema($schema, [$setting], $this->target, TransformScope::Field);
+                $schema = $schemas->resultSchema($schema, [$setting], $this->target, TransformScope::Field);
                 if ($schema === null) {
                     $invalid = $setting;
                 }
@@ -143,9 +144,9 @@ class FieldTransforms extends InlineBuilder
     }
 
     /** @param list<TransformData> $items */
-    private function canReorderItems(array $items, TransformRegistry $registry): bool
+    private function canReorderItems(array $items, ReplicaSchemaResolver $schemas): bool
     {
-        return $registry->resultSchema(
+        return $schemas->resultSchema(
             $this->evaluate($this->inputSchema),
             array_map(TransformSetting::fromArray(...), $items),
             $this->target,
@@ -160,10 +161,10 @@ class FieldTransforms extends InlineBuilder
         mixed $value,
         Closure $fail,
     ): void {
-        $invalid = $this->resolveSettings($transforms)['invalid'];
+        $invalid = $this->resolveSettings(app(ReplicaSchemaResolver::class))['invalid'];
         if ($invalid !== null) {
             $fail('phpinnacle-ferry::validation.transform_input_type')->translate([
-                'transform' => $transforms->getOrFail($invalid->type)->block()->getLabel(),
+                'transform' => $transforms->get($invalid->type)->block()->getLabel(),
             ]);
         }
     }

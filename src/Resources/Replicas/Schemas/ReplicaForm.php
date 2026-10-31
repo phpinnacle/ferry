@@ -29,7 +29,7 @@ use PHPinnacle\Ferry\Models\Replica;
 use PHPinnacle\Ferry\Models\Upstream;
 use PHPinnacle\Ferry\Rules\ReplicaSchema;
 use PHPinnacle\Ferry\Services\DestinationFactory;
-use PHPinnacle\Ferry\Services\TransformRegistry;
+use PHPinnacle\Ferry\Services\ReplicaSchemaResolver;
 use PHPinnacle\Jason\Schema;
 
 /**
@@ -186,13 +186,13 @@ class ReplicaForm
         Group $component,
         Replica $record,
         DestinationFactory $destinations,
-        TransformRegistry $registry,
+        ReplicaSchemaResolver $schemas,
         ReplicaSchema $rules,
     ): void {
         /** @var EditState $data */
         $data = $component->getChildSchemas()['default']->getState();
         $object = $record->sourceObject();
-        $schema = $registry->resultSchema(
+        $schema = $schemas->resultSchema(
             $record->schema,
             array_map(TransformSetting::fromArray(...), $data['transforms']),
             null,
@@ -419,7 +419,7 @@ class ReplicaForm
                     Closure $fail,
                 ) => self::validateFieldMapping($component, $destination, $destinationKey, $fail),
             )
-            ->outputSchema(function (FieldMapping $component, TransformRegistry $registry) {
+            ->outputSchema(function (FieldMapping $component, ReplicaSchemaResolver $schemas) {
                 /** @var array<string, list<TransformData>> $fieldTransforms */
                 $fieldTransforms = array_map(
                     static fn (array $settings) => $settings['transforms'] ?? [],
@@ -430,7 +430,7 @@ class ReplicaForm
                 $primaryKey = $schema->annotation('x-primary-key') ?? [];
                 $properties = [];
                 foreach ($schema->resolveReferences()->effectiveProperties() as $source => $property) {
-                    $properties[$source] = $registry
+                    $properties[$source] = $schemas
                         ->resultSchema(
                             $property,
                             array_map(TransformSetting::fromArray(...), $fieldTransforms[$source] ?? []),

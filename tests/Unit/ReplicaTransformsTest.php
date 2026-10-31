@@ -65,14 +65,13 @@ it('runs record transforms before field chains and renames regardless of mapping
 });
 
 it('keeps record transforms out of field editors and field transforms out of record chains', function () {
-    $registry = app(TransformRegistry::class);
     $field = FieldTransforms::make('transforms')->inputSchema(Schema::fromArray([
         'type' => 'object',
         'properties' => [],
     ]));
     FilamentSchema::make(SchemaHost::make())->components([$field])->fill();
     expect($field->getAvailableBlocks())->not->toHaveKeys(['insert_uuid', 'slug']);
-    expect($registry->resultSchema(
+    expect(app(ReplicaSchemaResolver::class)->resultSchema(
         Schema::fromArray(['type' => 'object']),
         [new TransformSetting('filter')],
         null,
@@ -134,7 +133,12 @@ it('rejects a key-only UUID as input to a value slug transform', function () {
         new TransformSetting('slug', ['input' => "$['uuid']", 'output' => 'slug']),
     ];
 
-    expect(app(TransformRegistry::class)->resultSchema($schema, $settings, null, TransformScope::Record))->toBeNull();
+    expect(app(ReplicaSchemaResolver::class)->resultSchema(
+        $schema,
+        $settings,
+        null,
+        TransformScope::Record,
+    ))->toBeNull();
 });
 
 it('previews only the valid prefix of an incomplete record chain', function () {
@@ -147,11 +151,15 @@ it('previews only the valid prefix of an incomplete record chain', function () {
         new TransformSetting('slug', ['input' => "$['slug']", 'output' => '']),
         new TransformSetting('slug', ['input' => "$['name']", 'output' => 'later_slug']),
     ];
-    $registry = app(TransformRegistry::class);
 
-    $preview = $registry->previewRecordSchema($schema, $settings);
+    $preview = app(ReplicaSchemaResolver::class)->previewRecordSchema($schema, $settings);
 
     expect(array_keys($preview->properties()))->toBe(['name', 'slug']);
-    expect($registry->resultSchema($schema, $settings, null, TransformScope::Record))->toBeNull();
-    expect($registry->previewRecordSchema($schema, []))->toBe($schema);
+    expect(app(ReplicaSchemaResolver::class)->resultSchema(
+        $schema,
+        $settings,
+        null,
+        TransformScope::Record,
+    ))->toBeNull();
+    expect(app(ReplicaSchemaResolver::class)->previewRecordSchema($schema, []))->toBe($schema);
 });

@@ -20,6 +20,7 @@ use PHPinnacle\Ferry\Models\Replica;
 use PHPinnacle\Ferry\Models\StructureItem;
 use PHPinnacle\Ferry\Resources\Replicas\Schemas\ReplicaForm;
 use PHPinnacle\Ferry\Services\DestinationFactory;
+use PHPinnacle\Ferry\Services\ReplicaSchemaResolver;
 use PHPinnacle\Ferry\Services\TransformRegistry;
 use PHPinnacle\Ferry\Tests\Fakes\Transform as FakeTransform;
 use PHPinnacle\Ferry\Tests\Fixtures\MappingState;
@@ -414,7 +415,7 @@ it('accepts UUID transform outputs for reference destinations', function () {
         'x-ferry-reference' => true,
     ]);
     expect(
-        app(TransformRegistry::class)
+        app(ReplicaSchemaResolver::class)
             ->mappingSchema(SchemaMapping::fromArray($owner), $form->getRecord()->schema)
             ?->singleType(),
     )
