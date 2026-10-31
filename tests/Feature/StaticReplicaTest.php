@@ -70,7 +70,7 @@ it('prepares typed replica attributes from its form', function (?string $destina
     $livewire = SchemaHost::make();
 
     $createForm = ReplicaForm::creation(FormSchema::make($livewire)->statePath('data')->operation('create'));
-    $createForm->fill($data);
+    $createForm->fill([...$data, '_destination' => $destination === null ? 'dynamic' : 'static:' . $destination]);
     $createState = $createForm->getState();
 
     $replica = Replica::create($createState);
@@ -491,8 +491,7 @@ it('rejects an unregistered destination at the create form boundary', function (
         'name' => 'Missing destination',
         'code' => 'missing',
         'source' => 'object-0',
-        'type' => DestinationType::Static->value,
-        'destination' => 'missing',
+        '_destination' => 'static:missing',
         'mapping' => [],
     ]))
         ->toThrow(ValidationException::class);
@@ -549,8 +548,7 @@ it('creates an unmapped pending replica from only its identifying fields', funct
         'code' => 'new_replica',
         'upstream_id' => $upstream->id,
         'source' => 'object-0',
-        'type' => $type->value,
-        'destination' => $type === DestinationType::Static ? 'customers' : null,
+        '_destination' => $type === DestinationType::Static ? 'static:customers' : 'dynamic',
     ]);
 
     $state = $form->getState();
@@ -587,8 +585,7 @@ it('preserves replica identity and schema when submitted edit data attempts to r
         'code' => 'original_code',
         'upstream_id' => $upstream->id,
         'source' => 'object-0',
-        'type' => $type->value,
-        'destination' => $type === DestinationType::Static ? 'customers' : null,
+        '_destination' => $type === DestinationType::Static ? 'static:customers' : 'dynamic',
     ]));
     $identity = $replica->only(['code', 'upstream_id', 'source', 'type', 'destination']);
     $snapshot = $replica->schema->toArray();

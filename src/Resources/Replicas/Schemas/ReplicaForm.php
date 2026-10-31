@@ -3,6 +3,7 @@
 namespace PHPinnacle\Ferry\Resources\Replicas\Schemas;
 
 use Closure;
+use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Components\Callout;
@@ -155,29 +156,33 @@ class ReplicaForm
                     ->optionsLimit(20)
                     ->selectablePlaceholder(false)
                     ->required(),
-                Select::make('type')
-                    ->label(__('phpinnacle-ferry::resources.replica.fields.type'))
-                    ->options(DestinationType::class)
-                    ->default(DestinationType::Dynamic)
-                    ->required()
-                    ->native(false)
-                    ->preload()
-                    ->optionsLimit(0)
-                    ->selectablePlaceholder(false)
-                    ->live(),
-                Select::make('destination')
+                Hidden::make('type')
+                    ->dehydrateStateUsing(fn (Get $get) => $get('_destination') === 'dynamic'
+                        ? DestinationType::Dynamic
+                        : DestinationType::Static),
+                Hidden::make('destination')
+                    ->dehydrateStateUsing(fn (Get $get) => $get('_destination') === 'dynamic'
+                        ? null
+                        : substr($get->string('_destination'), 7)),
+                Select::make('_destination')
                     ->label(__('phpinnacle-ferry::resources.replica.fields.destination'))
-                    ->options(fn (DestinationFactory $destinations) => array_map(
-                        fn (StaticDestination $destination) => $destination->getLabel(),
-                        $destinations->all(),
-                    ))
+                    ->options(fn (DestinationFactory $destinations) => [
+                        'dynamic' => DestinationType::Dynamic->getLabel(),
+                        ...collect($destinations->all())
+                            ->mapWithKeys(fn (StaticDestination $destination) => [
+                                'static:' . $destination->key => $destination->getLabel(),
+                            ])
+                            ->all(),
+                    ])
+                    ->default('dynamic')
+                    ->searchable()
                     ->native(false)
                     ->preload()
                     ->optionsLimit(0)
                     ->selectablePlaceholder(false)
                     ->required()
-                    ->live()
-                    ->visible(fn (Get $get) => $get->enum('type', DestinationType::class) === DestinationType::Static),
+                    ->rules(['string'])
+                    ->saved(false),
             ]);
     }
 

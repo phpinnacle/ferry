@@ -728,7 +728,7 @@ it('defaults to the first available upstream and object with a dynamic destinati
     expect($livewire->data)->toMatchArray([
         'upstream_id' => $upstream->id,
         'source' => $first->external_id,
-        'type' => DestinationType::Dynamic->value,
+        '_destination' => 'dynamic',
     ]);
     foreach (['upstream_id', 'source'] as $name) {
         expect($form->getComponent($name)->canSelectPlaceholder())->toBeFalse();
@@ -744,7 +744,7 @@ it('leaves unavailable upstreams and objects unselected', function () {
     expect($livewire->data)->toMatchArray([
         'upstream_id' => null,
         'source' => null,
-        'type' => DestinationType::Dynamic->value,
+        '_destination' => 'dynamic',
     ]);
 });
 
@@ -764,7 +764,7 @@ it('selects the first object without adding mapping state when changing upstream
     $form->fill([
         'upstream_id' => $upstream->id,
         'source' => 'object-0',
-        'type' => DestinationType::Dynamic->value,
+        '_destination' => 'dynamic',
     ]);
 
     $form->getComponent('upstream_id')->state($next->id)->callAfterStateUpdated();
@@ -1081,7 +1081,7 @@ it('loads at most twenty sources and searches beyond the initial options without
         ->toBe('Source 34');
 });
 
-it('keeps destination types separate from registered static destination keys', function () use ($selects) {
+it('lists dynamic first and keeps registered static destination keys distinct', function () use ($selects) {
     app(DestinationFactory::class)->register(customers_destination());
     app(DestinationFactory::class)->register(new StaticDestination(
         key: 'dynamic',
@@ -1091,16 +1091,19 @@ it('keeps destination types separate from registered static destination keys', f
         schema: customers_destination()->getSchema(),
     ));
 
-    $fields = $selects(['type' => 'static']);
+    $fields = $selects([]);
 
-    expect($fields->keys()->all())->toBe(['upstream_id', 'source', 'type', 'destination']);
-    expect($fields->get('destination')->getOptions())->toBe([
-        'customers' => 'Customers',
-        'dynamic' => 'Static destination named dynamic',
+    expect($fields->keys()->all())->toBe(['upstream_id', 'source', '_destination']);
+    expect($fields->get('_destination')->isSearchable())->toBeTrue();
+    expect($fields->get('_destination')->getOptions())->toBe([
+        'dynamic' => DestinationType::Dynamic->getLabel(),
+        'static:customers' => 'Customers',
+        'static:dynamic' => 'Static destination named dynamic',
     ]);
 });
 
-it('validates destination types at the creation boundary', function (mixed $type) {
+it('validates the combined destination selection at the creation boundary', function (mixed $destination) {
+    app(DestinationFactory::class)->register(customers_destination());
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
     TestCase::makeItem($upstream);
     $livewire = SchemaHost::make();
@@ -1110,39 +1113,55 @@ it('validates destination types at the creation boundary', function (mixed $type
         'code' => 'customers',
         'upstream_id' => $upstream->id,
         'source' => 'object-0',
-        'type' => DestinationType::Dynamic->value,
     ]);
-    $livewire->data['type'] = $type;
+    $livewire->data['_destination'] = $destination;
 
     expect($form->getState(...))
         ->toThrow(
-            fn (ValidationException $exception) => expect($exception->errors())->toHaveKey('data.type'),
+            fn (ValidationException $exception) => expect($exception->errors())->toHaveKey('data._destination'),
         );
-})->with(['missing' => [null], 'unregistered' => ['missing'], 'array' => [['static']]]);
+})->with([
+    'missing' => [null],
+    'unregistered' => ['static:missing'],
+    'unknown' => ['missing'],
+    'array' => [['static:customers']],
+]);
 
-it('validates the registered static destination selection', function (?string $destination) {
-    app(DestinationFactory::class)->register(customers_destination());
+it('dehydrates the selected destination into hidden replica attributes', function (
+    string $selection,
+    DestinationType $type,
+    ?string $destination,
+) {
+    app(DestinationFactory::class)->register(customers_destination(), new StaticDestination(
+        key: 'dynamic',
+        label: 'Static destination named dynamic',
+        table: 'other_customers',
+        primaryKey: ['customer_id'],
+        schema: customers_destination()->getSchema(),
+    ));
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
     TestCase::makeItem($upstream);
-    $livewire = SchemaHost::make();
-
-    $data = [
+    $form = ReplicaForm::creation(FilamentSchema::make(SchemaHost::make())->statePath('data')->operation('create'));
+    $form->fill([
         'name' => 'Customers',
         'code' => 'customers',
         'upstream_id' => $upstream->id,
         'source' => 'object-0',
-        'mapping' => [],
-        'type' => DestinationType::Static->value,
-    ];
-    $form = ReplicaForm::creation(FilamentSchema::make($livewire)->statePath('data')->operation('create'));
-    $form->fill($data);
-    $form->getComponent('destination')->state($destination)->callAfterStateUpdated();
+        '_destination' => $selection,
+        'type' => 'tampered',
+        'destination' => 'tampered',
+    ]);
 
-    expect($form->getState(...))
-        ->toThrow(
-            fn (ValidationException $exception) => expect($exception->errors())->toHaveKey('data.destination'),
-        );
-})->with(['missing' => [null], 'unregistered' => ['unknown']]);
+    expect($form->getComponent('type'))->toBeInstanceOf(\Filament\Forms\Components\Hidden::class);
+    expect($form->getComponent('destination'))->toBeInstanceOf(\Filament\Forms\Components\Hidden::class);
+    expect($form->getState())
+        ->toMatchArray(['type' => $type, 'destination' => $destination])
+        ->not->toHaveKey('_destination');
+})->with([
+    'dynamic' => ['dynamic', DestinationType::Dynamic, null],
+    'static' => ['static:customers', DestinationType::Static, 'customers'],
+    'static named dynamic' => ['static:dynamic', DestinationType::Static, 'dynamic'],
+]);
 
 it('keeps mapping state out of creation when switching destinations', function (string $from, string $to) {
     app(DestinationFactory::class)->register(customers_destination());
@@ -1163,20 +1182,14 @@ it('keeps mapping state out of creation when switching destinations', function (
     $form->fill([
         'upstream_id' => $upstream->id,
         'source' => 'object-0',
-        'type' => $from === 'dynamic' ? DestinationType::Dynamic : DestinationType::Static,
-        'destination' => $from === 'dynamic' ? null : $from,
+        '_destination' => $from === 'dynamic' ? 'dynamic' : 'static:' . $from,
     ]);
 
     $form->getComponent('source')->state('object-0')->callAfterStateUpdated();
-    $form
-        ->getComponent('type')
-        ->state($to === 'dynamic' ? DestinationType::Dynamic : DestinationType::Static)
-        ->callAfterStateUpdated();
-    if ($to !== 'dynamic') {
-        $form->getComponent('destination', withHidden: true)->state($to)->callAfterStateUpdated();
-    }
+    $selection = $to === 'dynamic' ? 'dynamic' : 'static:' . $to;
+    $form->getComponent('_destination')->state($selection)->callAfterStateUpdated();
 
-    expect($livewire->data['type'])->toBe($to === 'dynamic' ? 'dynamic' : 'static');
+    expect($livewire->data['_destination'])->toBe($selection);
     expect($livewire->data)->not->toHaveKeys(['schema', 'mapping', 'transforms']);
 })->with([
     'dynamic to static' => ['dynamic', 'customers'],
@@ -1193,23 +1206,22 @@ it('switches creation selections without initializing mapping state across Livew
         'state' => [
             'upstream_id' => $upstream->id,
             'source' => 'object-0',
-            'type' => DestinationType::Dynamic->value,
+            '_destination' => 'dynamic',
         ],
     ]);
     expect($page->get('data'))->not->toHaveKeys(['schema', 'mapping', 'transforms']);
 
     $page
-        ->set('data.type', DestinationType::Static->value)
-        ->set('data.destination', 'customers')
+        ->set('data._destination', 'static:customers')
         ->set('data.source', 'object-0')
         ->call('$refresh');
 
-    $page->assertSet('data.type', DestinationType::Static->value)->assertSet('data.destination', 'customers');
+    $page->assertSet('data._destination', 'static:customers');
     expect($page->get('data'))->not->toHaveKeys(['schema', 'mapping', 'transforms']);
 
-    $page->set('data.type', DestinationType::Dynamic->value)->call('$refresh');
+    $page->set('data._destination', 'dynamic')->call('$refresh');
 
-    $page->assertSet('data.type', DestinationType::Dynamic->value);
+    $page->assertSet('data._destination', 'dynamic');
     expect($page->get('data'))->not->toHaveKeys(['schema', 'mapping', 'transforms']);
 });
 
@@ -1526,7 +1538,7 @@ it('copies the selected source schema at creation and uses the saved snapshot on
         'code' => 'second_source',
         'upstream_id' => $upstream->id,
         'source' => 'object-0',
-        'type' => DestinationType::Dynamic->value,
+        '_destination' => 'dynamic',
     ]);
     $form->getComponent('source')->state('second')->callAfterStateUpdated();
 
