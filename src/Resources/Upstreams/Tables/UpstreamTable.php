@@ -15,6 +15,7 @@ use PHPinnacle\Common\Tables\UpdatedColumn;
 use PHPinnacle\Ferry\Enums\ConnectorStatus;
 use PHPinnacle\Ferry\Models\Upstream;
 use PHPinnacle\Ferry\Resources\Actions\RefreshConnectorStatusesAction;
+use PHPinnacle\Ferry\Resources\Actions\RequestSnapshotAction;
 use PHPinnacle\Ferry\Resources\Upstreams\Actions\PrepareStructureAction;
 use PHPinnacle\Ferry\Resources\Upstreams\Actions\TestUpstreamAction;
 use PHPinnacle\Ferry\Resources\Upstreams\UpstreamResource;
@@ -67,6 +68,7 @@ class UpstreamTable
                     ->label(__('phpinnacle-ferry::resources.upstream.actions.delete')),
             ])
             ->recordActions([
+                RequestSnapshotAction::make()->iconButton(),
                 TestUpstreamAction::table(),
                 PrepareStructureAction::table(),
                 EditAction::make()

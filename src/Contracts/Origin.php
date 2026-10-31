@@ -19,6 +19,8 @@ interface Origin
 
     public function update(Connector $connector): void;
 
+    public function snapshot(Upstream|Replica $owner): void;
+
     public function start(Connector $connector): void;
 
     public function pause(Connector $connector): void;

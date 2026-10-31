@@ -2,6 +2,7 @@
 
 namespace PHPinnacle\Ferry\Origins;
 
+use Illuminate\Validation\ValidationException;
 use LogicException;
 use PHPinnacle\Ferry\Contracts\Origin;
 use PHPinnacle\Ferry\Enums\ConnectorStatus;
@@ -87,6 +88,30 @@ class KafkaOrigin implements Origin
                 $this->sources->newlyScopedTables($previous, $config),
             );
         }
+    }
+
+    public function snapshot(Upstream|Replica $owner): void
+    {
+        $upstream = $owner instanceof Upstream ? $owner : $owner->upstream;
+        /** @var array<string, string> $config */
+        $config = $upstream->connector->applied_config ?? throw ValidationException::withMessages([
+            'snapshot' => __('phpinnacle-ferry::resources.connector.errors.snapshot_unavailable'),
+        ]);
+        $tables = explode(',', $config['table.include.list']);
+
+        if ($owner instanceof Replica) {
+            $table = $this->sources->table($upstream, $this->sourceObject($owner));
+
+            if (!in_array($table, $tables, true)) {
+                throw ValidationException::withMessages([
+                    'snapshot' => __('phpinnacle-ferry::resources.connector.errors.snapshot_unavailable'),
+                ]);
+            }
+
+            $tables = [$table];
+        }
+
+        $this->requestSnapshot($config['topic.prefix'], $tables);
     }
 
     public function start(Connector $connector): void

@@ -565,3 +565,53 @@ it('deploys Kafka configurations through the service and job without persisting 
         ->and($replica->fresh()->connector->applied_config)
         ->toBe(ferry_sent_config($http, 1));
 });
+
+it('requests a manual snapshot from the applied capture scope without reconfiguring connectors', function (bool $singleTable) {
+    $replica = ferry_replica();
+    $upstream = $replica->upstream;
+    $signals = new RecordingSignalProducer;
+    $http = new RecordingConnectClient;
+    $origin = ferry_kafka_origin($http, $signals);
+    $connector = $origin->make($upstream);
+    $applied = [
+        ...$connector->config,
+        'table.include.list' => 'public._reference0,public._reference1',
+    ];
+    $connector->applied_config = $applied;
+    $connector->config = [...$applied, 'topic.prefix' => 'future.prefix', 'table.include.list' => 'public.future'];
+    $upstream->setRelation('connector', $connector);
+
+    $origin->snapshot($singleTable ? $replica : $upstream);
+
+    expect($http->routes())
+        ->toBe([])
+        ->and($connector->applied_config)
+        ->toBe($applied)
+        ->and($signals->published)
+        ->toHaveCount(1)
+        ->and($signals->published[0]['topic'])
+        ->toBe('ferry-signal')
+        ->and($signals->published[0]['key'])
+        ->toBe('ferry.test-upstream')
+        ->and(json_decode($signals->published[0]['payload'], true))
+        ->toBe([
+            'type' => 'execute-snapshot',
+            'data' => [
+                'data-collections' => $singleTable
+                    ? ['public._reference0']
+                    : ['public._reference0', 'public._reference1'],
+                'type' => 'INCREMENTAL',
+            ],
+        ]);
+})->with(['replica' => true, 'upstream' => false]);
+
+it('rejects a manual replica snapshot before its table is captured', function () {
+    $replica = ferry_replica();
+    $signals = new RecordingSignalProducer;
+    $origin = ferry_kafka_origin(new RecordingConnectClient, $signals);
+    $connector = $replica->upstream->connector;
+    $connector->applied_config = ['topic.prefix' => 'ferry.test-upstream', 'table.include.list' => 'public.other'];
+
+    expect(fn () => $origin->snapshot($replica))->toThrow(\Illuminate\Validation\ValidationException::class);
+    expect($signals->published)->toBe([]);
+});

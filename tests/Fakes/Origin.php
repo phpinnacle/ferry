@@ -53,6 +53,11 @@ class Origin implements OriginContract
         $this->operations[] = ['remove', $connector->name];
     }
 
+    public function snapshot(Upstream|Replica $owner): void
+    {
+        $this->operations[] = ['snapshot', $owner->code];
+    }
+
     public function start(Connector $connector): void
     {
         $this->operations[] = ['start', $connector->name];

@@ -16,6 +16,7 @@ use PHPinnacle\Ferry\Enums\DestinationType;
 use PHPinnacle\Ferry\Enums\ReplicaStatus;
 use PHPinnacle\Ferry\Models\Replica;
 use PHPinnacle\Ferry\Resources\Actions\RefreshConnectorStatusesAction;
+use PHPinnacle\Ferry\Resources\Actions\RequestSnapshotAction;
 use PHPinnacle\Ferry\Resources\Replicas\Actions\PauseReplicaAction;
 use PHPinnacle\Ferry\Resources\Replicas\Actions\StartReplicaAction;
 use PHPinnacle\Ferry\Resources\Replicas\ReplicaResource;
@@ -83,6 +84,7 @@ class ReplicaTable
                     ->modalDescription(__('phpinnacle-ferry::resources.replica.modals.delete.description_bulk')),
             ])
             ->recordActions([
+                RequestSnapshotAction::make()->iconButton(),
                 StartReplicaAction::table(),
                 PauseReplicaAction::table(),
                 EditAction::make()

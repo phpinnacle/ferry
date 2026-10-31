@@ -6,6 +6,7 @@ use Filament\Actions\DeleteAction;
 use Filament\Resources\Pages\EditRecord;
 use Illuminate\Contracts\Support\Htmlable;
 use PHPinnacle\Ferry\Models\Upstream;
+use PHPinnacle\Ferry\Resources\Actions\RequestSnapshotAction;
 use PHPinnacle\Ferry\Resources\Actions\ViewConnectorConfigAction;
 use PHPinnacle\Ferry\Resources\Upstreams\UpstreamResource;
 
@@ -25,6 +26,7 @@ class EditUpstream extends EditRecord
     {
         return [
             ViewConnectorConfigAction::make(),
+            RequestSnapshotAction::make(),
             DeleteAction::make()
                 ->label(__('phpinnacle-ferry::resources.upstream.actions.delete')),
         ];

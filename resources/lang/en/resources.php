@@ -3,12 +3,24 @@
 return [
     'connector' => [
         'actions' => [
+            'snapshot' => 'Reread data',
             'config' => 'Connector config',
         ],
         'modals' => [
+            'snapshot' => [
+                'heading' => 'Reread source data?',
+                'replica' => 'All existing rows in this replica’s source table will be read again. Every replica of that table will receive the events. This adds source load and does not remove extra destination rows.',
+                'upstream' => 'All existing rows in the captured source tables will be read again. Every replica of those tables will receive the events. This adds source load and does not remove extra destination rows.',
+            ],
             'config' => [
                 'description' => 'Saved connector configuration.',
             ],
+        ],
+        'messages' => [
+            'snapshot_requested' => 'Data reread signal sent',
+        ],
+        'errors' => [
+            'snapshot_unavailable' => 'Start the configured source and replica connectors before requesting a data reread. The source table must be included in the applied capture configuration.',
         ],
     ],
     'upstream' => [

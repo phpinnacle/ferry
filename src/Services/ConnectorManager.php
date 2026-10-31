@@ -91,6 +91,28 @@ class ConnectorManager
         SynchronizeConnectorsJob::dispatch($owner instanceof Upstream ? $owner->id : $owner->upstream_id);
     }
 
+    public function canSnapshot(Upstream|Replica $owner): bool
+    {
+        $upstream = $owner instanceof Upstream ? $owner : $owner->upstream;
+
+        return (
+            $upstream->connector?->status === ConnectorStatus::Running
+            && $upstream->connector->applied_config !== null
+            && ($owner instanceof Replica ? $owner->isRunning() : $upstream->replicas()->exists())
+        );
+    }
+
+    public function snapshot(Upstream|Replica $owner): void
+    {
+        if (!$this->canSnapshot($owner)) {
+            throw ValidationException::withMessages([
+                'snapshot' => __('phpinnacle-ferry::resources.connector.errors.snapshot_unavailable'),
+            ]);
+        }
+
+        $this->origins->for($owner)->snapshot($owner);
+    }
+
     public function checkStatus(Connector $connector): void
     {
         $this->check($this->origins->create($connector->origin), $connector);
