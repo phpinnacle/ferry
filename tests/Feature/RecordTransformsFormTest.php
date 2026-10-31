@@ -11,6 +11,7 @@ use PHPinnacle\Ferry\Data\TransformSetting;
 use PHPinnacle\Ferry\Enums\DestinationType;
 use PHPinnacle\Ferry\Enums\StructureStatus;
 use PHPinnacle\Ferry\Enums\TransformScope;
+use PHPinnacle\Ferry\Enums\TransformTarget;
 use PHPinnacle\Ferry\Forms\RecordTransforms;
 use PHPinnacle\Ferry\Origins\Kafka\TransformFactory;
 use PHPinnacle\Ferry\Services\TransformRegistry;
@@ -133,7 +134,10 @@ it('offers every registered record transform as a native tab and persists custom
             ->schema([
                 TextInput::make('value')->required()->live(),
             ]),
-        connector: fn (array $params) => ['type' => 'example.RecordTransform', 'value' => $params['value']],
+        connector: fn (TransformTarget $target, array $params) => [
+            'type' => 'example.RecordTransform',
+            'value' => $params['value'],
+        ],
         scope: TransformScope::Record,
     ));
 

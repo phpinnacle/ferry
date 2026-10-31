@@ -31,11 +31,6 @@ final class Slug implements Transform
         return TransformScope::Record;
     }
 
-    public function getTarget(): TransformTarget
-    {
-        return TransformTarget::Value;
-    }
-
     public function accepts(Schema $input): bool
     {
         return $input->singleType() === 'object';
@@ -68,7 +63,7 @@ final class Slug implements Transform
         }
 
         $source = $input->resolveReferences()->effectiveProperties()[$segments[0]] ?? null;
-        if ($source?->singleType() !== 'string' || $source->annotation('x-ferry-target') === 'key') {
+        if ($source?->singleType() !== 'string') {
             return null;
         }
 
@@ -101,7 +96,7 @@ final class Slug implements Transform
             ->parameters(function (Schema $input) {
                 $properties = [];
                 foreach ($input->resolveReferences()->effectiveProperties() as $name => $property) {
-                    if ($property->singleType() === 'string' && $property->annotation('x-ferry-target') !== 'key') {
+                    if ($property->singleType() === 'string') {
                         /** @var string|null $translation */
                         $translation = $property->annotation('x-ferry-trans');
                         /** @var string $label */
@@ -134,10 +129,10 @@ final class Slug implements Transform
 
     /** @param array{input: string, output: string, separators?: string|null} $params
      */
-    public function connector(array $params): array
+    public function connector(TransformTarget $target, array $params): array
     {
         return [
-            'type' => 'org.phpinnacle.toblerone.SlugTransform$Value',
+            'type' => 'org.phpinnacle.toblerone.SlugTransform$' . ucfirst($target->value),
             'input' => $this->sourceFields($params)[0],
             'output' => $params['output'],
             'separators' => $params['separators'] ?? '',

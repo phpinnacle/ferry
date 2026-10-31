@@ -132,8 +132,8 @@ it('creates and persists one UUID key through the tabbed record builder for both
     $state = $form->getState();
     $index = $form->getComponentByStatePath('mapping')->getSourceRowIndex('record_id');
     $keyTransforms = $form->getComponentByStatePath('mapping.' . $index . '.options.transforms');
-    expect($keyTransforms->getBlocks())->toBe([]);
-    expect($keyTransforms->getAvailableBlocks())->toBe([]);
+    expect(array_keys($keyTransforms->getAvailableBlocks()))->toContain('cast', 'filter');
+
     $recordTransforms = $form->getComponentByStatePath('transforms');
     $original = $recordTransforms->getRawState();
     $invalid = $original;
@@ -154,10 +154,7 @@ it('creates and persists one UUID key through the tabbed record builder for both
     expect($state)->not->toHaveKey('schema');
     expect($replica->schema->properties())->not->toHaveKey('record_id');
     expect(collect($replica->mapping)->firstWhere('source', 'record_id')->target)->toBe('id');
-    expect($replica->primaryKeyMap(app(ReplicaSchemaResolver::class)->primaryKeySources(
-        $replica,
-        $this->object,
-    )))->toBe(['record_id' => 'id']);
+    expect($replica->primaryKeyMap(['id']))->toBe(['record_id' => 'id']);
     expect(
         app(ReplicaSchemaResolver::class)->transformedSchema($replica)->properties()['record_id']->toArray(),
     )->toMatchArray([
@@ -187,16 +184,16 @@ it('creates and persists one UUID key through the tabbed record builder for both
             'public._reference0.tenant_id,public._reference0.row_id,public._reference0.name',
         );
     expect($capture['transforms'])->toBe('unwrap');
-    $sink = new SinkConfigFactory(app(TransformFactory::class), app(ReplicaSchemaResolver::class))->make(
+    $sink = new SinkConfigFactory(app(TransformFactory::class))->make(
         app(DestinationFactory::class)->resolve($replica),
         $replica,
         $this->object,
         'test-topic',
     );
-    $generator = 'replica_0';
+    $generator = 'replica_0_key';
     expect($sink)
         ->toMatchArray([
-            'transforms' => $generator . ',rename_keys,rename_values',
+            'transforms' => 'replica_0,' . $generator . ',rename_keys,rename_values',
             'transforms.' . $generator . '.type' => 'org.phpinnacle.toblerone.InsertUuid$Key',
             'transforms.' . $generator . '.fields' => 'tenant_id,row_id',
             'transforms.' . $generator . '.output' => 'record_id',
@@ -296,28 +293,8 @@ it('validates UUID field names and all physical key parts in its native tab', fu
         ['fields' => ["$['name']", "$['row_id']"], 'output' => 'record_id'],
         ['data.transforms.uuid.data.fields.0' => \PHPinnacle\Eidos\Validation\ValidPath::class],
     ],
+    'duplicate sources' => [
+        ['fields' => ["$['row_id']", "$['row_id']"], 'output' => 'record_id'],
+        ['data.transforms.uuid.data.fields.0' => 'distinct'],
+    ],
 ]);
-
-it('rejects duplicate UUID sources through the Eidos picker validation', function () {
-    $form = TestCase::replicaForm([
-        'upstream_id' => $this->upstream->id,
-        'source' => 'object-0',
-        'type' => DestinationType::Dynamic->value,
-        'transforms' => [[
-            'type' => 'insert_uuid',
-            'data' => ['fields' => ["$['row_id']", "$['row_id']"], 'output' => 'record_id'],
-        ]],
-    ]);
-
-    try {
-        $form->getState();
-        test()->fail('Duplicate UUID sources must fail validation.');
-    } catch (ValidationException $exception) {
-        expect($exception->errors())
-            ->toHaveKey(
-                'data.transforms.'
-                . array_key_first($form->getComponentByStatePath('transforms')->getRawState())
-                . '.data.fields.0',
-            );
-    }
-});

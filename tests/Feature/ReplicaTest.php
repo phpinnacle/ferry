@@ -264,11 +264,8 @@ it('uses output schema bounds for PostgreSQL varchar columns', function () {
         ]),
         new FieldMapping(source: null, target: 'constant', static: 'value', kind: FieldKind::Static),
     ];
-    $replica = Mockery::mock(Replica::class)->makePartial();
+    $replica = new Replica;
     $replica->fill(['schema' => $object->schema, 'mapping' => [TestCase::keyMapping(), ...$mappings]]);
-    $replica
-        ->shouldReceive('sourceObject')
-        ->andReturn(StructureItems::make(['fields' => ['_idrref' => TestCase::keySchema()]]));
     $replica->destination = 'string_outputs';
     config(['phpinnacle-ferry.connection' => 'pgsql']);
 
@@ -284,12 +281,13 @@ it('uses output schema bounds for PostgreSQL varchar columns', function () {
         );
 });
 
-it('alters string bounds without dropping stored values, including when renaming', function () {
+it('alters key string bounds and names without dropping stored values or constraints', function () {
     app(TransformRegistry::class)->register(MaskField::make(), new FakeTransform('bounded', output: fn () => Schema::fromArray([
         'type' => 'string',
         'maxLength' => 30,
     ])));
     $object = StructureItems::make([
+        'primary_key' => ['code'],
         'fields' => [
             '_idrref' => TestCase::keySchema(),
             'code' => Schema::fromArray(['type' => 'string', 'maxLength' => 1]),
@@ -319,15 +317,17 @@ it('alters string bounds without dropping stored values, including when renaming
         $sql = implode("\n", array_column($queries, 'query'));
         expect($sql)
             ->toContain('alter column "display_code" type varchar' . ($length === null ? ',' : '(30),'))
-            ->not->toContain('drop column', 'using');
+            ->toContain('alter column "display_code" set not null')
+            ->not->toContain('drop column', 'drop constraint', 'using');
         $replica->save();
         expect(DB::table($replica->destination)->value('display_code'))->toBe('A');
     }
 });
 
-it('changes the column type when a mapped field changes type', function () {
+it('changes mapped key column types while retaining primary-key constraints', function () {
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
     $object = TestCase::makeItem($upstream, [
+        'primary_key' => ['flag'],
         'sources' => ['flag' => ['type' => 'boolean', 'title' => 'Flag']],
     ]);
 
@@ -348,7 +348,110 @@ it('changes the column type when a mapped field changes type', function () {
         ->firstWhere('name', 'flag');
 
     expect($column->type)->toBe('numeric');
+    expect($column->pk)->toBe(1);
+    expect($column->notnull)->toBe(1);
 });
+
+it('replaces an existing dynamic primary key with a generated UUID while retaining its old columns', function () {
+    $replica = TestCase::makeReplica();
+
+    $replica->update([
+        'transforms' => [new TransformSetting('insert_uuid', ['fields' => ["$['_idrref']"], 'output' => 'uuid'])],
+        'mapping' => [TestCase::keyMapping(), new FieldMapping('uuid', 'id')],
+    ]);
+
+    expect(collect(DatabaseSchema::getIndexes($replica->destination))->firstWhere('primary', true)['columns'])
+        ->toBe(['id']);
+    expect(array_column(DatabaseSchema::getColumns($replica->destination), 'nullable', 'name'))
+        ->toBe(['external_id' => true, 'id' => false]);
+    DB::table($replica->destination)->insert([
+        ['external_id' => null, 'id' => '00000000-0000-0000-0000-000000000001'],
+        ['external_id' => null, 'id' => '00000000-0000-0000-0000-000000000002'],
+    ]);
+    test()->assertDatabaseCount($replica->destination, 2);
+});
+
+it('updates existing key columns and their order without other column changes', function (
+    array $primaryKey,
+    array $nullable,
+    string $keySql,
+) {
+    $schema = Schema::fromArray([
+        'type' => 'object',
+        'properties' => [
+            'first' => ['type' => 'string'],
+            'second' => ['type' => 'string'],
+            'code' => ['type' => 'string'],
+        ],
+        'x-primary-key' => ['first', 'second'],
+    ]);
+    $replica = TestCase::makeReplica([
+        'schema' => $schema,
+        'mapping' => [
+            new FieldMapping('first', 'first'),
+            new FieldMapping('second', 'second'),
+            new FieldMapping('code', 'code'),
+        ],
+    ]);
+    DB::table($replica->destination)->insert(['first' => 'A', 'second' => 'B', 'code' => 'C']);
+
+    $replica->fill(['schema' => Schema::fromArray([...$schema->keywords(), 'x-primary-key' => $primaryKey])]);
+    $replica->load('upstream');
+    config(['phpinnacle-ferry.connection' => 'pgsql']);
+    $queries = DB::connection('pgsql')->pretend(fn () => app(ReplicaTableManager::class)->update($replica));
+    config(['phpinnacle-ferry.connection' => null]);
+    expect(implode("\n", array_column($queries, 'query')))
+        ->toContain('drop constraint "' . $replica->destination . '_pkey"', $keySql)
+        ->not->toContain('drop column');
+    $replica->save();
+
+    expect(collect(DatabaseSchema::getIndexes($replica->destination))->firstWhere('primary', true)['columns'])
+        ->toBe($primaryKey);
+    expect(array_column(DatabaseSchema::getColumns($replica->destination), 'nullable', 'name'))
+        ->toBe($nullable);
+    test()->assertDatabaseHas($replica->destination, ['first' => 'A', 'second' => 'B', 'code' => 'C']);
+})->with([
+    'another mapped column' => [
+        ['code'],
+        ['first' => true, 'second' => true, 'code' => false],
+        'add primary key ("code")',
+    ],
+    'reordered composite key' => [
+        ['second', 'first'],
+        ['first' => false, 'second' => false, 'code' => true],
+        'add primary key ("second", "first")',
+    ],
+]);
+
+it('rolls back a key change when existing rows violate the new constraint', function (?string $secondCode) {
+    $schema = Schema::fromArray([
+        'type' => 'object',
+        'properties' => ['id' => ['type' => 'string'], 'code' => ['type' => 'string']],
+        'x-primary-key' => ['id'],
+    ]);
+    $replica = TestCase::makeReplica([
+        'schema' => $schema,
+        'mapping' => [new FieldMapping('id', 'id'), new FieldMapping('code', 'code')],
+    ]);
+    DB::table($replica->destination)->insert([
+        ['id' => 'first', 'code' => 'duplicate'],
+        ['id' => 'second', 'code' => $secondCode],
+    ]);
+
+    expect(fn () => $replica->update([
+        'schema' => Schema::fromArray([...$schema->keywords(), 'x-primary-key' => ['code']]),
+    ]))
+        ->toThrow(\Illuminate\Database\QueryException::class);
+
+    expect($replica->fresh()->schema->annotation('x-primary-key'))->toBe(['id']);
+    expect(collect(DatabaseSchema::getIndexes($replica->destination))->firstWhere('primary', true)['columns'])
+        ->toBe(['id']);
+    expect(array_column(DatabaseSchema::getColumns($replica->destination), 'nullable', 'name'))
+        ->toBe(['id' => false, 'code' => true]);
+    test()->assertDatabaseCount($replica->destination, 2);
+    test()->assertDatabaseHas($replica->destination, ['id' => 'first', 'code' => 'duplicate']);
+    test()->assertDatabaseHas($replica->destination, ['id' => 'second', 'code' => $secondCode]);
+})->with(['duplicate values' => 'duplicate', 'null values' => null]);
 
 it('generates its dynamic table name on creation and preserves it after prefix and code changes', function () {
     config(['phpinnacle-ferry.replica.table_prefix' => 'initial_']);
@@ -371,10 +474,7 @@ it('creates decimal columns from the effective output schema', function (?array 
         'phpinnacle-ferry.connection' => 'schema-preview',
         'database.connections.schema-preview' => ['driver' => 'pgsql', 'database' => 'preview'],
     ]);
-    $replica = Mockery::mock(Replica::class)->makePartial();
-    $replica
-        ->shouldReceive('sourceObject')
-        ->andReturn(StructureItems::make(['fields' => ['_idrref' => TestCase::keySchema()]]));
+    $replica = new Replica;
     if ($result !== null) {
         app(TransformRegistry::class)->register(new FakeTransform('decimal', output: fn () => Schema::fromArray(
             $result,
@@ -421,8 +521,7 @@ it('creates SQL columns from timestamp conversion output', function (string $tar
         '_idrref' => TestCase::keySchema(),
         'created' => Schema::fromArray(['type' => 'integer']),
     ]]);
-    $replica = Mockery::mock(Replica::class)->makePartial();
-    $replica->shouldReceive('sourceObject')->andReturn($object);
+    $replica = new Replica;
     $replica->fill([
         'schema' => $object->schema,
         'destination' => 'timestamp_columns',

@@ -34,11 +34,6 @@ final class Cast implements Transform
         return [];
     }
 
-    public function getTarget(): TransformTarget
-    {
-        return TransformTarget::Value;
-    }
-
     public function accepts(Schema $input): bool
     {
         return SchemaCompatibility::make()->accepts($input, Schema::fromArray(['type' => [
@@ -104,10 +99,10 @@ final class Cast implements Transform
     /**
      * @param array<string, string> $params
      */
-    public function connector(array $params): array
+    public function connector(TransformTarget $target, array $params): array
     {
         return [
-            'type' => 'org.apache.kafka.connect.transforms.Cast$Value',
+            'type' => 'org.apache.kafka.connect.transforms.Cast$' . ucfirst($target->value),
             'spec' => sprintf('%s:%s', $params['field'], $params['type']),
             ...(
                 array_key_exists('replace_null_with_default', $params)

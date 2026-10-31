@@ -6,6 +6,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Database\Schema\ColumnDefinition;
 use LogicException;
 use PHPinnacle\Ferry\Data\FieldMapping;
+use PHPinnacle\Ferry\Destinations\DynamicDestination;
 use PHPinnacle\Ferry\Enums\DestinationType;
 use PHPinnacle\Ferry\Enums\FieldKind;
 use PHPinnacle\Ferry\Models\Replica;
@@ -19,20 +20,18 @@ class ReplicaTableManager
 
     public function create(Replica $replica): void
     {
-        $primaryKey = array_values($replica->primaryKeyMap($this->schemas->primaryKeySources(
-            $replica,
-            $replica->sourceObject(),
-        )));
+        $primaryKey = new DynamicDestination($replica, $this->schemas)->getPrimaryKey();
+        $schema = $this->schemas->transformedSchema($replica);
         $replica
             ->getConnection()
             ->getSchemaBuilder()
-            ->create($replica->destination, function (Blueprint $table) use ($replica, $primaryKey) {
+            ->create($replica->destination, function (Blueprint $table) use ($replica, $primaryKey, $schema) {
                 foreach ($replica->mapping as $mapping) {
                     if ($mapping->target !== null) {
                         $this->column(
                             $table,
                             $mapping,
-                            $this->schemas->outputSchema($replica, $mapping),
+                            $this->schemas->mappingSchema($mapping, $schema),
                         )->nullable(!in_array(
                             $mapping->target,
                             $primaryKey,
@@ -53,11 +52,63 @@ class ReplicaTableManager
     public function update(Replica $replica): void
     {
         $changes = $this->mappingChanges($replica);
+        $primaryKey = new DynamicDestination($replica, $this->schemas)->getPrimaryKey();
+        $original = new Replica;
+        $original->setRawAttributes($replica->getRawOriginal());
+        $original->setRelation('upstream', $replica->upstream);
+        $originalPrimaryKey = new DynamicDestination($original, $this->schemas)->getPrimaryKey();
+        $renames = [];
+        $addedColumns = [];
+        foreach ($changes['columns'] as $change) {
+            if ($change['from'] === null) {
+                $addedColumns[] = $change['mapping']->target;
+            } else {
+                $renames[$change['from']] = $change['mapping']->target;
+            }
+        }
+
+        $renamedPrimaryKey = array_map(
+            fn (string $column) => array_key_exists($column, $renames) ? $renames[$column] : $column,
+            $originalPrimaryKey,
+        );
+        $rebuildPrimaryKey =
+            $primaryKey !== $renamedPrimaryKey || array_intersect($originalPrimaryKey, $changes['drop']) !== [];
+        if (!$rebuildPrimaryKey && $changes === ['drop' => [], 'columns' => [], 'alter' => []]) {
+            return;
+        }
+
+        $alter = array_column($changes['alter'], null, 'target');
+        foreach ($replica->mapping as $mapping) {
+            if (
+                $mapping->target !== null
+                && !in_array($mapping->target, $addedColumns, true)
+                && in_array($mapping->target, $primaryKey, true) !== in_array(
+                    $mapping->target,
+                    $renamedPrimaryKey,
+                    true,
+                )
+            ) {
+                $alter[$mapping->target] = $mapping;
+            }
+        }
+
+        $schema = $this->schemas->transformedSchema($replica);
 
         $replica
             ->getConnection()
             ->getSchemaBuilder()
-            ->table($replica->destination, function (Blueprint $table) use ($changes, $replica) {
+            ->table($replica->destination, function (Blueprint $table) use (
+                $changes,
+                $primaryKey,
+                $originalPrimaryKey,
+                $rebuildPrimaryKey,
+                $schema,
+                $alter,
+            ) {
+                if ($rebuildPrimaryKey) {
+                    $table->dropPrimary($originalPrimaryKey);
+                }
+
                 foreach ($changes['drop'] as $column) {
                     $table->dropColumn($column);
                 }
@@ -67,8 +118,8 @@ class ReplicaTableManager
                         $this->column(
                             $table,
                             $change['mapping'],
-                            $this->schemas->outputSchema($replica, $change['mapping']),
-                        )->nullable();
+                            $this->schemas->mappingSchema($change['mapping'], $schema),
+                        )->nullable(!in_array($change['mapping']->target, $primaryKey, true));
                     } else {
                         /** @var string $target */
                         $target = $change['mapping']->target;
@@ -76,11 +127,15 @@ class ReplicaTableManager
                     }
                 }
 
-                foreach ($changes['alter'] as $mapping) {
+                foreach ($alter as $mapping) {
                     $this
-                        ->column($table, $mapping, $this->schemas->outputSchema($replica, $mapping))
-                        ->nullable()
+                        ->column($table, $mapping, $this->schemas->mappingSchema($mapping, $schema))
+                        ->nullable(!in_array($mapping->target, $primaryKey, true))
                         ->change();
+                }
+
+                if ($rebuildPrimaryKey) {
+                    $table->primary($primaryKey);
                 }
             });
     }
@@ -112,13 +167,11 @@ class ReplicaTableManager
         }
 
         $nextSchema = $this->schemas->transformedSchema($replica);
-        $previousOutputs = array_map(fn (FieldMapping $mapping) => $this->schemas->outputSchema(
-            $replica,
+        $previousOutputs = array_map(fn (FieldMapping $mapping) => $this->schemas->mappingSchema(
             $mapping,
             $originalSchema,
         ), $previous);
-        $nextOutputs = array_map(fn (FieldMapping $mapping) => $this->schemas->outputSchema(
-            $replica,
+        $nextOutputs = array_map(fn (FieldMapping $mapping) => $this->schemas->mappingSchema(
             $mapping,
             $nextSchema,
         ), $next);

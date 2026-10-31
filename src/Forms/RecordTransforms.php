@@ -86,7 +86,6 @@ class RecordTransforms extends TabbedBuilder
             $schemas->resultSchema(
                 $this->inputSchema,
                 array_map(TransformSetting::fromArray(...), array_values($value ?? [])),
-                null,
                 TransformScope::Record,
             ) === null
         ) {

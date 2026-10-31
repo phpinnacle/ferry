@@ -6,9 +6,7 @@ use PHPinnacle\Ferry\Data\FieldMapping;
 use PHPinnacle\Ferry\Data\TransformSetting;
 use PHPinnacle\Ferry\Enums\FieldKind;
 use PHPinnacle\Ferry\Enums\TransformScope;
-use PHPinnacle\Ferry\Enums\TransformTarget;
 use PHPinnacle\Ferry\Models\Replica;
-use PHPinnacle\Ferry\Models\StructureItem;
 use PHPinnacle\Jason\Schema;
 
 class ReplicaSchemaResolver
@@ -21,15 +19,12 @@ class ReplicaSchemaResolver
     public function resultSchema(
         Schema $input,
         array $settings,
-        ?TransformTarget $target = TransformTarget::Value,
         TransformScope $scope = TransformScope::Field,
     ): ?Schema {
         foreach ($settings as $setting) {
             $transform = $this->transforms->get($setting->type);
             if (
                 $transform->getScope() !== $scope
-                || $target !== null
-                && $transform->getTarget() !== $target
                 || !$transform->accepts($input)
             ) {
                 return null;
@@ -48,7 +43,7 @@ class ReplicaSchemaResolver
     public function previewRecordSchema(Schema $schema, array $settings): Schema
     {
         foreach ($settings as $setting) {
-            $next = $this->resultSchema($schema, [$setting], null, TransformScope::Record);
+            $next = $this->resultSchema($schema, [$setting], TransformScope::Record);
             if ($next === null) {
                 break;
             }
@@ -59,23 +54,19 @@ class ReplicaSchemaResolver
         return $schema;
     }
 
-    public function mappingSchema(FieldMapping $mapping, Schema $schema): ?Schema
+    public function mappingSchema(FieldMapping $mapping, ?Schema $schema): ?Schema
     {
+        if ($schema === null) {
+            return null;
+        }
+
         /** @var string $source */
         $source = $mapping->source;
         $input = $mapping->kind === FieldKind::Static
             ? $mapping->staticSchema()
             : $schema->resolveReferences()->effectiveProperties()[$source];
-        /** @var list<string> $primaryKey */
-        $primaryKey = $schema->annotation('x-primary-key') ?? [];
 
-        return $this->resultSchema(
-            $input,
-            $mapping->transforms(),
-            in_array($source, $primaryKey, true)
-                ? TransformTarget::Key
-                : TransformTarget::Value,
-        );
+        return $this->resultSchema($input, $mapping->transforms());
     }
 
     public function transformedSchema(Replica $replica): ?Schema
@@ -83,7 +74,6 @@ class ReplicaSchemaResolver
         return $this->resultSchema(
             $replica->schema,
             $replica->transforms,
-            null,
             TransformScope::Record,
         );
     }
@@ -95,20 +85,60 @@ class ReplicaSchemaResolver
         /** @var list<TransformSetting> $transforms */
         $transforms = $replica->getOriginal('transforms');
 
-        return $this->resultSchema($schema, $transforms, null, TransformScope::Record);
+        return $this->resultSchema($schema, $transforms, TransformScope::Record);
     }
 
-    public function outputSchema(Replica $replica, FieldMapping $mapping, ?Schema $schema = null): ?Schema
+    public function outputSchema(Replica $replica, FieldMapping $mapping): ?Schema
     {
-        $schema ??= $this->transformedSchema($replica);
-
-        return $schema === null ? null : $this->mappingSchema($mapping, $schema);
+        return $this->mappingSchema($mapping, $this->transformedSchema($replica));
     }
 
     /** @return list<string> */
-    public function primaryKeySources(Replica $replica, StructureItem $object): array
+    public function primaryKeySources(Replica $replica): array
     {
         /** @var list<string> */
-        return $this->transformedSchema($replica)?->annotation('x-primary-key') ?? $object->primary_key;
+        return (
+            $this->transformedSchema($replica)?->annotation('x-primary-key') ?? $replica->sourceObject()->primary_key
+        );
+    }
+
+    /**
+     * @param list<string> $sources
+     * @return array{sources: list<string>, transforms: array<int, TransformSetting>}
+     */
+    public function keyPlan(Replica $replica, array $sources): array
+    {
+        if ($sources === [] || $replica->transforms === []) {
+            return ['sources' => $sources, 'transforms' => []];
+        }
+
+        $schema = $replica->schema;
+        $outputs = [];
+        foreach ($replica->transforms as $index => $setting) {
+            /** @var Schema $next */
+            $next = $this->resultSchema($schema, [$setting], TransformScope::Record);
+            $outputs[$index] = array_keys(array_diff_key($next->properties(), $schema->properties()));
+            $schema = $next;
+        }
+
+        $transforms = [];
+        foreach (array_reverse($replica->transforms, preserve_keys: true) as $index => $setting) {
+            if (array_intersect($sources, $outputs[$index]) === []) {
+                continue;
+            }
+
+            $inputs = $this->transforms->get($setting->type)->sourceFields($setting->data);
+            $physical = [];
+            foreach ($sources as $source) {
+                array_push($physical, ...in_array($source, $outputs[$index], true) ? $inputs : [$source]);
+            }
+
+            $sources = $physical;
+            $transforms[$index] = $setting;
+        }
+
+        ksort($transforms);
+
+        return ['sources' => array_values(array_unique($sources)), 'transforms' => $transforms];
     }
 }

@@ -6,6 +6,7 @@ use Illuminate\Container\Attributes\Singleton;
 use PHPinnacle\Ferry\Data\FieldMapping;
 use PHPinnacle\Ferry\Enums\FieldKind;
 use PHPinnacle\Ferry\Enums\TransformScope;
+use PHPinnacle\Ferry\Enums\TransformTarget;
 use PHPinnacle\Ferry\Models\Replica;
 use PHPinnacle\Ferry\Models\StructureItem;
 use PHPinnacle\Ferry\Services\ReplicaSchemaResolver;
@@ -31,7 +32,6 @@ class TransformFactory
         array $keyMap = [],
         array $fixedValues = [],
     ): array {
-        $pipeline = [];
         $columns = $replica->columnMap();
         $reserved = array_fill_keys([
             ...array_keys($object->schema->resolveReferences()->effectiveProperties()),
@@ -45,9 +45,7 @@ class TransformFactory
             }
         }
 
-        foreach ($replica->transforms as $index => $setting) {
-            $pipeline['replica_' . $index] = $this->transforms->get($setting->type)->connector($setting->data);
-        }
+        $pipeline = $this->recordTransforms($replica, array_keys($keyMap));
 
         foreach ($replica->mapping as $index => $mapping) {
             if ($mapping->kind === FieldKind::Static) {
@@ -67,8 +65,10 @@ class TransformFactory
 
             foreach ($mapping->transforms() as $position => $setting) {
                 $name = sprintf('field_%d_%d', $index, $position + $offset);
-                $pipeline[$name] = $this->transforms->get($setting->type)->connector(['field' => $source]
-                + $setting->data);
+                $pipeline[$name] = $this->transforms->get($setting->type)->connector(
+                    array_key_exists($source, $keyMap) ? TransformTarget::Key : TransformTarget::Value,
+                    ['field' => $source] + $setting->data,
+                );
             }
         }
 
@@ -107,7 +107,6 @@ class TransformFactory
             $schema = $this->schemas->resultSchema(
                 $object->schema,
                 $replica->transforms,
-                null,
                 TransformScope::Record,
             );
             // An empty include retains every field, so key-only sinks must explicitly exclude them.
@@ -118,6 +117,27 @@ class TransformFactory
         }
 
         return self::configuration($pipeline);
+    }
+
+    /**
+     * @param list<string> $keySources
+     * @return array<string, array<string, string>>
+     */
+    private function recordTransforms(Replica $replica, array $keySources): array
+    {
+        $pipeline = [];
+        $keyPlan = $this->schemas->keyPlan($replica, $keySources);
+        foreach ($replica->transforms as $index => $setting) {
+            $transform = $this->transforms->get($setting->type);
+            $pipeline['replica_' . $index] = $transform->connector(TransformTarget::Value, $setting->data);
+
+            if (array_key_exists($index, $keyPlan['transforms'])) {
+                $name = 'replica_' . $index . '_key';
+                $pipeline[$name] = $transform->connector(TransformTarget::Key, $setting->data);
+            }
+        }
+
+        return $pipeline;
     }
 
     /** @param array<string, true> $reserved */

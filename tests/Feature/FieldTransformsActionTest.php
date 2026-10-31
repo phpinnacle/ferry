@@ -83,21 +83,19 @@ it('preserves the registered block availability condition', function () {
     expect($this->field->getBlocks())->toHaveKey('custom');
 });
 
-it('filters the block catalog by target and additions by the current schema', function () {
-    app(TransformRegistry::class)->register(new FakeTransform(
-        'key_string',
-        target: TransformTarget::Key,
-        accepts: fn (Schema $input) => $input->singleType() === 'string',
-    ));
-    $this->field->target(TransformTarget::Key);
+it('filters the block catalog by scope and additions by the current schema', function () {
+    app(TransformRegistry::class)->register(
+        new FakeTransform('custom_string', accepts: fn (Schema $input) => $input->singleType() === 'string'),
+        new FakeTransform('custom_record', scope: TransformScope::Record),
+    );
 
-    expect(array_keys($this->field->getBlocks()))->toBe(['key_string']);
-    expect(array_keys($this->field->getAvailableBlocks()))->toBe(['key_string']);
+    expect($this->field->getBlocks())->toHaveKey('custom_string')->not->toHaveKey('custom_record');
+    expect($this->field->getAvailableBlocks())->toHaveKey('custom_string');
 
     $this->field->inputSchema(Schema::fromArray(['type' => 'boolean']));
 
-    expect(array_keys($this->field->getBlocks()))->toBe(['key_string']);
-    expect($this->field->getAvailableBlocks())->toBe([]);
+    expect($this->field->getBlocks())->toHaveKey('custom_string')->not->toHaveKey('custom_record');
+    expect($this->field->getAvailableBlocks())->not->toHaveKey('custom_string');
 });
 
 it('uses the current registry for the preceding output and available blocks', function () {
@@ -599,11 +597,6 @@ it('registers independent transform implementations and uses their native blocks
             return [];
         }
 
-        public function getTarget(): TransformTarget
-        {
-            return TransformTarget::Value;
-        }
-
         public function accepts(Schema $input): bool
         {
             return $input->singleType() === 'string';
@@ -614,7 +607,7 @@ it('registers independent transform implementations and uses their native blocks
             return Schema::fromArray(['type' => 'string', 'maxLength' => strlen($params['value'])]);
         }
 
-        public function connector(array $params): array
+        public function connector(TransformTarget $target, array $params): array
         {
             return ['type' => 'example.Custom', 'field' => $params['field'], 'value' => $params['value']];
         }

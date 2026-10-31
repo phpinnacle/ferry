@@ -22,7 +22,6 @@ use PHPinnacle\Ferry\Destinations\StaticDestination;
 use PHPinnacle\Ferry\Enums\ConnectorStatus;
 use PHPinnacle\Ferry\Enums\DestinationType;
 use PHPinnacle\Ferry\Enums\TransformScope;
-use PHPinnacle\Ferry\Enums\TransformTarget;
 use PHPinnacle\Ferry\Forms\FieldTransforms;
 use PHPinnacle\Ferry\Forms\RecordTransforms;
 use PHPinnacle\Ferry\Models\Replica;
@@ -195,7 +194,6 @@ class ReplicaForm
         $schema = $schemas->resultSchema(
             $record->schema,
             array_map(TransformSetting::fromArray(...), $data['transforms']),
-            null,
             TransformScope::Record,
         );
         /** @var list<string> $primaryKey */
@@ -260,15 +258,9 @@ class ReplicaForm
         };
 
         $mapping->sourceSettings(
-            function (FieldMapping|FieldBinding $component, string $source, ?Closure $inputSchema = null) use (
-                $object,
-            ) {
+            function (FieldMapping|FieldBinding $component, string $source, ?Closure $inputSchema = null) {
                 $sourceSchema = $component->getSourceSchema();
                 $static = $inputSchema !== null;
-                /** @var list<string> $primaryKey */
-                $primaryKey = $sourceSchema->annotation('x-primary-key') ?? [];
-                $sourceIsKey =
-                    !$static && (in_array($source, $primaryKey, true) || in_array($source, $object->primary_key, true));
                 $inputSchema ??= fn () => $sourceSchema->resolveReferences()->effectiveProperties()[$source];
                 /** @var string $label */
                 $label =
@@ -284,12 +276,6 @@ class ReplicaForm
                                 ? __('phpinnacle-ferry::resources.replica.fields.constant_value')
                                 : $label,
                         )
-                        ->target($sourceIsKey ? TransformTarget::Key : TransformTarget::Value)
-                        ->addable(!$sourceIsKey)
-                        ->rule('max:0', $sourceIsKey)
-                        ->validationMessages([
-                            'max' => __('phpinnacle-ferry::validation.primary_key_transforms_prohibited'),
-                        ])
                         ->inputSchema($inputSchema)
                         ->dehydrated(
                             fn (FieldTransforms $component) => !$static || $component->getItems() !== [],
@@ -375,6 +361,14 @@ class ReplicaForm
         ?string $destinationKey,
     ): FieldMapping {
         $mapping = FieldMapping::make('mapping');
+        $targetSchema = $destination?->getSchema() ?? Schema::fromArray([]);
+        $targetSchema = Schema::fromArray([
+            ...$targetSchema->keywords(),
+            'required' => array_values(array_unique([
+                ...$targetSchema->effectiveRequired(),
+                ...($destination?->getPrimaryKey() ?? []),
+            ])),
+        ]);
 
         return $mapping
             ->dense()
@@ -391,33 +385,14 @@ class ReplicaForm
             ->required()
             ->jsonSchema(
                 source: $sourceSchema,
-                target: $destination !== null
-                    ? $destination->getSchema()
-                    : Schema::fromArray([]),
+                target: $targetSchema,
             )
-            ->canConnectUsing(function (
-                Schema $source,
-                Schema $target,
-                string $sourceName,
-                string $targetName,
-            ) use ($mapping, $destination) {
-                /** @var list<string> $primaryKey */
-                $primaryKey = $mapping->getSourceSchema()->annotation('x-primary-key') ?? [];
-
-                return (
-                    in_array($targetName, $destination?->getPrimaryKey() ?? [], true) === in_array(
-                        $sourceName,
-                        $primaryKey,
-                        true,
-                    )
-                );
-            })
             ->rule(
-                fn (FieldMapping $component) => fn (
+                fn () => fn (
                     string $attribute,
                     mixed $value,
                     Closure $fail,
-                ) => self::validateFieldMapping($component, $destination, $destinationKey, $fail),
+                ) => self::validateFieldMapping($destination, $destinationKey, $fail),
             )
             ->outputSchema(function (FieldMapping $component, ReplicaSchemaResolver $schemas) {
                 /** @var array<string, list<TransformData>> $fieldTransforms */
@@ -426,17 +401,12 @@ class ReplicaForm
                     $component->getSourceSettings(),
                 );
                 $schema = $component->getSourceSchema();
-                /** @var list<string> $primaryKey */
-                $primaryKey = $schema->annotation('x-primary-key') ?? [];
                 $properties = [];
                 foreach ($schema->resolveReferences()->effectiveProperties() as $source => $property) {
                     $properties[$source] = $schemas
                         ->resultSchema(
                             $property,
                             array_map(TransformSetting::fromArray(...), $fieldTransforms[$source] ?? []),
-                            in_array($source, $primaryKey, true)
-                                ? TransformTarget::Key
-                                : TransformTarget::Value,
                         )
                         ?->keywords() ?? [];
                 }
@@ -452,7 +422,6 @@ class ReplicaForm
 
     /** @param Closure(string): PotentiallyTranslatedString $fail */
     private static function validateFieldMapping(
-        FieldMapping $component,
         ?StaticDestination $destination,
         ?string $destinationKey,
         Closure $fail,
@@ -461,17 +430,7 @@ class ReplicaForm
             $fail('phpinnacle-ferry::resources.replica.errors.static_destination_missing')->translate([
                 'destination' => $destinationKey,
             ]);
-
-            return;
         }
-
-        /** @var list<string> $primaryKey */
-        $primaryKey = $component->getSourceSchema()->annotation('x-primary-key') ?? [];
-        ReplicaSchema::validatePrimaryKey(
-            $primaryKey,
-            array_values(array_filter($primaryKey, $component->isSourceUsed(...))),
-            $fail,
-        );
     }
 
     /** @return array<string, string> */

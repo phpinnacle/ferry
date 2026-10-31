@@ -6,6 +6,8 @@ use Illuminate\Support\Facades\Config;
 use PHPinnacle\Ferry\Models\Replica;
 use PHPinnacle\Ferry\Models\StructureItem;
 use PHPinnacle\Ferry\Models\Upstream;
+use PHPinnacle\Ferry\Services\DestinationFactory;
+use PHPinnacle\Ferry\Services\ReplicaSchemaResolver;
 use PHPinnacle\Ferry\Services\TransformRegistry;
 
 class SourceFactory
@@ -16,6 +18,8 @@ class SourceFactory
 
     public function __construct(
         private readonly TransformRegistry $transforms,
+        private readonly DestinationFactory $destinations,
+        private readonly ReplicaSchemaResolver $schemas,
     ) {}
 
     /**
@@ -52,11 +56,14 @@ class SourceFactory
 
             $tables[$table] = true;
 
-            if ($object->primary_key !== []) {
-                $keys[$table] = sprintf('%s:%s', $table, implode(',', $object->primary_key));
-            }
+            $keyMap = $replica->mapping === []
+                ? []
+                : $replica->primaryKeyMap($this->destinations->resolve($replica)->getPrimaryKey());
+            $sourceColumns = $this->schemas->keyPlan($replica, array_keys($keyMap))['sources'];
 
-            $sourceColumns = $object->primary_key;
+            if ($sourceColumns !== []) {
+                $keys[$table] = sprintf('%s:%s', $table, implode(',', $sourceColumns));
+            }
 
             foreach ($replica->mapping as $mapping) {
                 if ($mapping->source !== null && $mapping->isUsed()) {

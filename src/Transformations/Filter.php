@@ -34,11 +34,6 @@ final class Filter implements Transform
         return [];
     }
 
-    public function getTarget(): TransformTarget
-    {
-        return TransformTarget::Value;
-    }
-
     public function accepts(Schema $input): bool
     {
         return true;
@@ -106,10 +101,10 @@ final class Filter implements Transform
     /**
      * @param array<string, string> $params
      */
-    public function connector(array $params): array
+    public function connector(TransformTarget $target, array $params): array
     {
         return [
-            'type' => 'io.confluent.connect.transforms.Filter$Value',
+            'type' => 'io.confluent.connect.transforms.Filter$' . ucfirst($target->value),
             'filter.condition' => $this->condition($params['field'], $params['condition']),
             'filter.type' => $params['mode'],
             'missing.or.null.behavior' => $params['missing_or_null_behavior'],

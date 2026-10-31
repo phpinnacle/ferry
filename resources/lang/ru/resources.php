@@ -164,8 +164,7 @@ return [
             'incompatible_destination_field' => 'Тип поля источника несовместим с полем назначения ":field"',
             'transform_missing' => 'Трансформация ":transform" не зарегистрирована',
             'required_destination_field_missing' => 'Обязательное поле назначения ":field" не сопоставлено',
-            'destination_primary_key_source' => 'Поле первичного ключа назначения ":field" должно быть сопоставлено с полем первичного ключа источника',
-            'source_primary_key_destination' => 'Поле первичного ключа источника ":field" должно быть сопоставлено с полем первичного ключа назначения',
+            'destination_primary_key_source' => 'Поле первичного ключа назначения ":field" должно быть сопоставлено с полем источника',
             'invalid_mapping' => 'Реплику ":code" нельзя активировать: сопоставление полей устарело',
         ],
         'messages' => [

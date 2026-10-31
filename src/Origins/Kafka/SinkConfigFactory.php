@@ -5,13 +5,11 @@ namespace PHPinnacle\Ferry\Origins\Kafka;
 use PHPinnacle\Ferry\Contracts\Destination;
 use PHPinnacle\Ferry\Models\Replica;
 use PHPinnacle\Ferry\Models\StructureItem;
-use PHPinnacle\Ferry\Services\ReplicaSchemaResolver;
 
 class SinkConfigFactory
 {
     public function __construct(
         private readonly TransformFactory $transforms,
-        private readonly ReplicaSchemaResolver $schemas,
     ) {}
 
     /** @return array<string, string> */
@@ -23,7 +21,7 @@ class SinkConfigFactory
         ?string $targetHost = null,
     ): array {
         $primaryKey = $destination->getPrimaryKey();
-        $keyMap = $replica->primaryKeyMap($this->schemas->primaryKeySources($replica, $object));
+        $keyMap = $replica->primaryKeyMap($primaryKey);
         $fixedValues = $destination->getFixedValues();
 
         return new JdbcConnectorConfig(

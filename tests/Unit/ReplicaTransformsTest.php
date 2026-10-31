@@ -7,6 +7,7 @@ use PHPinnacle\Ferry\Enums\FieldKind;
 use PHPinnacle\Ferry\Enums\TransformScope;
 use PHPinnacle\Ferry\Forms\FieldTransforms;
 use PHPinnacle\Ferry\Models\Replica;
+use PHPinnacle\Ferry\Models\StructureItem;
 use PHPinnacle\Ferry\Origins\Kafka\TransformFactory;
 use PHPinnacle\Ferry\Services\ReplicaSchemaResolver;
 use PHPinnacle\Ferry\Services\TransformRegistry;
@@ -49,8 +50,9 @@ it('runs record transforms before field chains and renames regardless of mapping
     $config = app(TransformFactory::class)->pipeline($replica, $object, ['uuid' => 'id']);
 
     expect($config)->toMatchArray([
-        'transforms' => 'replica_0,replica_1,replica_2,field_0_0,field_1_0,field_1_1,rename_keys,rename_values',
-        'transforms.replica_0.type' => 'org.phpinnacle.toblerone.InsertUuid$Key',
+        'transforms' => 'replica_0,replica_0_key,replica_1,replica_2,field_0_0,field_1_0,field_1_1,rename_keys,rename_values',
+        'transforms.replica_0.type' => 'org.phpinnacle.toblerone.InsertUuid$Value',
+        'transforms.replica_0_key.type' => 'org.phpinnacle.toblerone.InsertUuid$Key',
         'transforms.replica_1.input' => 'name',
         'transforms.replica_1.output' => 'slug',
         'transforms.replica_2.input' => 'slug',
@@ -61,7 +63,7 @@ it('runs record transforms before field chains and renames regardless of mapping
     ]);
     expect(array_keys(app(ReplicaSchemaResolver::class)->transformedSchema($replica)->properties()))
         ->toBe(['uuid', 'name', 'slug', 'other_slug', 'tail']);
-    expect(app(ReplicaSchemaResolver::class)->primaryKeySources($replica, $object))->toBe(['uuid']);
+    expect(app(ReplicaSchemaResolver::class)->primaryKeySources($replica))->toBe(['uuid']);
 });
 
 it('keeps record transforms out of field editors and field transforms out of record chains', function () {
@@ -74,7 +76,6 @@ it('keeps record transforms out of field editors and field transforms out of rec
     expect(app(ReplicaSchemaResolver::class)->resultSchema(
         Schema::fromArray(['type' => 'object']),
         [new TransformSetting('filter')],
-        null,
         TransformScope::Record,
     ))->toBeNull();
 });
@@ -93,6 +94,15 @@ it('derives nullable slug schemas without carrying source length or format const
     expect($output->properties()['slug']->toArray())->toBe(['type' => ['string', 'null'], 'title' => 'Slug']);
     expect($output->required())->toBe(['name', 'slug']);
     expect(Slug::make()->output($input, ['input' => "$['missing']", 'output' => 'slug']))->toBeNull();
+});
+
+it('leaves mapped output unavailable while a record transform is incomplete', function () {
+    $replica = new Replica([
+        'schema' => Schema::object(['name' => Schema::string()]),
+        'transforms' => [new TransformSetting('slug', ['input' => "$['name']"])],
+    ]);
+
+    expect(app(ReplicaSchemaResolver::class)->outputSchema($replica, new FieldMapping('name', 'name')))->toBeNull();
 });
 
 it('keeps internal constants separate from physical fields and preserves fixed value precedence', function () {
@@ -126,19 +136,30 @@ it('keeps internal constants separate from physical fields and preserves fixed v
     ]);
 });
 
-it('rejects a key-only UUID as input to a value slug transform', function () {
+it('composes UUID and slug transforms for both record values and selected keys', function () {
     $schema = Schema::fromArray(['type' => 'object', 'properties' => ['id' => ['type' => 'string']]]);
     $settings = [
         new TransformSetting('insert_uuid', ['fields' => ["$['id']"], 'output' => 'uuid']),
         new TransformSetting('slug', ['input' => "$['uuid']", 'output' => 'slug']),
     ];
 
-    expect(app(ReplicaSchemaResolver::class)->resultSchema(
-        $schema,
-        $settings,
-        null,
-        TransformScope::Record,
-    ))->toBeNull();
+    $schemas = app(ReplicaSchemaResolver::class);
+    expect($schemas->resultSchema($schema, $settings, TransformScope::Record)?->properties())->toHaveKey('slug');
+    $replica = new Replica([
+        'schema' => $schema,
+        'transforms' => $settings,
+        'mapping' => [new FieldMapping('slug', 'id')],
+    ]);
+    expect($schemas->keyPlan($replica, ['slug'])['sources'])->toBe(['id']);
+    $pipeline = app(TransformFactory::class)->pipeline($replica, new StructureItem(['schema' => $schema]), [
+        'slug' => 'id',
+    ]);
+    expect($pipeline)->toMatchArray([
+        'transforms.replica_0.type' => 'org.phpinnacle.toblerone.InsertUuid$Value',
+        'transforms.replica_0_key.type' => 'org.phpinnacle.toblerone.InsertUuid$Key',
+        'transforms.replica_1.type' => 'org.phpinnacle.toblerone.SlugTransform$Value',
+        'transforms.replica_1_key.type' => 'org.phpinnacle.toblerone.SlugTransform$Key',
+    ]);
 });
 
 it('previews only the valid prefix of an incomplete record chain', function () {
@@ -158,7 +179,6 @@ it('previews only the valid prefix of an incomplete record chain', function () {
     expect(app(ReplicaSchemaResolver::class)->resultSchema(
         $schema,
         $settings,
-        null,
         TransformScope::Record,
     ))->toBeNull();
     expect(app(ReplicaSchemaResolver::class)->previewRecordSchema($schema, []))->toBe($schema);

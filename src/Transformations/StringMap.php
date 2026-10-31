@@ -35,11 +35,6 @@ final class StringMap implements Transform
         return [];
     }
 
-    public function getTarget(): TransformTarget
-    {
-        return TransformTarget::Value;
-    }
-
     public function accepts(Schema $input): bool
     {
         return (
@@ -121,10 +116,10 @@ final class StringMap implements Transform
     /**
      * @param array{field: string, mapping: array<array-key, string>} $params
      */
-    public function connector(array $params): array
+    public function connector(TransformTarget $target, array $params): array
     {
         $config = [
-            'type' => 'org.phpinnacle.toblerone.StringMapTransform$Value',
+            'type' => 'org.phpinnacle.toblerone.StringMapTransform$' . ucfirst($target->value),
             'field' => $params['field'],
         ];
         foreach ($params['mapping'] as $source => $replacement) {

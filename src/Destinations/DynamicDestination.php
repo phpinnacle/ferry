@@ -41,10 +41,13 @@ final readonly class DynamicDestination implements Destination
     /** @return non-empty-list<string> */
     public function getPrimaryKey(): array
     {
+        $columns = $this->replica->columnMap();
+
         /** @var non-empty-list<string> */
-        return array_values($this->replica->primaryKeyMap(
-            $this->schemas->primaryKeySources($this->replica, $this->replica->sourceObject()),
-        ));
+        return array_map(
+            fn (string $source) => $columns[$source],
+            $this->schemas->primaryKeySources($this->replica),
+        );
     }
 
     /** @return array<string, string> */

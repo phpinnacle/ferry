@@ -8,7 +8,6 @@ use PHPinnacle\Ferry\Enums\ReplicaStatus;
 use PHPinnacle\Ferry\Enums\StructureStatus;
 use PHPinnacle\Ferry\Origins\Kafka\SourceFactory;
 use PHPinnacle\Ferry\Services\DestinationFactory;
-use PHPinnacle\Ferry\Services\ReplicaSchemaResolver;
 use PHPinnacle\Ferry\Tests\TestCase;
 use PHPinnacle\Jason\Schema;
 use PHPinnacle\Jason\SchemaBuilder;
@@ -211,10 +210,8 @@ it('never lets an unscoped source connector capture the whole database', functio
         ->toBe('kafka');
 });
 
-it('captures declared source keys before a pending static replica is mapped', function (
+it('leaves pending static replicas without a selected key or captured columns', function (
     array $primaryKey,
-    string $columns,
-    ?string $key,
 ) {
     app(DestinationFactory::class)->register(new StaticDestination(
         key: 'names',
@@ -249,26 +246,18 @@ it('captures declared source keys before a pending static replica is mapped', fu
     $config = app(SourceFactory::class)->source($upstream, config('phpinnacle-ferry.origins.kafka'));
 
     expect($config['table.include.list'])->toBe('public.customers');
-    expect($config['column.include.list'])->toBe($columns);
-    if ($key === null) {
-        expect($config)->not->toHaveKey('message.key.columns');
-    } else {
-        expect($config['message.key.columns'])->toBe($key);
-    }
+    expect($config['column.include.list'])->toBe('');
+    expect($config)->not->toHaveKey('message.key.columns');
 })->with([
-    'composite in declared order' => [
-        ['tenant_id', 'record_id'],
-        'public.customers.tenant_id,public.customers.record_id',
-        'public.customers:tenant_id,record_id',
-    ],
-    'without a declared primary key' => [[], '', null],
+    'composite in declared order' => [['tenant_id', 'record_id']],
+    'without a declared primary key' => [[]],
 ]);
 
-it('uses the key and column names supplied by a non-Rosetta adapter', function () {
+it('uses static mapping keys without a primary key from a non-Rosetta adapter', function () {
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
     $object = TestCase::makeItem($upstream, [
         'name' => 'customers',
-        'primary_key' => ['record_id'],
+        'primary_key' => [],
         'fields' => [],
         'schema' => Schema::fromArray([
             'type' => 'object',
@@ -278,8 +267,17 @@ it('uses the key and column names supplied by a non-Rosetta adapter', function (
             ],
         ]),
     ]);
+    app(DestinationFactory::class)->register(new StaticDestination(
+        'customers',
+        'Customers',
+        'customers',
+        ['id'],
+        Schema::object(['id' => Schema::string(), 'name' => Schema::string()]),
+    ));
     $replica = TestCase::makeReplica([
         'upstream_id' => $upstream->id,
+        'type' => DestinationType::Static,
+        'destination' => 'customers',
         'mapping' => [
             new FieldMapping(source: 'record_id', target: 'id'),
             new FieldMapping(source: 'display_name', target: 'name'),
@@ -292,7 +290,7 @@ it('uses the key and column names supplied by a non-Rosetta adapter', function (
     $pipeline = app(\PHPinnacle\Ferry\Origins\Kafka\TransformFactory::class)->pipeline(
         $replica,
         $object,
-        $replica->primaryKeyMap(app(ReplicaSchemaResolver::class)->primaryKeySources($replica, $object)),
+        $replica->primaryKeyMap(['id']),
     );
 
     expect($config['message.key.columns'])

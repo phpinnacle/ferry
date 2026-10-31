@@ -82,7 +82,7 @@ function ferry_kafka_origin(
         $kafkaConnect,
         app(SourceFactory::class),
         $destinations,
-        new SinkConfigFactory($transforms, app(ReplicaSchemaResolver::class)),
+        new SinkConfigFactory($transforms),
     );
 }
 

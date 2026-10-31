@@ -20,8 +20,6 @@ interface Transform
      */
     public function sourceFields(array $params): array;
 
-    public function getTarget(): TransformTarget;
-
     public function accepts(Schema $input): bool;
 
     /** @param array<string, mixed> $params */
@@ -33,5 +31,5 @@ interface Transform
      * @param array<string, mixed> $params
      * @return array<string, string>
      */
-    public function connector(array $params): array;
+    public function connector(TransformTarget $target, array $params): array;
 }

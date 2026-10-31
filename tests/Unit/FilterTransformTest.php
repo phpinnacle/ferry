@@ -3,6 +3,7 @@
 use Filament\Schemas\Schema as FilamentSchema;
 use Illuminate\Support\ViewErrorBag;
 use Illuminate\Validation\ValidationException;
+use PHPinnacle\Ferry\Enums\TransformTarget;
 use PHPinnacle\Ferry\Tests\Fixtures\SchemaHost;
 use PHPinnacle\Ferry\Transformations\Filter;
 use PHPinnacle\Jason\Schema;
@@ -16,7 +17,7 @@ it('binds JSONPath predicates to the selected field without changing literals or
     string $predicate,
     string $condition,
 ) {
-    $config = new Filter()->connector([
+    $config = new Filter()->connector(TransformTarget::Value, [
         'field' => '_fld1',
         'mode' => 'include',
         'condition' => $predicate,
@@ -50,7 +51,7 @@ it('binds JSONPath predicates to the selected field without changing literals or
 ]);
 
 it('uses literal field names in JSONPath', function (string $field, string $path) {
-    $config = new Filter()->connector([
+    $config = new Filter()->connector(TransformTarget::Value, [
         'field' => $field,
         'mode' => 'exclude',
         'condition' => '@ == true',
@@ -65,7 +66,7 @@ it('uses literal field names in JSONPath', function (string $field, string $path
 ]);
 
 it('preserves filter modes, explicit missing behavior and tombstones', function (string $mode, string $missing) {
-    expect(new Filter()->connector([
+    expect(new Filter()->connector(TransformTarget::Value, [
         'field' => '_fld1',
         'mode' => $mode,
         'condition' => '@ == false',

@@ -80,7 +80,7 @@ it('builds a confluent jdbc sink connector config with field renames', function 
     $builder = app(SourceFactory::class);
     config(['phpinnacle-ferry.replica.table_prefix' => 'changed_prefix_']);
 
-    $config = new SinkConfigFactory($this->factory, app(ReplicaSchemaResolver::class))->make(
+    $config = new SinkConfigFactory($this->factory)->make(
         new DestinationFactory(app(ReplicaSchemaResolver::class))->resolve($replica),
         $replica,
         $object,
@@ -146,13 +146,13 @@ it('keeps each sink limited to the fields of its own mapping when several replic
 
     $builder = app(SourceFactory::class);
 
-    $firstConfig = new SinkConfigFactory($this->factory, app(ReplicaSchemaResolver::class))->make(
+    $firstConfig = new SinkConfigFactory($this->factory)->make(
         new DestinationFactory(app(ReplicaSchemaResolver::class))->resolve($first),
         $first,
         $object,
         $builder->topic($upstream, $object),
     );
-    $secondConfig = new SinkConfigFactory($this->factory, app(ReplicaSchemaResolver::class))->make(
+    $secondConfig = new SinkConfigFactory($this->factory)->make(
         new DestinationFactory(app(ReplicaSchemaResolver::class))->resolve($second),
         $second,
         $object,
@@ -190,7 +190,7 @@ it('builds a static sink with fixed fields and its target upstream', function (
 
     $builder = app(SourceFactory::class);
 
-    $config = new SinkConfigFactory($this->factory, app(ReplicaSchemaResolver::class))->make(
+    $config = new SinkConfigFactory($this->factory)->make(
         $registry->resolve($replica),
         $replica,
         $object,
@@ -284,7 +284,7 @@ it('keeps configured sink hosts and environment ports while applying the default
     $builder = app(SourceFactory::class);
 
     expect(
-        new SinkConfigFactory($this->factory, app(ReplicaSchemaResolver::class))->make(
+        new SinkConfigFactory($this->factory)->make(
             new DestinationFactory(app(ReplicaSchemaResolver::class))->resolve($replica),
             $replica,
             $object,
@@ -347,7 +347,7 @@ it('selects and renames only source key fields mapped to the static primary key'
         ),
     ]);
 
-    $config = new SinkConfigFactory($this->factory, app(ReplicaSchemaResolver::class))->make(
+    $config = new SinkConfigFactory($this->factory)->make(
         $destination,
         $replica,
         $object,
@@ -385,8 +385,8 @@ it('selects and renames only source key fields mapped to the static primary key'
             'transforms.rename_values.include' => '',
             'transforms.rename_values.exclude' => '_idrref,_owner',
             'transforms.rename_values.renames' => '',
-            'transforms.rename_keys.include' => '_idrref,_owner',
-            'transforms.rename_keys.renames' => '_idrref:id,_owner:source_id',
+            'transforms.rename_keys.include' => '_owner,_idrref',
+            'transforms.rename_keys.renames' => '_owner:source_id,_idrref:id',
         ],
     ],
     'target named after an original key component' => [

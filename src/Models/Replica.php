@@ -160,15 +160,15 @@ class Replica extends Model
     }
 
     /**
-     * @param list<string> $sources
+     * @param list<string> $targets
      * @return array<string, string>
      */
-    public function primaryKeyMap(array $sources): array
+    public function primaryKeyMap(array $targets): array
     {
-        $columns = $this->columnMap();
+        $sources = array_flip($this->columnMap());
         $keys = [];
-        foreach ($sources as $column) {
-            $keys[$column] = $columns[$column];
+        foreach ($targets as $target) {
+            $keys[$sources[$target]] = $target;
         }
 
         return $keys;

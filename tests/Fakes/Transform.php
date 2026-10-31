@@ -15,11 +15,10 @@ final class Transform implements TransformContract
     /**
      * @param Closure(Schema): bool|null $accepts
      * @param Closure(Schema, array<string, string>): (Schema|null)|null $output
-     * @param Closure(array<string, mixed>): array<string, string>|null $connector
+     * @param Closure(TransformTarget, array<string, mixed>): array<string, string>|null $connector
      */
     public function __construct(
         private readonly string $key,
-        private readonly TransformTarget $target = TransformTarget::Value,
         private readonly ?Closure $accepts = null,
         private readonly ?Closure $output = null,
         private readonly InlineBlock|TabbedBlock|null $block = null,
@@ -42,11 +41,6 @@ final class Transform implements TransformContract
         return [];
     }
 
-    public function getTarget(): TransformTarget
-    {
-        return $this->target;
-    }
-
     public function accepts(Schema $input): bool
     {
         return $this->accepts === null || ($this->accepts)($input);
@@ -62,8 +56,8 @@ final class Transform implements TransformContract
         return $this->block ?? InlineBlock::make($this->key);
     }
 
-    public function connector(array $params): array
+    public function connector(TransformTarget $target, array $params): array
     {
-        return ($this->connector)($params);
+        return ($this->connector)($target, $params);
     }
 }

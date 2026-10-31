@@ -8,6 +8,7 @@ use PHPinnacle\Ferry\Data\FieldMapping;
 use PHPinnacle\Ferry\Data\TransformSetting;
 use PHPinnacle\Ferry\Enums\FieldKind;
 use PHPinnacle\Ferry\Enums\KafkaType;
+use PHPinnacle\Ferry\Enums\TransformScope;
 use PHPinnacle\Ferry\Enums\TransformTarget;
 use PHPinnacle\Ferry\Models\Replica;
 use PHPinnacle\Ferry\Origins\Kafka\TransformFactory;
@@ -47,15 +48,15 @@ it('resolves only the configured transform classes through the container', funct
     expect($registry->find('cast'))->toBeInstanceOf(Cast::class);
 });
 
-it('keeps key and value transformation chains on their declared record targets', function () {
-    $key = new FakeTransform('custom', target: TransformTarget::Key);
+it('resolves transformation chains only within their declared scope', function () {
+    $transform = new FakeTransform('custom', scope: TransformScope::Record);
     $registry = new TransformRegistry;
-    $registry->register($key);
+    $registry->register($transform);
     $schema = Schema::fromArray(['type' => 'string']);
     $settings = [new TransformSetting('custom')];
     $schemas = new ReplicaSchemaResolver($registry);
     expect($schemas->resultSchema($schema, $settings))->toBeNull();
-    expect($schemas->resultSchema($schema, $settings, TransformTarget::Key)?->toArray())->toBe($schema->toArray());
+    expect($schemas->resultSchema($schema, $settings, TransformScope::Record)?->toArray())->toBe($schema->toArray());
 });
 
 it('uses translated Kafka type labels and stores their native string values', function (string $locale, array $labels) {
@@ -107,7 +108,7 @@ it('casts a field to the selected column type', function (string $type, string $
             ?->toArray(),
     )
         ->toBe(['type' => $schemaType])
-        ->and($cast->connector(['field' => '_fld1', 'type' => $type]))
+        ->and($cast->connector(TransformTarget::Value, ['field' => '_fld1', 'type' => $type]))
         ->toBe([
             'type' => 'org.apache.kafka.connect.transforms.Cast$Value',
             'spec' => '_fld1:' . $type,
@@ -208,7 +209,7 @@ it('keeps the Kafka null replacement default implicit and persists disabling it'
     }
 
     expect($schema->getState())->toBe($expected);
-    $config = new Cast()->connector(['field' => 'field'] + $expected);
+    $config = new Cast()->connector(TransformTarget::Value, ['field' => 'field'] + $expected);
     expect($config['replace.null.with.default'] ?? 'true')->toBe($setting ?? 'true');
 })->with([null, 'true', 'false']);
 
@@ -267,8 +268,7 @@ it('registers optional installed field transforms through the shared registry', 
 });
 
 it('serializes substring indexes using the installed Toblerone field format', function (array $params, string $fields) {
-    expect(new Substring()->connector(['field' => '_description']
-    + $params))->toBe([
+    expect(new Substring()->connector(TransformTarget::Value, ['field' => '_description'] + $params))->toBe([
         'type' => 'org.phpinnacle.toblerone.SubstringTransform$Value',
         'fields' => $fields,
     ]);
@@ -279,7 +279,7 @@ it('serializes substring indexes using the installed Toblerone field format', fu
 ]);
 
 it('masks a source field without applying the Apache transform to tombstones', function () {
-    expect(new MaskField()->connector(['field' => '_fld1', 'replacement' => 'hidden']))->toBe([
+    expect(new MaskField()->connector(TransformTarget::Value, ['field' => '_fld1', 'replacement' => 'hidden']))->toBe([
         'type' => 'org.apache.kafka.connect.transforms.MaskField$Value',
         'fields' => '_fld1',
         'replacement' => 'hidden',
@@ -417,7 +417,7 @@ it('compiles a custom registered transform without building its settings form', 
         block: InlineBlock::make('headless')->schema(
             fn () => throw new LogicException('The worker must not build a form.'),
         ),
-        connector: fn (array $params) => Filter::make()->connector($params),
+        connector: fn (TransformTarget $target, array $params) => Filter::make()->connector($target, $params),
     );
     $registry->register($transform);
     $factory = app(TransformFactory::class);

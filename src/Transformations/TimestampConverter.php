@@ -35,11 +35,6 @@ final class TimestampConverter implements Transform
         return [];
     }
 
-    public function getTarget(): TransformTarget
-    {
-        return TransformTarget::Value;
-    }
-
     public function accepts(Schema $input): bool
     {
         return (
@@ -140,10 +135,10 @@ final class TimestampConverter implements Transform
     /**
      * @param array<string, string> $params
      */
-    public function connector(array $params): array
+    public function connector(TransformTarget $target, array $params): array
     {
         return [
-            'type' => 'org.apache.kafka.connect.transforms.TimestampConverter$Value',
+            'type' => 'org.apache.kafka.connect.transforms.TimestampConverter$' . ucfirst($target->value),
             'field' => $params['field'],
             'target.type' => $params['target_type'],
             ...(
@@ -161,8 +156,7 @@ final class TimestampConverter implements Transform
                     ? ['replace.null.with.default' => $params['replace_null_with_default']]
                     : []
             ),
-            'predicate' => 'tombstone',
-            'negate' => 'true',
+            ...($target !== TransformTarget::Key ? ['predicate' => 'tombstone', 'negate' => 'true'] : []),
         ];
     }
 }

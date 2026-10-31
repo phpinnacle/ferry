@@ -15,7 +15,6 @@ use PHPinnacle\Ferry\Data\FieldMapping as SchemaMapping;
 use PHPinnacle\Ferry\Destinations\StaticDestination;
 use PHPinnacle\Ferry\Enums\DestinationType;
 use PHPinnacle\Ferry\Enums\StructureStatus;
-use PHPinnacle\Ferry\Enums\TransformTarget;
 use PHPinnacle\Ferry\Models\Replica;
 use PHPinnacle\Ferry\Models\StructureItem;
 use PHPinnacle\Ferry\Resources\Replicas\Schemas\ReplicaForm;
@@ -48,7 +47,7 @@ beforeEach(function () {
     Queue::fake();
 });
 
-it('hides field transform additions on primary-key cards and rejects submitted transforms', function (DestinationType $type) {
+it('allows compatible field transforms on source keys for both destination types', function (DestinationType $type) {
     $destination = new StaticDestination(
         'keyed',
         'Keyed',
@@ -88,31 +87,23 @@ it('hides field transform additions on primary-key cards and rejects submitted t
     $keys = $mapping->getSourceRowIndexes();
     $field = $form->getComponentByStatePath('mapping.' . $keys['record_id'] . '.options.transforms');
     $ordinary = $form->getComponentByStatePath('mapping.' . $keys['name'] . '.options.transforms');
-    expect($field->getBlocks())->toBe([]);
-    expect($field->getAvailableBlocks())->toBe([]);
-    expect($field->getAction('fieldTransforms')([])->toHtml())
-        ->not
-        ->toContain('inline-builder-add-button', 'inline-builder-placeholder');
-    expect(array_keys($ordinary->getAvailableBlocks()))
-        ->toContain('cast', 'filter', 'trim');
-
-    $data = $form->getState();
-    expect(collect($data['mapping'])->firstWhere('source', 'record_id'))->toMatchArray([
-        'source' => 'record_id',
-        'target' => 'id',
-    ]);
-
-    app(TransformRegistry::class)->register(new FakeTransform('key_transform', target: TransformTarget::Key));
-    $field->state([['type' => 'key_transform', 'data' => []]]);
-
-    expect($form->getState(...))
-        ->toThrow(
-            ValidationException::class,
-            __('phpinnacle-ferry::validation.primary_key_transforms_prohibited'),
-        );
+    expect(array_keys($field->getAvailableBlocks()))->toContain('cast', 'filter', 'trim');
+    expect(array_keys($ordinary->getAvailableBlocks()))->toContain('cast', 'filter', 'trim');
+    $field->state([['type' => 'trim', 'data' => []]]);
+    $state = $form->getState();
+    expect(collect($state['mapping'])->firstWhere('source', 'record_id')['options']['transforms'])
+        ->toBe([['type' => 'trim', 'data' => []]]);
+    $replica->update($state);
+    $pipeline = app(\PHPinnacle\Ferry\Origins\Kafka\TransformFactory::class)->pipeline(
+        $replica,
+        $replica->sourceObject(),
+        ['record_id' => 'id'],
+    );
+    expect($pipeline['transforms.field_' . $keys['record_id'] . '_0.type'])
+        ->toBe('org.phpinnacle.toblerone.TrimTransform$Key');
 })->with([DestinationType::Dynamic, DestinationType::Static]);
 
-it('only connects static destination primary keys to source primary-key fields', function () {
+it('connects compatible static fields regardless of source primary-key membership', function () {
     $destination = new StaticDestination(
         key: 'keyed',
         label: 'Keyed',
@@ -160,10 +151,10 @@ it('only connects static destination primary keys to source primary-key fields',
         ->toHaveKey('record_id.id', MappingMode::Whole)
         ->toHaveKey('tenant_id.tenant', MappingMode::Whole)
         ->toHaveKey('owner.name', MappingMode::Whole)
-        ->not->toHaveKey('record_id.name')
-        ->not->toHaveKey('tenant_id.name')
-        ->not->toHaveKey('owner.id')
-        ->not->toHaveKey('owner.tenant');
+        ->toHaveKey('record_id.name', MappingMode::Whole)
+        ->toHaveKey('tenant_id.name', MappingMode::Whole)
+        ->toHaveKey('owner.id', MappingMode::Whole)
+        ->toHaveKey('owner.tenant', MappingMode::Whole);
     expect($mapping->getStaticFormSchema('id'))
         ->toBeNull()
         ->and($mapping->getStaticFormSchema('tenant'))
@@ -180,23 +171,19 @@ it('only connects static destination primary keys to source primary-key fields',
             'tenant' => MappingState::source('tenant_id'),
         ]),
     ]);
-    expect($form->getState(...))->toThrow(ValidationException::class);
+    expect(collect($form->getState()['mapping'])->firstWhere('target', 'id')['source'])->toBe('owner');
 
-    foreach ([
-        new SchemaMapping(source: 'owner', target: 'id'),
-        SchemaMapping::fromArray(['kind' => 'static', 'target' => 'id', 'static' => 'constant', 'options' => []]),
-    ] as $invalid) {
-        $rows = [$invalid, new SchemaMapping(source: 'tenant_id', target: 'tenant')];
-        expect(fn () => TestCase::replicaFormState([
-            'schema' => $replica->schema->toArray(),
-            'name' => 'Keyed',
-            'mapping' => array_map(fn (SchemaMapping $row) => $row->jsonSerialize(), $rows),
-        ], $replica))
-            ->toThrow(ValidationException::class);
-    }
+    expect(fn () => TestCase::replicaFormState([
+        'name' => 'Keyed',
+        'mapping' => [
+            ['kind' => 'static', 'target' => 'id', 'static' => 'constant', 'options' => []],
+            ['kind' => 'source', 'source' => 'tenant_id', 'target' => 'tenant', 'options' => []],
+        ],
+    ], $replica))
+        ->toThrow(ValidationException::class);
 });
 
-it('requires the whole source key in the static mapping form', function (
+it('derives static keys from destination mappings without requiring a complete source key', function (
     array $primaryKey,
     array $bindings,
 ) {
@@ -224,7 +211,7 @@ it('requires the whole source key in the static mapping form', function (
         FilamentSchema::make(SchemaHost::make())->statePath('data')->record($replica)->operation('edit'),
     );
     $form->fill([...$replica->toArray(), 'mapping' => MappingState::mapping($bindings)]);
-    expect($form->getState(...))->toThrow(ValidationException::class);
+    expect(collect($form->getState()['mapping'])->firstWhere('target', 'id')['source'])->toBe('record_id');
 })->with([
     'missing component' => [['record_id', 'tenant_id'], ['id' => ['kind' => 'source', 'source' => 'record_id']]],
     'ordinary target' => [
@@ -845,6 +832,7 @@ it('binds dynamic fields and connects static fields to the declared destination 
         ->toBe(['customer_id' => 'string', 'name' => 'string', 'tax_number' => 'string', 'is_active' => 'boolean']);
 
     expect($mapping->getConnectionModes()['_fld1'])->toBe([
+        'customer_id' => MappingMode::Whole,
         'name' => MappingMode::Whole,
         'tax_number' => MappingMode::Whole,
     ]);
@@ -1510,7 +1498,9 @@ it('maps UUID references into bounded strings while respecting target length and
     $mapping = $form->getComponentByStatePath('mapping');
 
     expect($mapping->getConnectionModes())
-        ->not->toHaveKey('_partner.external_id')->toHaveKey('_idrref.external_id', MappingMode::Whole)->toHaveKey(
+        ->toHaveKey('_partner.external_id', MappingMode::Whole)
+        ->toHaveKey('_idrref.external_id', MappingMode::Whole)
+        ->toHaveKey(
             '_partner.exact_id',
             MappingMode::Whole,
         )

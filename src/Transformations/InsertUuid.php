@@ -30,11 +30,6 @@ final class InsertUuid implements Transform
         return TransformScope::Record;
     }
 
-    public function getTarget(): TransformTarget
-    {
-        return TransformTarget::Key;
-    }
-
     public function accepts(Schema $input): bool
     {
         return $input->singleType() === 'object';
@@ -62,7 +57,6 @@ final class InsertUuid implements Transform
                     'format' => 'uuid',
                     'minLength' => 36,
                     'maxLength' => 36,
-                    'x-ferry-target' => 'key',
                 ],
             ]
             + ($schema['properties'] ?? []);
@@ -129,10 +123,10 @@ final class InsertUuid implements Transform
 
     /** @param array{fields: list<string>, output: string} $params
      */
-    public function connector(array $params): array
+    public function connector(TransformTarget $target, array $params): array
     {
         return [
-            'type' => 'org.phpinnacle.toblerone.InsertUuid$Key',
+            'type' => 'org.phpinnacle.toblerone.InsertUuid$' . ucfirst($target->value),
             'fields' => implode(',', $this->sourceFields($params)),
             'output' => $params['output'],
         ];

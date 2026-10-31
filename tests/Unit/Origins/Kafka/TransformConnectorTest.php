@@ -60,7 +60,7 @@ it('orders field transforms and static values before the renames of a sink', fun
     ]);
 
     $builder = app(SourceFactory::class);
-    $config = new SinkConfigFactory($factory, app(ReplicaSchemaResolver::class))->make(
+    $config = new SinkConfigFactory($factory)->make(
         new DestinationFactory(app(ReplicaSchemaResolver::class))->resolve($replica),
         $replica,
         $object,
@@ -111,7 +111,7 @@ it('captures an unbound field filter without writing it or capturing unused fiel
         $upstream,
         config('phpinnacle-ferry.origins.kafka'),
     );
-    $config = new SinkConfigFactory($factory, app(ReplicaSchemaResolver::class))->make(
+    $config = new SinkConfigFactory($factory)->make(
         new DestinationFactory(app(ReplicaSchemaResolver::class))->resolve($replica),
         $replica,
         $object,
@@ -183,7 +183,7 @@ it('builds installed string transforms before renames and guards masking against
             ]),
         ],
     ]);
-    $config = new SinkConfigFactory($factory, app(ReplicaSchemaResolver::class))->make(
+    $config = new SinkConfigFactory($factory)->make(
         new DestinationFactory(app(ReplicaSchemaResolver::class))->resolve($replica),
         $replica,
         $object,
@@ -280,7 +280,7 @@ it('scopes and transforms independently selected reference components using thei
         $upstream,
         config('phpinnacle-ferry.origins.kafka'),
     );
-    $sink = new SinkConfigFactory(app(TransformFactory::class), app(ReplicaSchemaResolver::class))->make(
+    $sink = new SinkConfigFactory(app(TransformFactory::class))->make(
         new DestinationFactory(app(ReplicaSchemaResolver::class))->resolve($replica),
         $replica,
         $object,

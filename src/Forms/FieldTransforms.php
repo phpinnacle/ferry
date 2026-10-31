@@ -10,7 +10,6 @@ use PHPinnacle\Common\Forms\InlineBuilder\Block as InlineBlock;
 use PHPinnacle\Ferry\Contracts\Transform;
 use PHPinnacle\Ferry\Data\TransformSetting;
 use PHPinnacle\Ferry\Enums\TransformScope;
-use PHPinnacle\Ferry\Enums\TransformTarget;
 use PHPinnacle\Ferry\Services\ReplicaSchemaResolver;
 use PHPinnacle\Ferry\Services\TransformRegistry;
 use PHPinnacle\Jason\Schema;
@@ -18,17 +17,8 @@ use PHPinnacle\Jason\Schema;
 /** @phpstan-import-type TransformData from TransformSetting */
 class FieldTransforms extends InlineBuilder
 {
-    protected TransformTarget $target = TransformTarget::Value;
-
     /** @var Schema|Closure(): Schema */
     protected Schema|Closure $inputSchema;
-
-    public function target(TransformTarget $target): static
-    {
-        $this->target = $target;
-
-        return $this;
-    }
 
     /** @param Schema|Closure(): Schema $schema */
     public function inputSchema(Schema|Closure $schema): static
@@ -100,7 +90,7 @@ class FieldTransforms extends InlineBuilder
             $setting = new TransformSetting($item['type'], $this->getItemData($index, ['input' => $schema]));
             $settings[] = $setting;
             if ($schema !== null) {
-                $schema = $schemas->resultSchema($schema, [$setting], $this->target, TransformScope::Field);
+                $schema = $schemas->resultSchema($schema, [$setting]);
                 if ($schema === null) {
                     $invalid = $setting;
                 }
@@ -126,10 +116,7 @@ class FieldTransforms extends InlineBuilder
             fn (Transform $transform) => $transform->block(),
             array_filter(
                 $registry->all(),
-                fn (Transform $transform) => (
-                    $transform->getScope() === TransformScope::Field
-                    && $transform->getTarget() === $this->target
-                ),
+                fn (Transform $transform) => $transform->getScope() === TransformScope::Field,
             ),
         )));
         $this->reorderableUsing($this->canReorderItems(...));
@@ -149,8 +136,6 @@ class FieldTransforms extends InlineBuilder
         return $schemas->resultSchema(
             $this->evaluate($this->inputSchema),
             array_map(TransformSetting::fromArray(...), $items),
-            $this->target,
-            TransformScope::Field,
         ) !== null;
     }
 

@@ -32,11 +32,6 @@ final class MaskField implements Transform
         return [];
     }
 
-    public function getTarget(): TransformTarget
-    {
-        return TransformTarget::Value;
-    }
-
     public function accepts(Schema $input): bool
     {
         return (
@@ -73,14 +68,13 @@ final class MaskField implements Transform
     /**
      * @param array<string, string> $params
      */
-    public function connector(array $params): array
+    public function connector(TransformTarget $target, array $params): array
     {
         return [
-            'type' => 'org.apache.kafka.connect.transforms.MaskField$Value',
+            'type' => 'org.apache.kafka.connect.transforms.MaskField$' . ucfirst($target->value),
             'fields' => $params['field'],
             'replacement' => $params['replacement'],
-            'predicate' => 'tombstone',
-            'negate' => 'true',
+            ...($target !== TransformTarget::Key ? ['predicate' => 'tombstone', 'negate' => 'true'] : []),
         ];
     }
 }

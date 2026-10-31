@@ -33,11 +33,6 @@ final class BooleanToString implements Transform
         return [];
     }
 
-    public function getTarget(): TransformTarget
-    {
-        return TransformTarget::Value;
-    }
-
     public function accepts(Schema $input): bool
     {
         return $input->singleType() === 'boolean';
@@ -97,10 +92,10 @@ final class BooleanToString implements Transform
     /**
      * @param array<string, string> $params
      */
-    public function connector(array $params): array
+    public function connector(TransformTarget $target, array $params): array
     {
         return [
-            'type' => 'org.phpinnacle.toblerone.BooleanToStringTransform$Value',
+            'type' => 'org.phpinnacle.toblerone.BooleanToStringTransform$' . ucfirst($target->value),
             'fields' => $params['field'],
             'true' => $params['true'],
             'false' => $params['false'],
