@@ -469,7 +469,7 @@ Choose a named entry from [`origins`](#configuration) when creating an upstream.
 
 `PHPinnacle\Ferry\Contracts\Origin` builds an unsaved `Connector` through `make(Upstream|Replica)`, reusing the owner's existing connector when present. Connector operations accept only `Connector`: `create`, `update`, `remove`, `start`, `pause`, and `status`. Status returns `ConnectorStatus`; Kafka task diagnostics are placed on the supplied connector without saving it. Origins do not persist models, associate owners or dispatch jobs.
 
-`ConnectorManager` owns association, transactions and lifecycle coordination. Panel actions call this service:
+`ConnectorManager` owns association, transactions and lifecycle coordination. Panel actions call this service. Start is hidden until a field mapping is saved; direct activation of an unmapped pending replica is rejected with a validation message before any connector or job is created:
 
 ```php
 use PHPinnacle\Ferry\Services\ConnectorManager;

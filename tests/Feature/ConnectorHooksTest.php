@@ -3,6 +3,7 @@
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Validation\ValidationException;
 use PHPinnacle\Ferry\Contracts\Origin;
 use PHPinnacle\Ferry\Data\FieldMapping;
 use PHPinnacle\Ferry\Data\StructurePlan;
@@ -163,6 +164,17 @@ it('applies source before sinks and activates the replica after success', functi
         ->and(DB::table('jobs')->count())
         ->toBe(0);
 });
+
+it('keeps unmapped replicas pending when activation is requested', function (string $method) {
+    $replica = TestCase::makeReplica(['mapping' => []]);
+
+    expect(fn () => app(ConnectorManager::class)->$method($replica))
+        ->toThrow(ValidationException::class, 'Save the field mapping before starting the replica');
+
+    expect($replica->fresh()->status)->toBe(ReplicaStatus::Pending);
+    expect(Connector::query()->exists())->toBeFalse();
+    expect(DB::table('jobs')->count())->toBe(0);
+})->with(['start', 'activate']);
 
 it('starts new replicas, resumes paused replicas and retries failed connectors', function (
     bool $deployed,

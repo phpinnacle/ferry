@@ -171,6 +171,7 @@ return [
             'transform_missing' => 'Трансформация ":transform" не зарегистрирована',
             'required_destination_field_missing' => 'Обязательное поле назначения ":field" не сопоставлено',
             'destination_primary_key_source' => 'Поле первичного ключа назначения ":field" должно быть сопоставлено с полем источника',
+            'mapping_required' => 'Сохраните сопоставление полей перед запуском реплики',
             'invalid_mapping' => 'Реплику ":code" нельзя активировать: сопоставление полей устарело',
         ],
         'messages' => [

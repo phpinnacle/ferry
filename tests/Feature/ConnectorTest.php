@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Schema;
+use PHPinnacle\Ferry\Data\FieldMapping;
 use PHPinnacle\Ferry\Enums\ConnectorStatus;
 use PHPinnacle\Ferry\Enums\DestinationType;
 use PHPinnacle\Ferry\Enums\ReplicaStatus;
@@ -255,12 +256,12 @@ it('filters replicas by status, upstream and destination', function () {
         ->toBe([$static->id]);
 });
 
-it('shows exactly one start or pause control for the replica state', function (
+it('shows exactly one start or pause control for the configured replica state', function (
     ReplicaStatus $status,
     ?ConnectorStatus $connectorStatus,
     string $visibleAction,
 ) {
-    $replica = new Replica;
+    $replica = new Replica(['mapping' => [new FieldMapping('_idrref', 'id')]]);
     $replica->status = $status;
     $replica->setRelation(
         'connector',

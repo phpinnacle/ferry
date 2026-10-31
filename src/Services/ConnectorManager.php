@@ -3,6 +3,7 @@
 namespace PHPinnacle\Ferry\Services;
 
 use Closure;
+use Illuminate\Validation\ValidationException;
 use PHPinnacle\Ferry\Contracts\Origin;
 use PHPinnacle\Ferry\Enums\ConnectorStatus;
 use PHPinnacle\Ferry\Enums\DestinationType;
@@ -61,6 +62,12 @@ class ConnectorManager
 
     public function activate(Replica $replica): void
     {
+        if ($replica->mapping === []) {
+            throw ValidationException::withMessages([
+                'data.mapping' => __('phpinnacle-ferry::resources.replica.errors.mapping_required'),
+            ]);
+        }
+
         $replica
             ->getConnection()
             ->transaction(function () use ($replica) {

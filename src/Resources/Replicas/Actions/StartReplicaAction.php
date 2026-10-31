@@ -18,7 +18,7 @@ class StartReplicaAction
             ->icon('phosphor-play-circle')
             ->iconButton()
             ->color('success')
-            ->visible(fn (Replica $record) => !$record->isRunning())
+            ->visible(fn (Replica $record) => $record->mapping !== [] && !$record->isRunning())
             ->action(function (ConnectorManager $connectors, Replica $record) {
                 try {
                     $connectors->start($record);
