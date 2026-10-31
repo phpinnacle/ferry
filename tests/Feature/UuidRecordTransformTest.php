@@ -96,7 +96,7 @@ it('creates and persists one UUID key through the tabbed record builder for both
     expect($html)->toContain($sourceAttribute . '="record_id"');
     expect(array_values($page->get('data.transforms')))->toBe([[
         'type' => 'insert_uuid',
-        'data' => ['fields' => ["$['row_id']", "$['tenant_id']"], 'output' => 'record_id'],
+        'data' => ['output' => 'record_id', 'fields' => ["$['row_id']", "$['tenant_id']"]],
     ]]);
 
     $form = $page->instance()->form;

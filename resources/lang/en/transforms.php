@@ -1,6 +1,8 @@
 <?php
 
 return [
+    'uuid_heading' => 'UUID: :field',
+    'slug_heading' => 'Slug: :field',
     'uuid_field' => 'Field name',
     'slug_input' => 'Source field',
     'slug_separators' => 'Additional separators',

@@ -3,6 +3,7 @@
 namespace PHPinnacle\Ferry\Transformations;
 
 use Filament\Forms\Components\TextInput;
+use Filament\Support\Icons\Heroicon;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use PHPinnacle\Eidos\Forms\JsonSchemaPicker;
@@ -35,7 +36,7 @@ final class InsertUuid implements Transform
         return $input->singleType() === 'object';
     }
 
-    /** @param array{fields: list<string>, output: string} $params */
+    /** @param array{fields: list<string>} $params */
     public function sourceFields(array $params): array
     {
         return array_map(fn (string $path) => (string) JsonPath::parse($path)[0], $params['fields']);
@@ -66,12 +67,23 @@ final class InsertUuid implements Transform
         return Schema::fromArray($schema);
     }
 
+    /** @param array{fields?: list<string>|null}|null $state */
+    private function blockLabel(?array $state): string
+    {
+        if (blank($state['fields'] ?? null)) {
+            return __('phpinnacle-ferry::transforms.insert_uuid');
+        }
+
+        return __('phpinnacle-ferry::transforms.uuid_heading', [
+            'field' => implode(', ', $this->sourceFields($state)),
+        ]);
+    }
+
     public function block(): RecordTransformBlock
     {
         return RecordTransformBlock::make($this->getKey())
-            ->label(fn (?array $state) => filled($state['output'] ?? null)
-                ? $state['output']
-                : __('phpinnacle-ferry::transforms.insert_uuid'))
+            ->label($this->blockLabel(...))
+            ->icon(Heroicon::FingerPrint)
             ->addable(
                 fn (RecordTransformBlock $component) => (
                     ($component->getInputSchema()->annotation('x-primary-key') ?? []) !== []
@@ -96,6 +108,15 @@ final class InsertUuid implements Transform
                 $paths = array_map(fn (string $source) => JsonPath::fromSegments([$source]), $primaryKey);
 
                 return [
+                    TextInput::make('output')
+                        ->label(__('phpinnacle-ferry::transforms.uuid_field'))
+                        ->default('id')
+                        ->required()
+                        ->maxLength(255)
+                        ->regex('/^[a-z][a-z0-9_]*$/')
+                        ->rules(['string', Rule::notIn(array_keys($input->resolveReferences()->effectiveProperties()))])
+                        ->validationMessages(['not_in' => __('phpinnacle-ferry::validation.uuid_field_exists')])
+                        ->lazy(),
                     JsonSchemaPicker::make('fields')
                         ->label(__('phpinnacle-ferry::transforms.uuid_sources'))
                         ->multiple()
@@ -108,15 +129,6 @@ final class InsertUuid implements Transform
                         ->required()
                         ->rule('size:' . count($primaryKey))
                         ->live(),
-                    TextInput::make('output')
-                        ->label(__('phpinnacle-ferry::transforms.uuid_field'))
-                        ->default('id')
-                        ->required()
-                        ->maxLength(255)
-                        ->regex('/^[a-z][a-z0-9_]*$/')
-                        ->rules(['string', Rule::notIn(array_keys($input->resolveReferences()->effectiveProperties()))])
-                        ->validationMessages(['not_in' => __('phpinnacle-ferry::validation.uuid_field_exists')])
-                        ->lazy(),
                 ];
             });
     }

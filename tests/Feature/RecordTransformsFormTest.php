@@ -54,9 +54,40 @@ it('keeps input schemas and parameter state independent between record builders'
     }
 
     expect($form->getState())->toBe([
-        'first' => [['type' => 'insert_uuid', 'data' => ['fields' => ["$['first_key']"], 'output' => 'id']]],
-        'second' => [['type' => 'insert_uuid', 'data' => ['fields' => ["$['second_key']"], 'output' => 'id']]],
+        'first' => [['type' => 'insert_uuid', 'data' => ['output' => 'id', 'fields' => ["$['first_key']"]]]],
+        'second' => [['type' => 'insert_uuid', 'data' => ['output' => 'id', 'fields' => ["$['second_key']"]]]],
     ]);
+});
+
+it('labels record tabs with their selected source fields and puts the output name first', function () {
+    $builder = RecordTransforms::make('transforms')->inputSchema(Schema::fromArray([
+        'type' => 'object',
+        'properties' => [
+            'tenant.id' => ['type' => 'integer'],
+            'row_id' => ['type' => 'integer'],
+            'code' => ['type' => 'string'],
+        ],
+        'x-primary-key' => ['tenant.id', 'row_id'],
+    ]));
+    FilamentSchema::make(SchemaHost::make())
+        ->statePath('data')
+        ->components([$builder])
+        ->fill([
+            'transforms' => [
+                ['type' => 'insert_uuid', 'data' => ['output' => 'id', 'fields' => ["$['tenant.id']", "$['row_id']"]]],
+                ['type' => 'slug', 'data' => ['output' => 'product_slug', 'input' => "$['code']"]],
+            ],
+        ]);
+
+    $labels = [];
+    foreach ($builder->getItems() as $key => $item) {
+        $block = $item->getParentComponent();
+        $labels[] = $block->getLabel($item->getRawState(), (string) $key);
+        expect($block->getIcon())->not->toBeNull();
+        expect($item->getComponents()[0]->getName())->toBe('output');
+    }
+
+    expect($labels)->toBe(['UUID: tenant.id, row_id', 'Slug: code']);
 });
 
 it('uses the current primary key after a preceding UUID transform', function () {
@@ -98,7 +129,7 @@ it('uses the current primary key after a preceding UUID transform', function () 
     expect(array_keys($properties))->toBe(['uuid']);
     expect($form->getState()['transforms'][1])->toBe([
         'type' => 'insert_uuid',
-        'data' => ['fields' => ["$['uuid']"], 'output' => 'id'],
+        'data' => ['output' => 'id', 'fields' => ["$['uuid']"]],
     ]);
     expect($builder->getInputSchema()->annotation('x-primary-key'))->toBe(['id']);
 });

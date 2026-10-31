@@ -3,6 +3,7 @@
 namespace PHPinnacle\Ferry\Transformations;
 
 use Filament\Forms\Components\TextInput;
+use Filament\Support\Icons\Heroicon;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use InvalidArgumentException;
@@ -36,7 +37,7 @@ final class Slug implements Transform
         return $input->singleType() === 'object';
     }
 
-    /** @param array{input: string, output: string, separators?: string|null} $params */
+    /** @param array{input: string} $params */
     public function sourceFields(array $params): array
     {
         /** @var string $source */
@@ -87,12 +88,23 @@ final class Slug implements Transform
         return Schema::fromArray($schema);
     }
 
+    /** @param array{input?: string|null}|null $state */
+    private function blockLabel(?array $state): string
+    {
+        if (blank($state['input'] ?? null)) {
+            return __('phpinnacle-ferry::transforms.slug');
+        }
+
+        return __('phpinnacle-ferry::transforms.slug_heading', [
+            'field' => implode(', ', $this->sourceFields($state)),
+        ]);
+    }
+
     public function block(): RecordTransformBlock
     {
         return RecordTransformBlock::make($this->getKey())
-            ->label(fn (?array $state) => filled($state['output'] ?? null)
-                ? $state['output']
-                : __('phpinnacle-ferry::transforms.slug'))
+            ->label($this->blockLabel(...))
+            ->icon(Heroicon::Link)
             ->parameters(function (Schema $input) {
                 $properties = [];
                 foreach ($input->resolveReferences()->effectiveProperties() as $name => $property) {
@@ -106,11 +118,6 @@ final class Slug implements Transform
                 }
 
                 return [
-                    JsonSchemaPicker::make('input')
-                        ->label(__('phpinnacle-ferry::transforms.slug_input'))
-                        ->jsonSchema(Schema::object($properties))
-                        ->live()
-                        ->required(),
                     TextInput::make('output')
                         ->label(__('phpinnacle-ferry::transforms.uuid_field'))
                         ->default('slug')
@@ -120,6 +127,11 @@ final class Slug implements Transform
                         ->rules(['string', Rule::notIn(array_keys($input->resolveReferences()->effectiveProperties()))])
                         ->validationMessages(['not_in' => __('phpinnacle-ferry::validation.uuid_field_exists')])
                         ->lazy(),
+                    JsonSchemaPicker::make('input')
+                        ->label(__('phpinnacle-ferry::transforms.slug_input'))
+                        ->jsonSchema(Schema::object($properties))
+                        ->live()
+                        ->required(),
                     TextInput::make('separators')
                         ->label(__('phpinnacle-ferry::transforms.slug_separators'))
                         ->rules(['nullable', 'string']),

@@ -65,7 +65,7 @@ it('adds and persists a slug through the tabbed builder in both editors', functi
 
     expect($page->get('data.schema.properties'))->not->toHaveKey('slug');
     expect(array_values($page->get('data.transforms')))->toBe([
-        ['type' => 'slug', 'data' => ['input' => "$['name']", 'output' => 'slug', 'separators' => '.']],
+        ['type' => 'slug', 'data' => ['output' => 'slug', 'input' => "$['name']", 'separators' => '.']],
     ]);
     $mapping = $page->instance()->form->getComponentByStatePath('mapping');
     expect($mapping->getSourceSchema()->toArray()['properties']['slug'])->toBe([
