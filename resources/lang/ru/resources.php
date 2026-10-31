@@ -4,7 +4,11 @@ return [
     'connector' => [
         'actions' => [
             'config' => 'Конфигурация коннектора',
-            'close' => 'Закрыть',
+        ],
+        'modals' => [
+            'config' => [
+                'description' => 'Сохранённая конфигурация коннектора.',
+            ],
         ],
     ],
     'upstream' => [

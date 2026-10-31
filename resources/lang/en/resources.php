@@ -4,7 +4,11 @@ return [
     'connector' => [
         'actions' => [
             'config' => 'Connector config',
-            'close' => 'Close',
+        ],
+        'modals' => [
+            'config' => [
+                'description' => 'Saved connector configuration.',
+            ],
         ],
     ],
     'upstream' => [

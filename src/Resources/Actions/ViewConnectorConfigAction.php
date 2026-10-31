@@ -18,10 +18,12 @@ class ViewConnectorConfigAction
             ->color('gray')
             ->authorize('update')
             ->visible(fn (Upstream|Replica $record) => $record->connector?->config !== null)
+            ->modalIcon('phosphor-code')
             ->modalHeading(__('phpinnacle-ferry::resources.connector.actions.config'))
+            ->modalDescription(__('phpinnacle-ferry::resources.connector.modals.config.description'))
             ->modalWidth(Width::FiveExtraLarge)
             ->modalSubmitAction(false)
-            ->modalCancelActionLabel(__('phpinnacle-ferry::resources.connector.actions.close'))
+            ->modalCancelAction(false)
             ->schema([
                 CodeEntry::make('config')
                     ->hiddenLabel()
