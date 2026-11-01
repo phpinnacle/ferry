@@ -5,12 +5,16 @@ use Filament\Schemas\Schema as FilamentSchema;
 use Illuminate\Validation\ValidationException;
 use PHPinnacle\Ferry\Data\FieldMapping;
 use PHPinnacle\Ferry\Enums\FieldKind;
+use PHPinnacle\Ferry\Enums\TransformTarget;
 use PHPinnacle\Ferry\Models\Replica;
 use PHPinnacle\Ferry\Origins\Kafka\TransformFactory;
 use PHPinnacle\Ferry\Services\ReplicaSchemaResolver;
 use PHPinnacle\Ferry\Tests\Fixtures\SchemaHost;
 use PHPinnacle\Ferry\Tests\Fixtures\StructureItems;
 use PHPinnacle\Ferry\Transformations\BooleanToString;
+use PHPinnacle\Ferry\Transformations\Json;
+use PHPinnacle\Ferry\Transformations\Money;
+use PHPinnacle\Ferry\Transformations\Radix;
 use PHPinnacle\Ferry\Transformations\StringMap;
 use PHPinnacle\Ferry\Transformations\Toggle;
 use PHPinnacle\Jason\Schema;
@@ -20,6 +24,107 @@ require_once __DIR__ . '/../Fixtures/SchemaHost.php';
 require_once __DIR__ . '/../Fixtures/StructureItems.php';
 
 uses(TestCase::class);
+
+it('offers JSON, money and radix transforms for their supported schemas', function (array $input, array $accepted) {
+    foreach ([Json::make(), Money::make(), Radix::make()] as $transform) {
+        expect($transform->accepts(Schema::fromArray($input)))
+            ->toBe(in_array($transform->getKey(), $accepted, true));
+    }
+})->with([
+    'decimal' => [['type' => ['number', 'null']], ['json', 'money']],
+    'integer' => [['type' => 'integer'], ['json', 'money', 'radix']],
+    'text' => [['type' => ['string', 'null']], ['json', 'radix']],
+    'boolean' => [['type' => 'boolean'], ['json']],
+    'date' => [['type' => 'string', 'format' => 'date-time'], ['json']],
+    'reference' => [['type' => 'string', 'x-ferry-reference' => true], ['json']],
+    'object' => [['type' => 'object'], ['json']],
+    'array' => [['type' => 'array', 'items' => ['type' => 'integer']], ['json']],
+    'union' => [['type' => ['integer', 'string']], ['json']],
+]);
+
+it('replaces numeric and JSON constraints while preserving nullability', function () {
+    $amount = Schema::fromArray(['type' => ['number', 'null'], 'minimum' => 0, 'multipleOf' => 0.01]);
+    expect(Money::make()->output($amount, ['currency' => 'RUB'])?->toArray())
+        ->toBe(['type' => ['integer', 'null']]);
+    expect(Money::make()->output($amount, []))->toBeNull();
+    expect(
+        Radix::make()
+            ->output(Schema::fromArray(['type' => 'integer', 'maximum' => 255]), ['radix' => '16'])
+            ?->toArray(),
+    )
+        ->toBe(['type' => 'string']);
+    expect(
+        Radix::make()
+            ->output(Schema::fromArray(['type' => ['string', 'null'], 'maxLength' => 4]), ['radix' => '16'])
+            ?->toArray(),
+    )
+        ->toBe(['type' => ['integer', 'null']]);
+    expect(Radix::make()->output(Schema::fromArray(['type' => 'integer']), []))->toBeNull();
+    expect(
+        Json::make()
+            ->output(Schema::fromArray(['type' => 'string', 'enum' => ['hello'], 'maxLength' => 5]), [])
+            ->toArray(),
+    )
+        ->toBe(['type' => 'string']);
+    expect(
+        Json::make()
+            ->output(Schema::fromArray(['type' => ['object', 'null']]), [])
+            ->toArray(),
+    )
+        ->toBe(['type' => ['string', 'null']]);
+    expect(Json::make()->output(Schema::fromArray([]), [])->toArray())
+        ->toBe(['type' => ['string', 'null']]);
+});
+
+it('validates money and radix settings at their form boundary', function (string $type, array $params) {
+    $transform = $type === 'money' ? Money::make() : Radix::make();
+    $schema = FilamentSchema::make(SchemaHost::make())
+        ->statePath('data')
+        ->components(SchemaHost::transformSchema($transform));
+    $schema->fill($params);
+
+    expect($schema->getState(...))->toThrow(ValidationException::class);
+})->with([
+    'missing currency' => ['money', []],
+    'lowercase currency' => ['money', ['currency' => 'rub']],
+    'long currency' => ['money', ['currency' => 'RUBB']],
+    'non-string currency' => ['money', ['currency' => ['RUB']]],
+    'missing base' => ['radix', ['radix' => null]],
+    'small base' => ['radix', ['radix' => '1']],
+    'large base' => ['radix', ['radix' => '37']],
+    'fractional base' => ['radix', ['radix' => '2.5']],
+]);
+
+it('compiles money, radix and JSON before renames for the selected target', function (
+    TransformTarget $target,
+    array $keyMap,
+) {
+    $object = StructureItems::make(['fields' => ['amount' => Schema::fromArray(['type' => ['number', 'null']])]]);
+    $mapping = new FieldMapping('amount', 'result', [
+        'transforms' => [
+            ['type' => 'money', 'data' => ['currency' => 'KWD']],
+            ['type' => 'radix', 'data' => ['radix' => '36']],
+            ['type' => 'json'],
+        ],
+    ]);
+    $replica = new Replica(['schema' => $object->schema, 'mapping' => [$mapping]]);
+
+    expect(app(ReplicaSchemaResolver::class)->outputSchema($replica, $mapping)?->toArray())
+        ->toBe(['type' => ['string', 'null']]);
+    expect(app(TransformFactory::class)->pipeline($replica, $object, $keyMap))->toMatchArray([
+        'transforms.field_0_0.type' => 'org.phpinnacle.toblerone.MoneyTransform$' . ucfirst($target->value),
+        'transforms.field_0_0.fields' => 'amount',
+        'transforms.field_0_0.currency' => 'KWD',
+        'transforms.field_0_0.mode' => 'minor',
+        'transforms.field_0_1.type' => 'org.phpinnacle.toblerone.RadixTransform$' . ucfirst($target->value),
+        'transforms.field_0_1.fields' => 'amount:36',
+        'transforms.field_0_2.type' => 'org.phpinnacle.toblerone.JsonTransform$' . ucfirst($target->value),
+        'transforms.field_0_2.fields' => 'amount',
+    ]);
+})->with([
+    'value' => [TransformTarget::Value, []],
+    'key' => [TransformTarget::Key, ['amount' => 'result']],
+]);
 
 it('offers Toblerone transforms only for their supported input types', function (array $input, array $accepted) {
     foreach ([BooleanToString::make(), StringMap::make(), Toggle::make()] as $transform) {

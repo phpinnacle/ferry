@@ -277,7 +277,7 @@ Transform labels, descriptions and form parameters use `phpinnacle-ferry::transf
 
 Each transformation implements `PHPinnacle\Ferry\Contracts\Transform` and owns its editor block, input compatibility, output JSON Schema and Kafka Connect configuration. Configure its class in `phpinnacle-ferry.kafka.transforms`; `FerryServiceProvider` resolves each class through Laravel's container and registers the resulting objects in the shared `TransformRegistry`. Forms and workers use the same instances, keyed by `getKey()`.
 
-The default list contains Cast, Filter, InsertUuid, Slug, TimestampConverter, BooleanToString, StringMap and Toggle. Add the optional string transforms to this list as needed:
+The default list contains Cast, Filter, InsertUuid, Slug, TimestampConverter, BooleanToString, StringMap, Toggle, Json, Money and Radix. Add the optional string transforms to this list as needed:
 
 ```php
 // kafka.transforms in config/phpinnacle-ferry.php
@@ -290,11 +290,38 @@ The default list contains Cast, Filter, InsertUuid, Slug, TimestampConverter, Bo
     \PHPinnacle\Ferry\Transformations\BooleanToString::class,
     \PHPinnacle\Ferry\Transformations\StringMap::class,
     \PHPinnacle\Ferry\Transformations\Toggle::class,
+    \PHPinnacle\Ferry\Transformations\Json::class,
+    \PHPinnacle\Ferry\Transformations\Money::class,
+    \PHPinnacle\Ferry\Transformations\Radix::class,
     \PHPinnacle\Ferry\Transformations\Trim::class,
     \PHPinnacle\Ferry\Transformations\Substring::class,
     \PHPinnacle\Ferry\Transformations\MaskField::class,
 ];
 ```
+
+Json serializes a selected field to a JSON string without a schema/payload envelope, preserving nulls. Strings become quoted JSON strings; arrays and objects are supported. Kafka Connect supplies the encoding, including its native logical-type and Base64 byte encoding. Ferry uses field mode so the enclosing record remains available to JDBC.
+
+Money converts Decimal amounts to INT64 currency minor units using the selected uppercase ISO currency code: RUB `1.2300` becomes `123`, JPY `123.0000` becomes `123`, and KWD `1.2340` becomes `1234`. Numeric schemas, including scale-zero numeric columns represented as integers, are offered by the editor. The actual Kafka value must be Decimal (`BigDecimal`); use Debezium's `decimal.handling.mode=precise` and compatible serializers. Cast-generated integers or floating-point numbers and numeric constants are not Decimal inputs. Currency support and fraction digits come from Toblerone's ICU data. Fractional minor units and INT64 overflow fail the task; values are never rounded or truncated.
+
+Radix converts integer values to strings and parses strings as signed 32-bit integers in bases 2 through 36. Temporal and native reference fields are excluded. Invalid digits and string values outside the signed 32-bit range fail the task. Integer input may be 64-bit, so reversing that conversion is not guaranteed for larger values. All three transforms preserve nullability, discard obsolete input constraints and support both key and value targets, including tombstones. Install the corresponding Toblerone classes on the Kafka Connect worker.
+
+Toblerone's `DebeziumTimestampsTransform` belongs in an origin's `source.transforms` before `unwrap`, where the Debezium envelope is still present. It is not a replica field or record transform. Configure it explicitly when ingestion-time fallbacks are wanted:
+
+```php
+'transforms' => [
+    'timestamps' => [
+        'type' => 'org.phpinnacle.toblerone.DebeziumTimestampsTransform',
+        'created.field' => 'created_at',
+        'updated.field' => 'updated_at',
+    ],
+    'unwrap' => [
+        'type' => 'io.debezium.transforms.ExtractNewRecordState',
+        'delete.tombstone.handling.mode' => 'tombstone',
+    ],
+],
+```
+
+It fills missing/null creation and update timestamps on creates and snapshot reads, and only update timestamps on updates. Existing values win; deletes and tombstones remain unchanged. Fallback time is the envelope's `ts_ms`, or the worker clock when absent, rather than the original database creation time. Newly added fields are optional Kafka Timestamp values. To map generated fields, declare them in the replica's input schema; this source configuration does not add schema properties to Ferry's saved structure. Refresh affected saved source configurations after changing this pipeline.
 
 `Transform::block()` returns `InlineBlock|TabbedBlock`, using aliases for Common's `InlineBuilder\Block` and `TabbedBuilder\Block`. Field transforms return an `InlineBlock`; built-in record transforms return Ferry's `RecordTransformBlock`, a `TabbedBlock` subclass. Each call creates an independent block with its own label, icon and parameter form. A block's name must match the transformation's `getKey()`. Field parameter schema closures receive the preceding `?Schema $input`, the owning `FieldTransforms $component` and optional `?int $index`. The input is null when a preceding transformation has no valid output. Field forms are built when opened, and their components are cloned for each instance. Record tabs use the native Filament builder lifecycle. For dependent record fields, the owning `RecordTransforms::getInputSchema($itemKey)` returns the schema before that item. Blank or partial live state is represented by a null transform output; the preview keeps the preceding valid schema.
 

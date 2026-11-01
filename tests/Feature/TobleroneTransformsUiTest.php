@@ -18,6 +18,56 @@ require_once __DIR__ . '/../Fakes/CustomersDestination.php';
 
 uses(TestCase::class);
 
+it('saves independent money and radix settings and JSON output after Livewire updates', function () {
+    Queue::fake();
+    $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
+    TestCase::makeItem($upstream, ['fields' => [
+        'amount' => Schema::fromArray(['type' => ['number', 'null']]),
+        'balance' => Schema::fromArray(['type' => ['number', 'null']]),
+    ]]);
+    $page = Livewire::test(ReplicaForm::class, [
+        'state' => [
+            'upstream_id' => $upstream->id,
+            'source' => 'object-0',
+            'type' => DestinationType::Dynamic->value,
+            'name' => 'Numeric transforms',
+            'mapping' => [
+                ['kind' => 'source', 'source' => '_idrref', 'target' => 'id', 'options' => []],
+                ['kind' => 'source', 'source' => 'amount', 'target' => 'amount', 'options' => []],
+                ['kind' => 'source', 'source' => 'balance', 'target' => 'balance', 'options' => []],
+            ],
+        ],
+    ]);
+    foreach (['amount' => ['RUB', 16], 'balance' => ['KWD', 36]] as $source => [$currency, $radix]) {
+        $mapping = $page->instance()->form->getComponentByStatePath('mapping');
+        $path = 'mapping.' . $mapping->getSourceRowIndex($source) . '.options.transforms';
+        $action = TestAction::make('fieldTransforms')->schemaComponent($path, 'form');
+        $page->callAction($action->arguments(['block' => 'money']), ['data' => ['currency' => $currency]])
+            ->assertHasNoActionErrors();
+        $page->call('$refresh');
+        $page->callAction($action->arguments(['block' => 'radix']), ['data' => ['radix' => $radix]])
+            ->assertHasNoActionErrors();
+        $page->callAction($action->arguments(['block' => 'json']))->assertHasNoActionErrors();
+    }
+
+    $page->call('$refresh');
+    $replica = $page->instance()->record;
+    $replica->update($page->instance()->form->getState());
+    $reopened = Livewire::test(ReplicaForm::class, ['record' => $replica->fresh(), 'state' => []]);
+    $mapping = $reopened->instance()->form->getComponentByStatePath('mapping');
+
+    foreach (['amount' => ['RUB', 16], 'balance' => ['KWD', 36]] as $source => [$currency, $radix]) {
+        $path = 'mapping.' . $mapping->getSourceRowIndex($source) . '.options.transforms';
+        $editor = $reopened->instance()->form->getComponentByStatePath($path);
+        expect($editor->getSettings())->toBe([
+            ['type' => 'money', 'data' => ['currency' => $currency]],
+            ['type' => 'radix', 'data' => ['radix' => $radix]],
+            ['type' => 'json', 'data' => []],
+        ]);
+        expect($editor->getInputSchema()->toArray())->toBe(['type' => ['string', 'null']]);
+    }
+});
+
 it('updates parent mapping output after native dictionary changes and Livewire refreshes', function () {
     Queue::fake();
     app(DestinationFactory::class)->register(customers_destination());

@@ -123,7 +123,7 @@ it('validates repeated numeric casts and offers transforms for the final type', 
     expect($this->field->getContainer()->getState()['transforms'])
         ->toBe($settings)
         ->and(array_keys($this->field->getAvailableBlocks()))
-        ->toBe(['cast', 'filter', 'boolean_to_string', 'toggle']);
+        ->toBe(['cast', 'filter', 'boolean_to_string', 'toggle', 'json']);
 
     $settings[] = ['type' => 'cast', 'data' => ['type' => 'string']];
     $this->field->state($settings);
@@ -131,7 +131,7 @@ it('validates repeated numeric casts and offers transforms for the final type', 
     expect($this->field->getContainer()->getState()['transforms'])
         ->toBe($settings)
         ->and(array_keys($this->field->getAvailableBlocks()))
-        ->toBe(['cast', 'filter', 'timestamp_converter', 'string_map', 'trim', 'mask']);
+        ->toBe(['cast', 'filter', 'timestamp_converter', 'string_map', 'json', 'radix', 'trim', 'mask']);
 });
 
 it('uses block colors for configurable and settings-free badges', function () {
@@ -265,6 +265,7 @@ it('offers only transforms that accept the output of the current chain', functio
         'filter',
         'boolean_to_string',
         'toggle',
+        'json',
     ]);
     expect(($this->action)([])->toHtml())->not->toContain('Trim whitespace', 'Extract substring', 'Mask field');
     expect(($this->action)(['block' => 'trim'])->isDisabled())->toBeTrue();
@@ -277,6 +278,8 @@ it('offers only transforms that accept the output of the current chain', functio
         'filter',
         'timestamp_converter',
         'string_map',
+        'json',
+        'radix',
         'trim',
         'mask',
         'substring',
@@ -299,6 +302,9 @@ it('offers only transforms that accept the output of the current chain', functio
         'cast',
         'filter',
         'timestamp_converter',
+        'json',
+        'money',
+        'radix',
     ]);
 });
 
@@ -330,6 +336,8 @@ it('offers and validates string transforms for formatted strings', function (arr
         'filter',
         'timestamp_converter',
         'string_map',
+        'json',
+        'radix',
         'trim',
         'mask',
         'substring',
@@ -357,18 +365,21 @@ it('preserves dedicated logical types from their schemas', function (array $defi
     $this->field->state([['type' => 'trim', 'data' => []]]);
     expect($this->field->getContainer()->getState(...))->toThrow(ValidationException::class);
 })->with([
-    'date-time' => [['type' => ['string', 'null'], 'format' => 'date-time'], ['cast', 'filter', 'timestamp_converter']],
-    'date' => [['type' => 'string', 'format' => 'date'], ['cast', 'filter', 'timestamp_converter']],
-    'time' => [['type' => 'string', 'format' => 'time'], ['cast', 'filter', 'timestamp_converter']],
+    'date-time' => [
+        ['type' => ['string', 'null'], 'format' => 'date-time'],
+        ['cast', 'filter', 'timestamp_converter', 'json'],
+    ],
+    'date' => [['type' => 'string', 'format' => 'date'], ['cast', 'filter', 'timestamp_converter', 'json']],
+    'time' => [['type' => 'string', 'format' => 'time'], ['cast', 'filter', 'timestamp_converter', 'json']],
     'reference' => [
         ['type' => ['string', 'null'], 'format' => 'uuid', 'x-ferry-reference' => true],
-        ['cast', 'filter'],
+        ['cast', 'filter', 'json'],
     ],
 ]);
 
 it('offers JSONPath filtering for array and object inputs', function (array $input) {
     $this->field->inputSchema(Schema::fromArray($input));
-    expect(array_keys($this->field->getAvailableBlocks()))->toBe(['filter']);
+    expect(array_keys($this->field->getAvailableBlocks()))->toBe(['filter', 'json']);
     expect(($this->action)([])->toHtml())->toContain('Filter records', 'fi-dropdown');
     $this->field->state([['type' => 'cast', 'data' => ['type' => 'string']]]);
     expect($this->field->getContainer()->getState(...))->toThrow(ValidationException::class);
@@ -421,7 +432,7 @@ it('validates stored parameters through the description form without configured 
 
 it('casts a union of scalar types without losing nullability', function () {
     $this->field->inputSchema(Schema::fromArray(['type' => ['string', 'number', 'null']]));
-    expect(array_keys($this->field->getAvailableBlocks()))->toBe(['cast', 'filter']);
+    expect(array_keys($this->field->getAvailableBlocks()))->toBe(['cast', 'filter', 'json']);
 
     ($this->action)(['block' => 'cast'])->data(['data' => ['type' => 'string']])->call();
     expect($this->field->getContainer()->getState()['transforms'])->toBe([
@@ -448,7 +459,7 @@ it('lets a custom array transform participate in the same schema chain', functio
     ]));
     FilamentSchema::make(SchemaHost::make())->statePath('data')->components([$field])->fill();
     $action = $field->getAction('fieldTransforms');
-    expect(array_keys($field->getAvailableBlocks()))->toBe(['filter', 'join']);
+    expect(array_keys($field->getAvailableBlocks()))->toBe(['filter', 'json', 'join']);
 
     $action(['block' => 'join'])->data([])->call();
     expect(array_keys($field->getAvailableBlocks()))->toBe([
@@ -456,6 +467,8 @@ it('lets a custom array transform participate in the same schema chain', functio
         'filter',
         'timestamp_converter',
         'string_map',
+        'json',
+        'radix',
         'trim',
         'mask',
     ]);
