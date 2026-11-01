@@ -4,7 +4,9 @@ All notable changes to `ferry` will be documented in this file.
 
 ## Unreleased
 
-- Source schemas and mappings use physical column names directly. Removed redundant column mappings, reference-target metadata and split translation annotations. Built-in labels use `x-ferry-trans` with priority over `title`; `x-ferry-reference` marks native references for SQL storage and text-transform availability.
+- Replication schemas use `x-ferry-primary` for ordered key columns and `x-ferry-decimal: [precision, scale]` for SQL numeric dimensions.
+
+- Source schemas and mappings use physical column names directly. Removed redundant column mappings, reference-target metadata and split translation annotations. Built-in labels use `x-ferry-trans` with priority over `title`. References use standard UUID string schemas for SQL storage, transformations and mapping compatibility.
 
 - A single reversible `create_ferry_tables` migration creates the current schema for fresh installations. Incremental migrations and legacy metadata conversion have been removed.
 

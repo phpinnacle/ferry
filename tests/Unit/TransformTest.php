@@ -124,11 +124,12 @@ it('casts a field to the selected column type', function (string $type, string $
     'boolean' => ['boolean', 'boolean'],
 ]);
 
-it('clears reference metadata when explicitly casting to a string', function () {
+it('clears the UUID format and bounds when explicitly casting to a string', function () {
     $input = Schema::fromArray([
         'type' => ['string', 'null'],
         'format' => 'uuid',
-        'x-ferry-reference' => true,
+        'minLength' => 36,
+        'maxLength' => 36,
     ]);
     $output = Cast::make()->output($input, ['type' => 'string']);
 
@@ -153,7 +154,7 @@ it('disables and rejects the current cast type in the native form', function (ar
     [['type' => ['boolean', 'null']], 'boolean'],
 ]);
 
-it('keeps all cast targets available when the current type is unknown or a union', function (array $definition) {
+it('keeps all cast targets available when the current type is unknown, formatted or a union', function (array $definition) {
     $schema = FilamentSchema::make(SchemaHost::make())->components(
         SchemaHost::transformSchema(Cast::make(), Schema::fromArray($definition)),
     );
@@ -162,7 +163,7 @@ it('keeps all cast targets available when the current type is unknown or a union
 })->with([
     [[]],
     [['type' => ['string', 'number', 'null']]],
-    [['type' => 'string', 'format' => 'uuid', 'x-ferry-reference' => true]],
+    [['type' => 'string', 'format' => 'uuid']],
 ]);
 
 it('validates numeric cast targets and preserves nullable output schemas', function (string $type, string $schemaType) {
@@ -295,8 +296,8 @@ it('only applies text transforms to native string inputs', function (array $defi
 })->with([
     'string' => [['type' => 'string'], true],
     'nullable string' => [['type' => ['string', 'null']], true],
-    'ordinary UUID' => [['type' => 'string', 'format' => 'uuid'], true],
-    'reference' => [['type' => 'string', 'format' => 'uuid', 'x-ferry-reference' => true], false],
+    'UUID' => [['type' => 'string', 'format' => 'uuid'], true],
+    'nullable UUID' => [['type' => ['string', 'null'], 'format' => 'uuid'], true],
     'date-time' => [['type' => 'string', 'format' => 'date-time'], false],
     'date' => [['type' => 'string', 'format' => 'date'], false],
     'time' => [['type' => 'string', 'format' => 'time'], false],

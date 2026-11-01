@@ -217,7 +217,7 @@ class ReplicaTableManager
         return $changes;
     }
 
-    /** @return 'boolean'|'bigInteger'|'decimal'|'text'|'date'|'time'|'dateTime'|'string'|null */
+    /** @return 'boolean'|'bigInteger'|'decimal'|'date'|'time'|'dateTime'|'string'|null */
     public static function columnType(?Schema $schema): ?string
     {
         return match ($schema?->singleType()) {
@@ -225,7 +225,6 @@ class ReplicaTableManager
             'integer' => 'bigInteger',
             'number' => 'decimal',
             'string' => match (true) {
-                $schema->annotation('x-ferry-reference') === true => 'text',
                 $schema->effectiveFormat() === 'date' => 'date',
                 $schema->effectiveFormat() === 'time' => 'time',
                 $schema->effectiveFormat() === 'date-time' => 'dateTime',
@@ -247,10 +246,8 @@ class ReplicaTableManager
             ]));
         }
 
-        /** @var int $precision */
-        $precision = $field?->annotation('x-ferry-precision') ?? 15;
-        /** @var int $scale */
-        $scale = $field?->annotation('x-ferry-scale') ?? 2;
+        /** @var array{int|null, int|null}|null $decimal */
+        $decimal = $field?->annotation('x-ferry-decimal');
         $length =
             $mapping->kind === FieldKind::Static && $mapping->transforms() === []
                 ? null
@@ -264,11 +261,10 @@ class ReplicaTableManager
             'bigInteger' => $table->bigInteger($target),
             'decimal' => $table->decimal(
                 $target,
-                $precision,
-                $scale,
+                $decimal[0] ?? 15,
+                $decimal[1] ?? 2,
             ),
             'string' => $table->addColumn('string', $target, ['length' => $length > 0 ? $length : null]),
-            'text' => $table->text($target),
         };
     }
 }

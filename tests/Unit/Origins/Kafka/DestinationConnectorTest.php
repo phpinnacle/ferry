@@ -316,13 +316,12 @@ it('selects and renames only source key fields mapped to the static primary key'
         table: 'explicit_keys',
         primaryKey: $primaryKey,
         schema: SchemaBuilder::make(Schema::object([
-            'id' => SchemaBuilder::make()->type('string')->format('uuid')->with('x-ferry-reference', true)->build(),
+            'id' => SchemaBuilder::make()->type('string')->format('uuid')->build(),
             'source_id' => SchemaBuilder::make()
                 ->type('string')
                 ->format('uuid')
-                ->with('x-ferry-reference', true)
                 ->build(),
-            '_owner' => SchemaBuilder::make()->type('string')->format('uuid')->with('x-ferry-reference', true)->build(),
+            '_owner' => SchemaBuilder::make()->type('string')->format('uuid')->build(),
         ]))
             ->required($primaryKey)
             ->build(),
@@ -334,7 +333,6 @@ it('selects and renames only source key fields mapped to the static primary key'
             '_owner' => Schema::fromArray([
                 'type' => 'string',
                 'format' => 'uuid',
-                'x-ferry-reference' => true,
                 'minLength' => 36,
                 'maxLength' => 36,
             ]),

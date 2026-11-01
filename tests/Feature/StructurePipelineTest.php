@@ -341,7 +341,7 @@ it('refuses to restore a superseded draft read through the Rosetta adapter', fun
     $first = $upstream->structure->items()->sole();
     expect($first->name)->toBe('_reference1');
     expect($first->primary_key)->toBe(['_idrref']);
-    expect($first->schema->annotation('x-primary-key'))->toBe(['_idrref']);
+    expect($first->schema->annotation('x-ferry-primary'))->toBe(['_idrref']);
     expect($first->displayTitle())->toBe('Stale object');
 
     $upstream->update(['config' => [...$upstream->config, 'host' => 'replica']]);

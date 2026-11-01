@@ -35,7 +35,7 @@ class StructureItems
             'schema' => Schema::fromArray([
                 'type' => 'object',
                 'properties' => $properties,
-                'x-primary-key' => $attributes['primary_key'] ?? ['_idrref'],
+                'x-ferry-primary' => $attributes['primary_key'] ?? ['_idrref'],
             ]),
             ...array_diff_key($attributes, array_flip(['fields', 'sources'])),
         ]);

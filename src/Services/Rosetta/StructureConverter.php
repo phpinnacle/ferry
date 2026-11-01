@@ -86,7 +86,6 @@ class StructureConverter
             $field instanceof ReferenceField => [
                 'type' => 'string',
                 'format' => 'uuid',
-                'x-ferry-reference' => true,
                 'minLength' => 36,
                 'maxLength' => 36,
             ],
@@ -94,14 +93,12 @@ class StructureConverter
             $field instanceof ScalarField => match ($field->type()) {
                 FieldType::Boolean => ['type' => 'boolean'],
                 FieldType::Date, FieldType::Time, FieldType::DateTime => ['type' => 'string', 'format' => 'date-time'],
-                FieldType::Id => [
+                FieldType::Id, FieldType::Uuid => [
                     'type' => 'string',
                     'format' => 'uuid',
-                    'x-ferry-reference' => true,
                     'minLength' => 36,
                     'maxLength' => 36,
                 ],
-                FieldType::Uuid => ['type' => 'string', 'format' => 'uuid', 'minLength' => 36, 'maxLength' => 36],
                 default => [],
             },
             default => [],
@@ -114,12 +111,8 @@ class StructureConverter
         }
 
         if ($field instanceof NumberField) {
-            if ($field->precision !== null) {
-                $schema['x-ferry-precision'] = $field->precision;
-            }
-
-            if ($field->scale !== null) {
-                $schema['x-ferry-scale'] = $field->scale;
+            if ($field->precision !== null || $field->scale !== null) {
+                $schema['x-ferry-decimal'] = [$field->precision, $field->scale];
             }
 
             if ($field->unsigned) {

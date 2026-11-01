@@ -62,7 +62,7 @@ final class InsertUuid implements Transform
             ]
             + ($schema['properties'] ?? []);
         $schema['required'] = [...$input->effectiveRequired(), $params['output']];
-        $schema['x-primary-key'] = [$params['output']];
+        $schema['x-ferry-primary'] = [$params['output']];
 
         return Schema::fromArray($schema);
     }
@@ -86,12 +86,12 @@ final class InsertUuid implements Transform
             ->icon(Heroicon::FingerPrint)
             ->addable(
                 fn (RecordTransformBlock $component) => (
-                    ($component->getInputSchema()->annotation('x-primary-key') ?? []) !== []
+                    ($component->getInputSchema()->annotation('x-ferry-primary') ?? []) !== []
                 ),
             )
             ->parameters(function (Schema $input) {
                 /** @var list<string> $primaryKey */
-                $primaryKey = $input->annotation('x-primary-key') ?? [];
+                $primaryKey = $input->annotation('x-ferry-primary') ?? [];
                 $properties = [];
                 foreach ($primaryKey as $source) {
                     $property = $input->resolveReferences()->effectiveProperties()[$source];

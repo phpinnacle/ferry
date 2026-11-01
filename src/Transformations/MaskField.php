@@ -34,11 +34,8 @@ final class MaskField implements Transform
 
     public function accepts(Schema $input): bool
     {
-        return (
-            $input->singleType() === 'string'
-            && !in_array($input->effectiveFormat(), ['date', 'time', 'date-time'], true)
-            && $input->annotation('x-ferry-reference') !== true
-        );
+        return $input->singleType() === 'string'
+        && !in_array($input->effectiveFormat(), ['date', 'time', 'date-time'], true);
     }
 
     /** @param array<string, string> $params */

@@ -37,14 +37,11 @@ final class TimestampConverter implements Transform
 
     public function accepts(Schema $input): bool
     {
-        return (
-            $input->annotation('x-ferry-reference') !== true
-            && SchemaCompatibility::make()->accepts($input, Schema::fromArray(['type' => [
-                'string',
-                'integer',
-                'null',
-            ]]))
-        );
+        return SchemaCompatibility::make()->accepts($input, Schema::fromArray(['type' => [
+            'string',
+            'integer',
+            'null',
+        ]]));
     }
 
     /** @param array<string, string> $params */

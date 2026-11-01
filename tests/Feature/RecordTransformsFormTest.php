@@ -30,12 +30,12 @@ it('keeps input schemas and parameter state independent between record builders'
     $first = Schema::fromArray([
         'type' => 'object',
         'properties' => ['first_key' => ['type' => 'string']],
-        'x-primary-key' => ['first_key'],
+        'x-ferry-primary' => ['first_key'],
     ]);
     $second = Schema::fromArray([
         'type' => 'object',
         'properties' => ['second_key' => ['type' => 'integer']],
-        'x-primary-key' => ['second_key'],
+        'x-ferry-primary' => ['second_key'],
     ]);
     $form = FilamentSchema::make(SchemaHost::make())
         ->statePath('data')
@@ -67,7 +67,7 @@ it('labels record tabs with their selected source fields and puts the output nam
             'row_id' => ['type' => 'integer'],
             'code' => ['type' => 'string'],
         ],
-        'x-primary-key' => ['tenant.id', 'row_id'],
+        'x-ferry-primary' => ['tenant.id', 'row_id'],
     ]));
     FilamentSchema::make(SchemaHost::make())
         ->statePath('data')
@@ -102,7 +102,7 @@ it('uses the current primary key after a preceding UUID transform', function () 
                 'x-ferry-trans' => 'phpinnacle-ferry::resources.replica.system_fields._idrref',
             ],
         ],
-        'x-primary-key' => ['tenant_id', 'row_id'],
+        'x-ferry-primary' => ['tenant_id', 'row_id'],
     ]));
     $form = FilamentSchema::make(SchemaHost::make())->statePath('data')->components([$builder]);
     $form->fill([
@@ -131,7 +131,7 @@ it('uses the current primary key after a preceding UUID transform', function () 
         'type' => 'insert_uuid',
         'data' => ['output' => 'id', 'fields' => ["$['uuid']"]],
     ]);
-    expect($builder->getInputSchema()->annotation('x-primary-key'))->toBe(['id']);
+    expect($builder->getInputSchema()->annotation('x-ferry-primary'))->toBe(['id']);
 });
 
 it('omits the UUID transform when the input schema has no primary key', function () {

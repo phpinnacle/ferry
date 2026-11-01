@@ -58,11 +58,11 @@ it('uses JSON Schema compatibility when saving static replicas', function (
     'number to integer' => [['type' => 'number'], ['type' => 'integer'], false],
     'matching formats' => [
         ['type' => 'string', 'format' => 'uuid'],
-        ['type' => 'string', 'format' => 'uuid', 'x-ferry-reference' => true],
+        ['type' => 'string', 'format' => 'uuid'],
         true,
     ],
     'reference to text' => [
-        ['type' => 'string', 'format' => 'uuid', 'x-ferry-reference' => true],
+        ['type' => 'string', 'format' => 'uuid'],
         ['type' => 'string'],
         true,
     ],

@@ -98,7 +98,7 @@ class ReplicaSchemaResolver
     {
         /** @var list<string> */
         return (
-            $this->transformedSchema($replica)?->annotation('x-primary-key') ?? $replica->sourceObject()->primary_key
+            $this->transformedSchema($replica)?->annotation('x-ferry-primary') ?? $replica->sourceObject()->primary_key
         );
     }
 

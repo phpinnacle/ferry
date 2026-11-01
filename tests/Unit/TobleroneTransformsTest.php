@@ -36,7 +36,7 @@ it('offers JSON, money and radix transforms for their supported schemas', functi
     'text' => [['type' => ['string', 'null']], ['json', 'radix']],
     'boolean' => [['type' => 'boolean'], ['json']],
     'date' => [['type' => 'string', 'format' => 'date-time'], ['json']],
-    'reference' => [['type' => 'string', 'x-ferry-reference' => true], ['json']],
+    'UUID' => [['type' => 'string', 'format' => 'uuid'], ['json', 'radix']],
     'object' => [['type' => 'object'], ['json']],
     'array' => [['type' => 'array', 'items' => ['type' => 'integer']], ['json']],
     'union' => [['type' => ['integer', 'string']], ['json']],
@@ -137,7 +137,7 @@ it('offers Toblerone transforms only for their supported input types', function 
     'text' => [['type' => 'string'], ['string_map']],
     'nullable text' => [['type' => ['string', 'null']], ['string_map']],
     'date' => [['type' => 'string', 'format' => 'date'], []],
-    'reference' => [['type' => 'string', 'x-ferry-reference' => true], []],
+    'UUID' => [['type' => 'string', 'format' => 'uuid'], ['string_map']],
     'integer' => [['type' => 'integer'], []],
     'union' => [['type' => ['boolean', 'string']], []],
 ]);

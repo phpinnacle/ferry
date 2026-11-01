@@ -37,7 +37,6 @@ final class Radix implements Transform
         return (
             in_array($input->singleType(), ['integer', 'string'], true)
             && !in_array($input->effectiveFormat(), ['date', 'time', 'date-time'], true)
-            && $input->annotation('x-ferry-reference') !== true
         );
     }
 

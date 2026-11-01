@@ -141,7 +141,6 @@ it('stores a single reference under its physical column name', function () use (
         ->toEqual([
             'type' => 'string',
             'format' => 'uuid',
-            'x-ferry-reference' => true,
             'minLength' => 36,
             'maxLength' => 36,
             'x-ferry-converter' => 'uuid',
@@ -177,7 +176,6 @@ it('exposes independent scalar sources for every column of a composite reference
         ->toEqual([
             'type' => 'string',
             'format' => 'uuid',
-            'x-ferry-reference' => true,
             'minLength' => 36,
             'maxLength' => 36,
             'x-ferry-converter' => 'uuid',
@@ -214,8 +212,7 @@ it('exposes mixed composite value columns and omits the reference type code for 
         ->and($object->field('_fld18_n')->toArray())
         ->toEqual([
             'type' => 'number',
-            'x-ferry-precision' => 12,
-            'x-ferry-scale' => 2,
+            'x-ferry-decimal' => [12, 2],
             'multipleOf' => 0.01,
             'exclusiveMinimum' => -10_000_000_000,
             'exclusiveMaximum' => 10_000_000_000,
@@ -226,7 +223,6 @@ it('exposes mixed composite value columns and omits the reference type code for 
         ->toEqual([
             'type' => 'string',
             'format' => 'uuid',
-            'x-ferry-reference' => true,
             'minLength' => 36,
             'maxLength' => 36,
             'x-ferry-converter' => 'uuid',
@@ -268,7 +264,6 @@ it('annotates physical system columns with their converter keys', function () us
         ->toEqual([
             'type' => 'string',
             'format' => 'uuid',
-            'x-ferry-reference' => true,
             'minLength' => 36,
             'maxLength' => 36,
             'x-ferry-converter' => 'uuid',
@@ -352,8 +347,7 @@ it('projects available Rosetta constraints without rounding numeric metadata', f
         new NumberField(5, 2, false),
         [
             'type' => 'number',
-            'x-ferry-precision' => 5,
-            'x-ferry-scale' => 2,
+            'x-ferry-decimal' => [5, 2],
             'multipleOf' => 0.01,
             'exclusiveMinimum' => -1000,
             'exclusiveMaximum' => 1000,
@@ -363,8 +357,7 @@ it('projects available Rosetta constraints without rounding numeric metadata', f
         new NumberField(5, 2, true),
         [
             'type' => 'number',
-            'x-ferry-precision' => 5,
-            'x-ferry-scale' => 2,
+            'x-ferry-decimal' => [5, 2],
             'minimum' => 0,
             'multipleOf' => 0.01,
             'exclusiveMaximum' => 1000,
@@ -374,8 +367,7 @@ it('projects available Rosetta constraints without rounding numeric metadata', f
         new NumberField(3, 3, false),
         [
             'type' => 'number',
-            'x-ferry-precision' => 3,
-            'x-ferry-scale' => 3,
+            'x-ferry-decimal' => [3, 3],
             'multipleOf' => 0.001,
             'exclusiveMinimum' => -1,
             'exclusiveMaximum' => 1,
@@ -385,8 +377,7 @@ it('projects available Rosetta constraints without rounding numeric metadata', f
         new NumberField(20, 2, false),
         [
             'type' => 'number',
-            'x-ferry-precision' => 20,
-            'x-ferry-scale' => 2,
+            'x-ferry-decimal' => [20, 2],
             'multipleOf' => 0.01,
             'exclusiveMinimum' => -1_000_000_000_000_000_000,
             'exclusiveMaximum' => 1_000_000_000_000_000_000,
@@ -396,17 +387,16 @@ it('projects available Rosetta constraints without rounding numeric metadata', f
         new NumberField(4, 0, true),
         [
             'type' => 'integer',
-            'x-ferry-precision' => 4,
-            'x-ferry-scale' => 0,
+            'x-ferry-decimal' => [4, 0],
             'minimum' => 0,
             'exclusiveMaximum' => 10_000,
         ],
     ],
     'unknown dimensions' => [new NumberField(null, null, true), ['type' => 'integer', 'minimum' => 0]],
-    'unknown scale' => [new NumberField(10, null, false), ['type' => 'integer', 'x-ferry-precision' => 10]],
+    'unknown scale' => [new NumberField(10, null, false), ['type' => 'integer', 'x-ferry-decimal' => [10, null]]],
     'unknown precision' => [
         new NumberField(null, 2, false),
-        ['type' => 'number', 'x-ferry-scale' => 2, 'multipleOf' => 0.01],
+        ['type' => 'number', 'x-ferry-decimal' => [null, 2], 'multipleOf' => 0.01],
     ],
 ]);
 

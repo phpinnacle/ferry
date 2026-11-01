@@ -233,7 +233,6 @@ it('scopes and transforms independently selected reference components using thei
             '_fld16rref' => [
                 'type' => 'string',
                 'format' => 'uuid',
-                'x-ferry-reference' => true,
                 'minLength' => 36,
                 'maxLength' => 36,
                 'title' => 'Supplier',
@@ -253,7 +252,6 @@ it('scopes and transforms independently selected reference components using thei
             '_fld17_rrref' => [
                 'type' => 'string',
                 'format' => 'uuid',
-                'x-ferry-reference' => true,
                 'minLength' => 36,
                 'maxLength' => 36,
                 'title' => 'Owner',

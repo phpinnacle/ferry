@@ -74,11 +74,7 @@ final class Cast implements Transform
                     ->dehydrated(fn (?KafkaType $state) => $state !== null)
                     ->dehydrateStateUsing(fn (KafkaType $state) => $state->value)
                     ->disableOptionWhen(
-                        fn (string $value) => (
-                            $input?->singleType() === $value
-                            && $input->effectiveFormat() === null
-                            && $input->annotation('x-ferry-reference') !== true
-                        ),
+                        fn (string $value) => $input?->singleType() === $value && $input->effectiveFormat() === null,
                     )
                     ->required(),
                 Select::make('replace_null_with_default')

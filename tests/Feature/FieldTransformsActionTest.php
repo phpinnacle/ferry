@@ -354,6 +354,7 @@ it('offers and validates string transforms for formatted strings', function (arr
     'email' => [['type' => 'string', 'format' => 'email']],
     'nullable email' => [['type' => ['string', 'null'], 'format' => 'email']],
     'uuid' => [['type' => 'string', 'format' => 'uuid']],
+    'nullable uuid' => [['type' => ['string', 'null'], 'format' => 'uuid']],
     'uri' => [['type' => 'string', 'format' => 'uri']],
 ]);
 
@@ -371,10 +372,6 @@ it('preserves dedicated logical types from their schemas', function (array $defi
     ],
     'date' => [['type' => 'string', 'format' => 'date'], ['cast', 'filter', 'timestamp_converter', 'json']],
     'time' => [['type' => 'string', 'format' => 'time'], ['cast', 'filter', 'timestamp_converter', 'json']],
-    'reference' => [
-        ['type' => ['string', 'null'], 'format' => 'uuid', 'x-ferry-reference' => true],
-        ['cast', 'filter', 'json'],
-    ],
 ]);
 
 it('offers JSONPath filtering for array and object inputs', function (array $input) {

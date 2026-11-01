@@ -26,7 +26,7 @@ it('offers timestamp conversion for supported field types', function (array $inp
     'nullable timestamp' => [['type' => ['string', 'null'], 'format' => 'date-time'], true],
     'date' => [['type' => 'string', 'format' => 'date'], true],
     'time' => [['type' => 'string', 'format' => 'time'], true],
-    'reference' => [['type' => 'string', 'x-ferry-reference' => true], false],
+    'UUID' => [['type' => 'string', 'format' => 'uuid'], true],
     'number' => [['type' => 'number'], false],
     'boolean' => [['type' => 'boolean'], false],
     'object' => [['type' => 'object'], false],

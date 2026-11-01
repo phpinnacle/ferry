@@ -79,7 +79,7 @@ class RosettaAdapter implements Adapter
                             ...$object->schema->effectiveRequired(),
                             ...$object->primary_key,
                         ])),
-                        'x-primary-key' => $object->primary_key,
+                        'x-ferry-primary' => $object->primary_key,
                     ]);
                 }
             }

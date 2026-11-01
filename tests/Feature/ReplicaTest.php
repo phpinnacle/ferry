@@ -113,8 +113,7 @@ it('owns the persisted schema and destination table throughout its lifecycle', f
             'title' => ['type' => 'string', 'maxLength' => 100, 'title' => 'Title'],
             'price' => [
                 'type' => 'number',
-                'x-ferry-precision' => 15,
-                'x-ferry-scale' => 2,
+                'x-ferry-decimal' => [15, 2],
                 'multipleOf' => 0.01,
                 'exclusiveMinimum' => -10_000_000_000_000,
                 'exclusiveMaximum' => 10_000_000_000_000,
@@ -165,8 +164,7 @@ it('adds, renames and drops columns when the mapping changes', function () {
             'title' => ['type' => 'string', 'maxLength' => 100, 'title' => 'Title'],
             'price' => [
                 'type' => 'number',
-                'x-ferry-precision' => 15,
-                'x-ferry-scale' => 2,
+                'x-ferry-decimal' => [15, 2],
                 'multipleOf' => 0.01,
                 'exclusiveMinimum' => -10_000_000_000_000,
                 'exclusiveMaximum' => 10_000_000_000_000,
@@ -211,7 +209,7 @@ it('preserves renamed values when a new mapping reuses the original column name'
     $replica = TestCase::makeReplica([
         'schema' => Schema::fromArray([
             'properties' => ['_idrref' => TestCase::keySchema()->toArray(), 'name' => $field, 'alias' => $field],
-            'x-primary-key' => ['_idrref'],
+            'x-ferry-primary' => ['_idrref'],
         ]),
         'mapping' => [
             TestCase::keyMapping(),
@@ -272,7 +270,7 @@ it('uses output schema bounds for PostgreSQL varchar columns', function () {
     $queries = DB::connection('pgsql')->pretend(fn () => app(ReplicaTableManager::class)->create($replica));
 
     expect($queries[0]['query'])
-        ->toContain('"bounded" varchar(10) null', '"expanded" varchar(30) null')
+        ->toContain('"external_id" varchar(36) not null', '"bounded" varchar(10) null', '"expanded" varchar(30) null')
         ->toContain(
             '"unbounded" varchar null',
             '"zero" varchar null',
@@ -341,7 +339,7 @@ it('changes mapped key column types while retaining primary-key constraints', fu
     ]);
 
     $schema = $replica->schema->toArray();
-    $schema['properties']['flag'] = ['type' => 'number', 'x-ferry-precision' => 15, 'x-ferry-scale' => 2];
+    $schema['properties']['flag'] = ['type' => 'number', 'x-ferry-decimal' => [15, 2]];
     $replica->update(['schema' => Schema::fromArray($schema)]);
 
     $column = collect(DB::select('PRAGMA table_info("' . $replica->destination . '")'))
@@ -383,7 +381,7 @@ it('updates existing key columns and their order without other column changes', 
             'second' => ['type' => 'string'],
             'code' => ['type' => 'string'],
         ],
-        'x-primary-key' => ['first', 'second'],
+        'x-ferry-primary' => ['first', 'second'],
     ]);
     $replica = TestCase::makeReplica([
         'schema' => $schema,
@@ -395,7 +393,7 @@ it('updates existing key columns and their order without other column changes', 
     ]);
     DB::table($replica->destination)->insert(['first' => 'A', 'second' => 'B', 'code' => 'C']);
 
-    $replica->fill(['schema' => Schema::fromArray([...$schema->keywords(), 'x-primary-key' => $primaryKey])]);
+    $replica->fill(['schema' => Schema::fromArray([...$schema->keywords(), 'x-ferry-primary' => $primaryKey])]);
     $replica->load('upstream');
     config(['phpinnacle-ferry.connection' => 'pgsql']);
     $queries = DB::connection('pgsql')->pretend(fn () => app(ReplicaTableManager::class)->update($replica));
@@ -427,7 +425,7 @@ it('rolls back a key change when existing rows violate the new constraint', func
     $schema = Schema::fromArray([
         'type' => 'object',
         'properties' => ['id' => ['type' => 'string'], 'code' => ['type' => 'string']],
-        'x-primary-key' => ['id'],
+        'x-ferry-primary' => ['id'],
     ]);
     $replica = TestCase::makeReplica([
         'schema' => $schema,
@@ -439,11 +437,11 @@ it('rolls back a key change when existing rows violate the new constraint', func
     ]);
 
     expect(fn () => $replica->update([
-        'schema' => Schema::fromArray([...$schema->keywords(), 'x-primary-key' => ['code']]),
+        'schema' => Schema::fromArray([...$schema->keywords(), 'x-ferry-primary' => ['code']]),
     ]))
         ->toThrow(\Illuminate\Database\QueryException::class);
 
-    expect($replica->fresh()->schema->annotation('x-primary-key'))->toBe(['id']);
+    expect($replica->fresh()->schema->annotation('x-ferry-primary'))->toBe(['id']);
     expect(collect(DatabaseSchema::getIndexes($replica->destination))->firstWhere('primary', true)['columns'])
         ->toBe(['id']);
     expect(array_column(DatabaseSchema::getColumns($replica->destination), 'nullable', 'name'))
@@ -485,9 +483,9 @@ it('creates decimal columns from the effective output schema', function (?array 
         'schema' => Schema::fromArray([
             'properties' => [
                 '_idrref' => TestCase::keySchema()->toArray(),
-                'amount' => ['type' => 'number', 'x-ferry-precision' => 12, 'x-ferry-scale' => 4],
+                'amount' => ['type' => 'number', 'x-ferry-decimal' => [12, 4]],
             ],
-            'x-primary-key' => ['_idrref'],
+            'x-ferry-primary' => ['_idrref'],
         ]),
         'destination' => 'decimal_columns',
         'mapping' => [
@@ -506,10 +504,22 @@ it('creates decimal columns from the effective output schema', function (?array 
 })->with([
     'untransformed source' => [null, '"amount" decimal(12, 4) null'],
     'transformed output' => [
-        ['type' => 'number', 'x-ferry-precision' => 8, 'x-ferry-scale' => 1],
+        ['type' => 'number', 'x-ferry-decimal' => [8, 1]],
         '"amount" decimal(8, 1) null',
     ],
     'cast without numeric bounds' => [['type' => 'number'], '"amount" decimal(15, 2) null'],
+    'unknown precision' => [
+        ['type' => 'number', 'x-ferry-decimal' => [null, 4]],
+        '"amount" decimal(15, 4) null',
+    ],
+    'unknown scale' => [
+        ['type' => 'number', 'x-ferry-decimal' => [10, null]],
+        '"amount" decimal(10, 2) null',
+    ],
+    'zero scale' => [
+        ['type' => 'number', 'x-ferry-decimal' => [10, 0]],
+        '"amount" decimal(10, 0) null',
+    ],
 ]);
 
 it('creates SQL columns from timestamp conversion output', function (string $target, string $sql) {

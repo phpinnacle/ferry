@@ -17,7 +17,6 @@ function customers_destination(?string $connectionName = null): StaticDestinatio
             'customer_id' => SchemaBuilder::make()
                 ->type('string')
                 ->format('uuid')
-                ->with('x-ferry-reference', true)
                 ->title('Customer ID')
                 ->build(),
             'name' => SchemaBuilder::make()->type('string')->title('Name')->build(),

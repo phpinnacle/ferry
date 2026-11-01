@@ -158,7 +158,6 @@ abstract class TestCase extends ApplicationTestCase
         return Schema::fromArray([
             'type' => 'string',
             'format' => 'uuid',
-            'x-ferry-reference' => true,
             'minLength' => 36,
             'maxLength' => 36,
         ]);

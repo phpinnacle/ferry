@@ -202,7 +202,7 @@ class ReplicaForm
             TransformScope::Record,
         );
         /** @var list<string> $primaryKey */
-        $primaryKey = $schema?->annotation('x-primary-key') ?? $object->primary_key;
+        $primaryKey = $schema?->annotation('x-ferry-primary') ?? $object->primary_key;
         $rules->assertValid(
             array_map(SchemaMapping::fromArray(...), $data['mapping']),
             $destinations->staticFor($record),
@@ -243,7 +243,7 @@ class ReplicaForm
             }
 
             /** @var list<string> $primaryKey */
-            $primaryKey = $input->annotation('x-primary-key') ?? $object->primary_key;
+            $primaryKey = $input->annotation('x-ferry-primary') ?? $object->primary_key;
             $sourceSchema['required'] = array_values(array_unique([
                 ...$input->effectiveRequired(),
                 ...$primaryKey,
@@ -358,7 +358,7 @@ class ReplicaForm
                     'target',
                 ), $fail);
                 /** @var list<string> $primaryKey */
-                $primaryKey = $component->getSourceSchema()->annotation('x-primary-key') ?? [];
+                $primaryKey = $component->getSourceSchema()->annotation('x-ferry-primary') ?? [];
                 ReplicaSchema::validatePrimaryKey(
                     $primaryKey,
                     array_column(

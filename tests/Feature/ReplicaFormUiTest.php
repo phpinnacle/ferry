@@ -353,7 +353,6 @@ it('accepts UUID transform outputs for reference destinations', function () {
             'owner' => SchemaBuilder::make()
                 ->type('string')
                 ->format('uuid')
-                ->with('x-ferry-reference', true)
                 ->title('Owner')
                 ->build(),
         ]))
@@ -365,7 +364,6 @@ it('accepts UUID transform outputs for reference destinations', function () {
         '_owner' => Schema::fromArray([
             'type' => 'string',
             'format' => 'uuid',
-            'x-ferry-reference' => true,
             'minLength' => 36,
             'maxLength' => 36,
         ]),
@@ -390,7 +388,6 @@ it('accepts UUID transform outputs for reference destinations', function () {
     expect($mapping->getSourceSchema()->toArray()['properties']['_owner'])->toMatchArray([
         'type' => 'string',
         'format' => 'uuid',
-        'x-ferry-reference' => true,
     ]);
     expect($mapping->getConnectionModes())
         ->toHaveKey('_owner.owner', MappingMode::Whole)
@@ -400,7 +397,6 @@ it('accepts UUID transform outputs for reference destinations', function () {
     expect($mapping->getOutputSchema()->toArray()['properties']['_owner'])->toMatchArray([
         'type' => 'string',
         'format' => 'uuid',
-        'x-ferry-reference' => true,
     ]);
     expect(
         app(ReplicaSchemaResolver::class)
@@ -673,7 +669,6 @@ it('supplies saved source descriptions and constraints to both mapping editors',
             '_idrref' => Schema::fromArray([
                 'type' => 'string',
                 'format' => 'uuid',
-                'x-ferry-reference' => true,
                 'minLength' => 36,
                 'maxLength' => 36,
             ]),
@@ -683,8 +678,7 @@ it('supplies saved source descriptions and constraints to both mapping editors',
         'sources' => [
             '_fld17' => [
                 'type' => 'number',
-                'x-ferry-precision' => 20,
-                'x-ferry-scale' => 2,
+                'x-ferry-decimal' => [20, 2],
                 'minimum' => 0,
                 'multipleOf' => 0.01,
                 'exclusiveMaximum' => 1_000_000_000_000_000_000,
@@ -693,8 +687,7 @@ it('supplies saved source descriptions and constraints to both mapping editors',
             ],
             '_fld18' => [
                 'type' => 'integer',
-                'x-ferry-precision' => 10,
-                'x-ferry-scale' => 0,
+                'x-ferry-decimal' => [10, 0],
                 'exclusiveMinimum' => -10_000_000_000,
                 'exclusiveMaximum' => 10_000_000_000,
                 'title' => 'Payment days',
@@ -832,7 +825,6 @@ it('binds dynamic fields and connects static fields to the declared destination 
             '_idrref' => Schema::fromArray([
                 'type' => 'string',
                 'format' => 'uuid',
-                'x-ferry-reference' => true,
                 'minLength' => 36,
                 'maxLength' => 36,
             ]),
@@ -842,7 +834,6 @@ it('binds dynamic fields and connects static fields to the declared destination 
             '_fld1' => [
                 'type' => 'string',
                 'format' => 'uuid',
-                'x-ferry-reference' => true,
                 'minLength' => 36,
                 'maxLength' => 36,
                 'title' => 'Title 1',
@@ -913,7 +904,6 @@ it('validates the static mapping against the declared destination fields', funct
             '_idrref' => Schema::fromArray([
                 'type' => 'string',
                 'format' => 'uuid',
-                'x-ferry-reference' => true,
                 'minLength' => 36,
                 'maxLength' => 36,
             ]),
@@ -1338,7 +1328,6 @@ it('shows each composite column as a separate source card and saves only its sel
             'owner' => SchemaBuilder::make()
                 ->type('string')
                 ->format('uuid')
-                ->with('x-ferry-reference', true)
                 ->title('Owner')
                 ->build(),
         ]))
@@ -1365,7 +1354,6 @@ it('shows each composite column as a separate source card and saves only its sel
             '_fld17_rrref' => [
                 'type' => 'string',
                 'format' => 'uuid',
-                'x-ferry-reference' => true,
                 'minLength' => 36,
                 'maxLength' => 36,
                 'title' => 'Owner · ' . __('phpinnacle-ferry::resources.replica.components.rrref'),
@@ -1415,7 +1403,6 @@ it('shows each composite column as a separate source card and saves only its sel
         ->toMatchArray([
             'type' => 'string',
             'format' => 'uuid',
-            'x-ferry-reference' => true,
             'minLength' => 36,
             'maxLength' => 36,
         ]);
@@ -1525,7 +1512,6 @@ it('maps UUID references into bounded strings while respecting target length and
             'uuid_id' => SchemaBuilder::make()
                 ->type('string')
                 ->format('uuid')
-                ->with('x-ferry-reference', true)
                 ->nullable()
                 ->build(),
         ]))
@@ -1538,7 +1524,6 @@ it('maps UUID references into bounded strings while respecting target length and
         '_partner' => Schema::fromArray([
             'type' => 'string',
             'format' => 'uuid',
-            'x-ferry-reference' => true,
             'minLength' => 36,
             'maxLength' => 36,
         ]),
