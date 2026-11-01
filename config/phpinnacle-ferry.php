@@ -22,11 +22,6 @@ return [
             \PHPinnacle\Ferry\Transformations\StringMap::class,
             \PHPinnacle\Ferry\Transformations\Toggle::class,
         ],
-        'converters' => [
-            'uuid' => 'org.phpinnacle.toblerone.UuidConverter',
-            'integer' => 'org.phpinnacle.toblerone.IntegerConverter',
-            'mchar' => 'org.phpinnacle.toblerone.MCharConverter',
-        ],
     ],
     'timeout' => 5,
     'structure' => [
@@ -42,25 +37,41 @@ return [
         'kafka' => [
             'driver' => 'kafka',
             'base_uri' => env('FERRY_KAFKA_CONNECT_URL'),
-            'headers' => [],
             'target_host' => null,
+            'headers' => [],
             'source' => [
-                // 'key.converter' => 'org.apache.kafka.connect.json.JsonConverter',
-                // 'key.converter.schemas.enable' => 'true',
-                // 'value.converter' => 'org.apache.kafka.connect.json.JsonConverter',
-                // 'value.converter.schemas.enable' => 'true',
+                'options' => [
+                    // 'key.converter' => 'org.apache.kafka.connect.json.JsonConverter',
+                    // 'key.converter.schemas.enable' => 'true',
+                    // 'value.converter' => 'org.apache.kafka.connect.json.JsonConverter',
+                    // 'value.converter.schemas.enable' => 'true',
+                ],
+                'transforms' => [
+                    'unwrap' => [
+                        'type' => 'io.debezium.transforms.ExtractNewRecordState',
+                        'delete.tombstone.handling.mode' => 'tombstone',
+                    ],
+                ],
+                'converters' => [
+                    'uuid' => 'org.phpinnacle.toblerone.UuidConverter',
+                    'integer' => 'org.phpinnacle.toblerone.IntegerConverter',
+                    'mchar' => 'org.phpinnacle.toblerone.MCharConverter',
+                ],
+                'signal' => [
+                    'topic' => env('FERRY_KAFKA_SIGNAL_TOPIC'),
+                    'bootstrap_servers' => env('FERRY_KAFKA_BOOTSTRAP_SERVERS'),
+                    'group_id' => env('FERRY_KAFKA_SIGNAL_GROUP_ID', 'ferry-signal'),
+                    'flush_timeout' => 5000,
+                ],
             ],
             'sink' => [
-                // 'key.converter' => 'org.apache.kafka.connect.json.JsonConverter',
-                // 'key.converter.schemas.enable' => 'true',
-                // 'value.converter' => 'org.apache.kafka.connect.json.JsonConverter',
-                // 'value.converter.schemas.enable' => 'true',
-            ],
-            'signal' => [
-                'topic' => env('FERRY_KAFKA_SIGNAL_TOPIC'),
-                'bootstrap_servers' => env('FERRY_KAFKA_BOOTSTRAP_SERVERS'),
-                'group_id' => env('FERRY_KAFKA_SIGNAL_GROUP_ID', 'ferry-signal'),
-                'flush_timeout' => 5000,
+                'options' => [
+                    // 'key.converter' => 'org.apache.kafka.connect.json.JsonConverter',
+                    // 'key.converter.schemas.enable' => 'true',
+                    // 'value.converter' => 'org.apache.kafka.connect.json.JsonConverter',
+                    // 'value.converter.schemas.enable' => 'true',
+                ],
+                'transforms' => [],
             ],
         ],
     ],

@@ -186,9 +186,9 @@ abstract class TestCase extends ApplicationTestCase
         config([
             'phpinnacle-ferry.connection' => null,
             'phpinnacle-ferry.origins.kafka.base_uri' => 'http://kafka-connect.test',
-            'phpinnacle-ferry.origins.kafka.signal.topic' => 'ferry-signal',
-            'phpinnacle-ferry.origins.kafka.signal.bootstrap_servers' => 'kafka.test:9092',
-            'phpinnacle-ferry.origins.kafka.signal.group_id' => 'ferry-signal',
+            'phpinnacle-ferry.origins.kafka.source.signal.topic' => 'ferry-signal',
+            'phpinnacle-ferry.origins.kafka.source.signal.bootstrap_servers' => 'kafka.test:9092',
+            'phpinnacle-ferry.origins.kafka.source.signal.group_id' => 'ferry-signal',
             'database.default' => 'sqlite',
             'queue.default' => 'database',
             'database.connections.sqlite.database' => ':memory:',

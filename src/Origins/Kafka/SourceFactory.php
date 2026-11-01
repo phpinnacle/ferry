@@ -2,7 +2,6 @@
 
 namespace PHPinnacle\Ferry\Origins\Kafka;
 
-use Illuminate\Support\Facades\Config;
 use PHPinnacle\Ferry\Models\Replica;
 use PHPinnacle\Ferry\Models\StructureItem;
 use PHPinnacle\Ferry\Models\Upstream;
@@ -24,7 +23,10 @@ class SourceFactory
 
     /**
      * @param array{
+     *     options: array<string, string>,
+     *     converters: array<string, string>,
      *     signal: array{topic: string, bootstrap_servers: string, group_id: string, ...},
+     *     transforms: array<string, array<string, string>>,
      *     ...
      * } $config
      *
@@ -102,19 +104,6 @@ class SourceFactory
             ]
             : ['table.include.list' => '(?!)'];
 
-        /** @var array<string, string> $converters */
-        $converters = Config::array('phpinnacle-ferry.kafka.converters');
-        $converterConfig = [];
-        if ($converters !== []) {
-            $converterConfig['converters'] = implode(',', array_keys($converters));
-            foreach ($converters as $name => $class) {
-                $converterConfig[$name . '.type'] = $class;
-                if (array_key_exists($name, $converterColumns)) {
-                    $converterConfig[$name . '.columns'] = implode(',', array_keys($converterColumns[$name]));
-                }
-            }
-        }
-
         /** @var array{host: string, port: int, username: string, password: string, database: string} $credentials */
         $credentials = $upstream->config;
 
@@ -141,10 +130,9 @@ class SourceFactory
             'signal.kafka.bootstrap.servers' => $signal['bootstrap_servers'],
             'signal.kafka.groupId' => $signal['group_id'],
             ...$scope,
-            ...$converterConfig,
-            'transforms' => 'unwrap',
-            'transforms.unwrap.type' => 'io.debezium.transforms.ExtractNewRecordState',
-            'transforms.unwrap.delete.tombstone.handling.mode' => 'tombstone',
+            ...self::converters($config['converters'], $converterColumns),
+            ...TransformFactory::configuration($config['transforms']),
+            ...$config['options'],
         ];
     }
 
@@ -196,6 +184,28 @@ class SourceFactory
         $list = $config['column.include.list'] ?? '';
 
         return $list === '' ? [] : explode(',', $list);
+    }
+
+    /**
+     * @param array<string, string> $classes
+     * @param array<string, array<string, true>> $columns
+     * @return array<string, string>
+     */
+    private static function converters(array $classes, array $columns): array
+    {
+        if ($classes === []) {
+            return [];
+        }
+
+        $config = ['converters' => implode(',', array_keys($classes))];
+        foreach ($classes as $name => $class) {
+            $config[$name . '.type'] = $class;
+            if (array_key_exists($name, $columns)) {
+                $config[$name . '.columns'] = implode(',', array_keys($columns[$name]));
+            }
+        }
+
+        return $config;
     }
 
     private function identifier(string $prefix, Upstream $upstream): string

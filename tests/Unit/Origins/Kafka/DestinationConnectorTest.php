@@ -85,6 +85,7 @@ it('builds a confluent jdbc sink connector config with field renames', function 
         $replica,
         $object,
         $builder->topic($upstream, $object),
+        config('phpinnacle-ferry.origins.kafka'),
     );
 
     expect($builder->name($replica))
@@ -151,12 +152,14 @@ it('keeps each sink limited to the fields of its own mapping when several replic
         $first,
         $object,
         $builder->topic($upstream, $object),
+        config('phpinnacle-ferry.origins.kafka'),
     );
     $secondConfig = new SinkConfigFactory($this->factory)->make(
         new DestinationFactory(app(ReplicaSchemaResolver::class))->resolve($second),
         $second,
         $object,
         $builder->topic($upstream, $object),
+        config('phpinnacle-ferry.origins.kafka'),
     );
 
     expect($firstConfig['fields.whitelist'])
@@ -195,6 +198,7 @@ it('builds a static sink with fixed fields and its target upstream', function (
         $replica,
         $object,
         $builder->topic($upstream, $object),
+        config('phpinnacle-ferry.origins.kafka'),
     );
 
     expect($config['table.name.format'])
@@ -289,7 +293,7 @@ it('keeps configured sink hosts and environment ports while applying the default
             $replica,
             $object,
             $builder->topic($upstream, $object),
-            targetHost: $host,
+            config: [...config('phpinnacle-ferry.origins.kafka'), 'target_host' => $host],
         )['connection.url'],
     )
         ->toBe(sprintf('jdbc:postgresql://%s:%d/:memory:', $expectedHost, $expectedPort));
@@ -352,6 +356,7 @@ it('selects and renames only source key fields mapped to the static primary key'
         $replica,
         $object,
         'topic',
+        config('phpinnacle-ferry.origins.kafka'),
     );
 
     expect($config)->toMatchArray([
@@ -434,6 +439,7 @@ it('empties key-only sink values after record transforms without discarding the 
         $replica,
         $object,
         'topic',
+        config('phpinnacle-ferry.origins.kafka'),
     );
 
     expect($config)->toMatchArray([

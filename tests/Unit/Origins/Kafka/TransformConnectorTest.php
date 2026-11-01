@@ -65,6 +65,7 @@ it('orders field transforms and static values before the renames of a sink', fun
         $replica,
         $object,
         $builder->topic($upstream, $object),
+        config('phpinnacle-ferry.origins.kafka'),
     );
 
     expect($config['transforms'])
@@ -109,13 +110,14 @@ it('captures an unbound field filter without writing it or capturing unused fiel
     $builder = app(SourceFactory::class);
     $source = $builder->source(
         $upstream,
-        config('phpinnacle-ferry.origins.kafka'),
+        config('phpinnacle-ferry.origins.kafka.source'),
     );
     $config = new SinkConfigFactory($factory)->make(
         new DestinationFactory(app(ReplicaSchemaResolver::class))->resolve($replica),
         $replica,
         $object,
         $builder->topic($upstream, $object),
+        config('phpinnacle-ferry.origins.kafka'),
     );
 
     expect($source['column.include.list'])
@@ -154,7 +156,7 @@ it('keeps building the shared source when a replica refers to a transform that i
     app()->instance(TransformRegistry::class, new TransformRegistry);
     expect(app(SourceFactory::class)->source(
         $upstream,
-        config('phpinnacle-ferry.origins.kafka'),
+        config('phpinnacle-ferry.origins.kafka.source'),
     ))
         ->toMatchArray(['column.include.list' => 'public._reference0._idrref,public._reference0.name']);
 });
@@ -188,6 +190,7 @@ it('builds installed string transforms before renames and guards masking against
         $replica,
         $object,
         'test-topic',
+        config('phpinnacle-ferry.origins.kafka'),
     );
 
     expect($config['transforms'])
@@ -278,13 +281,14 @@ it('scopes and transforms independently selected reference components using thei
     $source = app(SourceFactory::class);
     $config = $source->source(
         $upstream,
-        config('phpinnacle-ferry.origins.kafka'),
+        config('phpinnacle-ferry.origins.kafka.source'),
     );
     $sink = new SinkConfigFactory(app(TransformFactory::class))->make(
         new DestinationFactory(app(ReplicaSchemaResolver::class))->resolve($replica),
         $replica,
         $object,
         $source->topic($upstream, $object),
+        config('phpinnacle-ferry.origins.kafka'),
     );
 
     expect(explode(',', $config['column.include.list']))

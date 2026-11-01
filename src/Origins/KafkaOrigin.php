@@ -22,10 +22,16 @@ class KafkaOrigin implements Origin
 {
     /**
      * @param array{
+     *     base_uri: string,
+     *     headers: array<string, string>,
      *     target_host: ?string,
-     *     source: array<string, string>,
-     *     sink: array<string, string>,
-     *     signal: array{topic: string, bootstrap_servers: string, group_id: string, ...},
+     *     source: array{
+     *         options: array<string, string>,
+     *         converters: array<string, string>,
+     *         signal: array{topic: string, bootstrap_servers: string, group_id: string, flush_timeout: int, ...},
+     *         transforms: array<string, array<string, string>>,
+     *     },
+     *     sink: array{options: array<string, string>, transforms: array<string, array<string, string>>},
      *     ...
      * } $config
      */
@@ -49,7 +55,7 @@ class KafkaOrigin implements Origin
         $this->assertPgsqlDriver($upstream);
 
         if ($source instanceof Upstream) {
-            $config = $this->sources->source($source, $this->config);
+            $config = $this->sources->source($source, $this->config['source']);
         } else {
             $object = $this->sourceObject($source);
             $config = $this->sinks->make(
@@ -57,14 +63,14 @@ class KafkaOrigin implements Origin
                 $source,
                 $object,
                 $this->sources->topic($upstream, $object),
-                $this->config['target_host'],
+                $this->config,
             );
         }
 
         return ($source->connector ?? new Connector)->fill([
             'name' => $source->connector->name ?? $this->sources->name($source),
             'origin' => $this->name,
-            'config' => [...$config, ...$this->config[$source instanceof Upstream ? 'source' : 'sink']],
+            'config' => $config,
         ]);
     }
 
@@ -227,10 +233,9 @@ class KafkaOrigin implements Origin
             ],
         ], JSON_THROW_ON_ERROR);
 
-        /** @var array{topic: string} $signal */
-        $signal = $this->config['signal'];
+        $signal = $this->config['source']['signal'];
 
-        $this->kafkaConnect->signals($this->config)->publish(
+        $this->kafkaConnect->signals($signal)->publish(
             $signal['topic'],
             $key,
             $payload,

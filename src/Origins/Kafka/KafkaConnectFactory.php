@@ -15,33 +15,24 @@ class KafkaConnectFactory
         private readonly Application $app,
     ) {}
 
-    /** @param array<string, mixed> $config */
+    /** @param array{base_uri: string, headers: array<string, string>, ...} $config */
     public function client(array $config): Client
     {
-        /** @var string $baseUri */
-        $baseUri = $config['base_uri'];
-
-        /** @var array<string, string> $headers */
-        $headers = $config['headers'];
-
         return new Client(
-            $baseUri,
+            $config['base_uri'],
             $this->app->make(ClientInterface::class),
             $this->app->make(RequestFactoryInterface::class),
             $this->app->make(StreamFactoryInterface::class),
-            headers: $headers,
+            headers: $config['headers'],
         );
     }
 
-    /** @param array<string, mixed> $config */
+    /** @param array{bootstrap_servers: string, flush_timeout: int, ...} $config */
     public function signals(array $config): SignalProducer
     {
-        /** @var array{bootstrap_servers: string, flush_timeout: int} $signal */
-        $signal = $config['signal'];
-
         return new RdKafkaSignalProducer(
-            $signal['bootstrap_servers'],
-            $signal['flush_timeout'],
+            $config['bootstrap_servers'],
+            $config['flush_timeout'],
         );
     }
 }

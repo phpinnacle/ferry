@@ -12,19 +12,26 @@ class SinkConfigFactory
         private readonly TransformFactory $transforms,
     ) {}
 
-    /** @return array<string, string> */
+    /**
+     * @param array{
+     *     target_host: ?string,
+     *     sink: array{options: array<string, string>, transforms: array<string, array<string, string>>},
+     *     ...
+     * } $config
+     * @return array<string, string>
+     */
     public function make(
         Destination $destination,
         Replica $replica,
         StructureItem $object,
         string $topic,
-        ?string $targetHost = null,
+        array $config,
     ): array {
         $primaryKey = $destination->getPrimaryKey();
         $keyMap = $replica->primaryKeyMap($primaryKey);
         $fixedValues = $destination->getFixedValues();
 
-        return new JdbcConnectorConfig(
+        $connector = new JdbcConnectorConfig(
             table: $destination->getTable(),
             topic: $topic,
             columns: [
@@ -32,10 +39,18 @@ class SinkConfigFactory
                 ...$replica->constantColumns(),
                 ...array_keys($fixedValues),
             ],
-            transforms: $this->transforms->pipeline($replica, $object, $keyMap, $fixedValues),
+            transforms: $this->transforms->pipeline(
+                $replica,
+                $object,
+                $keyMap,
+                $fixedValues,
+                $config['sink']['transforms'],
+            ),
             connection: $destination->getConnectionName(),
-            targetHost: $targetHost,
+            targetHost: $config['target_host'],
             primaryKey: $primaryKey,
-        )->toArray();
+        );
+
+        return [...$connector->toArray(), ...$config['sink']['options']];
     }
 }

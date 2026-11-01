@@ -214,7 +214,7 @@ Jason preserves these annotations, and Eidos leaves their meaning to Ferry.
 | `x-primary-key` | Ordered list of strings | Object-level key columns. In `StructureItem.schema`, Rosetta writes the physical primary index and saves the same order in `StructureItem.primary_key`. In `Replica.schema`, this identifies the input key. Record transforms may replace it in `Services\ReplicaSchemaResolver::transformedSchema($replica)`, including with a generated UUID field. Key properties are listed in `required`. Dynamic destinations use the effective record key. Static destinations use their destination mappings. Source capture resolves selected generated key fields to physical dependencies. |
 | `x-ferry-trans` | String | Full Laravel translation key for a source property label. Resolved in the current interface locale and takes priority over `title`. Used for built-in fields. |
 | `x-ferry-reference` | Boolean `true` | Marks native reference strings, including nullable strings. Rosetta references and identifiers use UUID strings with `format: "uuid"` and length 36. Dynamic SQL tables store annotated references as text, and native text transforms reject them. Mapping compatibility uses the UUID schema independently of this marker. The annotation does not convert values. |
-| `x-ferry-converter` | String | Source converter key from `phpinnacle-ferry.kafka.converters`. Rosetta infers `uuid` for physical names ending in `rref`, and `integer` for `_keyfield`, `_recordertref` and names ending in `_rtref`, including expanded composite columns and tabular sections. It prepares UUID reference string schemas or integer schemas respectively. Other columns omit it, including `_type` discriminators and ordinary UUID fields such as `_predefinedid`. The Kafka source groups captured columns by this annotation to generate `<key>.columns`; it does not infer converters from column names. |
+| `x-ferry-converter` | String | Source converter key from `phpinnacle-ferry.origins.<name>.source.converters`. Rosetta infers `uuid` for physical names ending in `rref`, and `integer` for `_keyfield`, `_recordertref` and names ending in `_rtref`, including expanded composite columns and tabular sections. It prepares UUID reference string schemas or integer schemas respectively. Other columns omit it, including `_type` discriminators and ordinary UUID fields such as `_predefinedid`. The Kafka source groups captured columns by this annotation to generate `<key>.columns`; it does not infer converters from column names. |
 | `x-ferry-precision` | Integer | Optional total number of digits in a source number. Retains the exact storage dimension alongside standard JSON Schema numeric constraints. Dynamic decimal columns use it as their precision, defaulting to 15 when absent. |
 | `x-ferry-scale` | Integer | Optional number of fractional digits in a source number, including zero. Dynamic decimal columns use it as their scale, defaulting to 2 when absent. An unknown source scale is omitted. |
 
@@ -524,56 +524,88 @@ The **Reread data** action is available in upstream and replica table rows and e
 
 `phpinnacle-ferry.structure` tunes the preparation pipeline: `chunk_size` root objects per job, the job `timeout`, the retry `backoff` delays, and `stale_after` seconds before a silent run is considered interrupted. `phpinnacle-ferry.replica.table_prefix` sets the name prefix of replica destination tables.
 
-`phpinnacle-ferry.origins` is a map of named origins. Each entry declares a `driver`; the entry key is displayed in the form. The supported `kafka` driver also declares REST `base_uri`, HTTP `headers`, `source` and `sink` configuration maps, and Kafka `signal` settings. For example, the following fragment defines two named origins:
+`phpinnacle-ferry.origins` is a map of named origins. Each entry declares a `driver`; the entry key is displayed in the form. The supported `kafka` driver also declares REST `base_uri`, HTTP `headers`, `source.options` and `sink.options` configuration maps, and Kafka `source.signal` settings. For example, the following fragment defines two named origins:
 
 ```php
 'origins' => [
     'kafka' => [
         'driver' => 'kafka',
         'base_uri' => env('FERRY_KAFKA_CONNECT_URL'),
-        'headers' => [],
         'target_host' => null,
+        'headers' => [],
         'source' => [
-            // 'key.converter' => 'org.apache.kafka.connect.json.JsonConverter',
-            // 'key.converter.schemas.enable' => 'true',
-            // 'value.converter' => 'org.apache.kafka.connect.json.JsonConverter',
-            // 'value.converter.schemas.enable' => 'true',
+            'options' => [
+                // 'key.converter' => 'org.apache.kafka.connect.json.JsonConverter',
+                // 'key.converter.schemas.enable' => 'true',
+                // 'value.converter' => 'org.apache.kafka.connect.json.JsonConverter',
+                // 'value.converter.schemas.enable' => 'true',
+            ],
+            'transforms' => [
+                'unwrap' => [
+                    'type' => 'io.debezium.transforms.ExtractNewRecordState',
+                    'delete.tombstone.handling.mode' => 'tombstone',
+                ],
+            ],
+            'converters' => [
+                'uuid' => 'org.phpinnacle.toblerone.UuidConverter',
+                'integer' => 'org.phpinnacle.toblerone.IntegerConverter',
+                'mchar' => 'org.phpinnacle.toblerone.MCharConverter',
+            ],
+            'signal' => [
+                'topic' => env('FERRY_KAFKA_SIGNAL_TOPIC'),
+                'bootstrap_servers' => env('FERRY_KAFKA_BOOTSTRAP_SERVERS'),
+                'group_id' => env('FERRY_KAFKA_SIGNAL_GROUP_ID', 'ferry-signal'),
+                'flush_timeout' => 5000,
+            ],
         ],
         'sink' => [
-            // 'key.converter' => 'org.apache.kafka.connect.json.JsonConverter',
-            // 'key.converter.schemas.enable' => 'true',
-            // 'value.converter' => 'org.apache.kafka.connect.json.JsonConverter',
-            // 'value.converter.schemas.enable' => 'true',
-        ],
-        'signal' => [
-            'topic' => env('FERRY_KAFKA_SIGNAL_TOPIC'),
-            'bootstrap_servers' => env('FERRY_KAFKA_BOOTSTRAP_SERVERS'),
-            'group_id' => 'ferry-signal',
-            'flush_timeout' => 5000,
+            'options' => [
+                // 'key.converter' => 'org.apache.kafka.connect.json.JsonConverter',
+                // 'key.converter.schemas.enable' => 'true',
+                // 'value.converter' => 'org.apache.kafka.connect.json.JsonConverter',
+                // 'value.converter.schemas.enable' => 'true',
+            ],
+            'transforms' => [],
         ],
     ],
     'analytics' => [
         'driver' => 'kafka',
         'base_uri' => env('ANALYTICS_KAFKA_CONNECT_URL'),
-        'headers' => [],
         'target_host' => null,
+        'headers' => [],
         'source' => [
-            // 'key.converter' => 'org.apache.kafka.connect.json.JsonConverter',
-            // 'key.converter.schemas.enable' => 'true',
-            // 'value.converter' => 'org.apache.kafka.connect.json.JsonConverter',
-            // 'value.converter.schemas.enable' => 'true',
+            'options' => [
+                // 'key.converter' => 'org.apache.kafka.connect.json.JsonConverter',
+                // 'key.converter.schemas.enable' => 'true',
+                // 'value.converter' => 'org.apache.kafka.connect.json.JsonConverter',
+                // 'value.converter.schemas.enable' => 'true',
+            ],
+            'transforms' => [
+                'unwrap' => [
+                    'type' => 'io.debezium.transforms.ExtractNewRecordState',
+                    'delete.tombstone.handling.mode' => 'tombstone',
+                ],
+            ],
+            'converters' => [
+                'uuid' => 'org.phpinnacle.toblerone.UuidConverter',
+                'integer' => 'org.phpinnacle.toblerone.IntegerConverter',
+                'mchar' => 'org.phpinnacle.toblerone.MCharConverter',
+            ],
+            'signal' => [
+                'topic' => env('ANALYTICS_KAFKA_SIGNAL_TOPIC'),
+                'bootstrap_servers' => env('ANALYTICS_KAFKA_BOOTSTRAP_SERVERS'),
+                'group_id' => env('ANALYTICS_KAFKA_SIGNAL_GROUP_ID', 'ferry-signal'),
+                'flush_timeout' => 5000,
+            ],
         ],
         'sink' => [
-            // 'key.converter' => 'org.apache.kafka.connect.json.JsonConverter',
-            // 'key.converter.schemas.enable' => 'true',
-            // 'value.converter' => 'org.apache.kafka.connect.json.JsonConverter',
-            // 'value.converter.schemas.enable' => 'true',
-        ],
-        'signal' => [
-            'topic' => env('ANALYTICS_KAFKA_SIGNAL_TOPIC'),
-            'bootstrap_servers' => env('ANALYTICS_KAFKA_BOOTSTRAP_SERVERS'),
-            'group_id' => 'ferry-signal',
-            'flush_timeout' => 5000,
+            'options' => [
+                // 'key.converter' => 'org.apache.kafka.connect.json.JsonConverter',
+                // 'key.converter.schemas.enable' => 'true',
+                // 'value.converter' => 'org.apache.kafka.connect.json.JsonConverter',
+                // 'value.converter.schemas.enable' => 'true',
+            ],
+            'transforms' => [],
         ],
     ],
 ],
@@ -581,15 +613,21 @@ The **Reread data** action is available in upstream and replica table rows and e
 
 `target_host` is the destination database host as seen by that origin’s Kafka Connect worker. Set it to `null` to use the destination’s Laravel connection host. It does not change the source database host or destination port.
 
-Ferry applies Debezium's `ExtractNewRecordState` at the source, storing flat row values and deletion tombstones in Kafka. Field mappings and their transforms run in the sink. Every JDBC sink uses `delete.enabled=true` and deletes destination rows by their mapped primary key when a tombstone arrives, for both static and dynamic destinations. Fixed values are inserted into row values and do not add conditions to deletes.
+Each origin's `source.transforms` map defines source SMTs in configuration order. Ferry emits the comma-separated names as `transforms` and each string property as `transforms.<name>.<property>`. An empty map disables source transforms. The shipped configuration applies Debezium's `ExtractNewRecordState`, storing flat row values and deletion tombstones in Kafka; custom pipelines must preserve this record contract for Ferry sinks. After changing transforms, regenerate saved source configurations through `ConnectorManager::refresh($upstream)`; Start retries the saved configuration.
+
+Each origin's `sink.transforms` map runs in configuration order before the replica's record transforms, field transforms, fixed values, and final renames. An empty map adds no transforms. Use aliases distinct from the generated `replica_*`, `field_*`, `insert_*`, `rename_keys`, and `rename_values` names. Refresh affected replicas through `ConnectorManager::refresh($replica)` after changing this map.
+
+Field mappings and their transforms run in the sink. Every JDBC sink uses `delete.enabled=true` and deletes destination rows by their mapped primary key when a tombstone arrives, for both static and dynamic destinations. Fixed values are inserted into row values and do not add conditions to deletes.
 
 The sink's final value projection excludes effective replica key fields; JDBC writes destination primary keys from the record key alone. A key-only replica produces an empty value object for inserts and updates and preserves null tombstones for deletes. After a UUID key is generated, physical source key fields remain in the value only when mapped to ordinary destination columns. Source capture and shared Kafka topics retain physical key fields in row values for other replicas and earlier transformations.
 
 The source must provide old values for every selected physical key column on deletes and key changes. For keys outside the physical PRIMARY KEY, configure PostgreSQL `REPLICA IDENTITY FULL` yourself, as required by [Debezium's custom message-key contract](https://debezium.io/documentation/reference/stable/connectors/postgresql.html#postgresql-property-message-key-columns). Ferry does not change replica identity. With the required old values available, Debezium emits deletion/tombstone events for the old key and a create event for the new key; the sink transforms both keys independently of the value. The intended setup is one replica per source table. Multiple replicas are not prohibited, but Ferry does not merge their selected keys or resolve key conflicts.
 
-Each origin declares `source` and `sink` as arrays of native Kafka Connect property names and string values. The corresponding map is merged after Ferry builds a connector's configuration, so supplied values override generated values, including custom converter declarations and column lists. Empty maps add no properties; key/value serialization then inherits the worker defaults. Keep the source's serializers and the sink's deserializers compatible, including their schema settings and Schema Registry URLs. Settings that change topic names, capture scope, keys, or transforms must preserve the contracts used by Ferry's generated pipeline and snapshot handling.
+Each origin declares `source.options` and `sink.options` as arrays of native Kafka Connect property names and string values. The corresponding map is merged after Ferry builds a connector's configuration, so supplied values override generated values, including custom converter declarations and column lists. Empty maps add no properties; key/value serialization then inherits the worker defaults. Keep the source's serializers and the sink's deserializers compatible, including their schema settings and Schema Registry URLs. Settings that change topic names, capture scope, keys, or transforms must preserve the contracts used by Ferry's generated pipeline and snapshot handling.
 
-Ferry registers the source-only Debezium custom converters from `phpinnacle-ferry.kafka.converters`, independently of the key/value serializers:
+`SourceFactory::source($upstream, $sourceConfig)` and `SinkConfigFactory::make($destination, $replica, $object, $topic, $originConfig)` return final connector properties with `options` applied. The sink factory receives the full origin configuration because `target_host` belongs to the origin. `KafkaConnectFactory::signals($signalConfig)` receives the `source.signal` settings directly.
+
+Ferry registers the source-only Debezium custom converters from `phpinnacle-ferry.origins.<name>.source.converters`, independently of the key/value serializers:
 
 ```php
 'converters' => [
@@ -617,7 +655,7 @@ For example, the generated source configuration can contain:
 
 The shipped `kafka` origin reads the `FERRY_KAFKA_*` environment variables, including `FERRY_KAFKA_SIGNAL_GROUP_ID`. `phpinnacle-ferry.kafka.transforms` lists transformation classes that the service provider resolves and registers in `TransformRegistry` for both forms and Kafka connector compilation.
 
-`base_uri` is required before any connector operation, and `headers` accompany every REST request. Configure HTTP timeouts on the application's PSR-18 client. Each origin's `signal.topic`, `bootstrap_servers`, and `group_id` configure Debezium's Kafka signal channel; `flush_timeout` bounds publishing time in milliseconds. Publishing signals requires the `ext-rdkafka` PHP extension.
+`base_uri` is required before any connector operation, and `headers` accompany every REST request. Configure HTTP timeouts on the application's PSR-18 client. Each origin's `source.signal.topic`, `source.signal.bootstrap_servers`, and `source.signal.group_id` configure Debezium's Kafka signal channel; `flush_timeout` bounds publishing time in milliseconds. Publishing signals requires the `ext-rdkafka` PHP extension.
 
 ## Field mapping
 

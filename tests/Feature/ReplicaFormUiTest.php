@@ -325,6 +325,7 @@ it('requires explicit composite key bindings and creates the dynamic table on th
         $replica,
         $object,
         'customers',
+        config('phpinnacle-ferry.origins.kafka'),
     );
     expect($config)->toMatchArray([
         'pk.mode' => 'record_key',

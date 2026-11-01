@@ -41,7 +41,7 @@ beforeEach(function () {
 it('prepares typed replica attributes from its form', function (?string $destination) {
     config([
         'phpinnacle-ferry.origins.kafka.base_uri' => null,
-        'phpinnacle-ferry.origins.kafka.signal.bootstrap_servers' => null,
+        'phpinnacle-ferry.origins.kafka.source.signal.bootstrap_servers' => null,
     ]);
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
     TestCase::makeItem($upstream, [
@@ -415,6 +415,7 @@ it('resolves the destination table from the registered static destination', func
         $replica,
         $replica->sourceObject(),
         'topic',
+        config('phpinnacle-ferry.origins.kafka'),
     );
 
     expect($replica->fresh()->destination)->toBe('customer_directory');

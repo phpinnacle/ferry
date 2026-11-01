@@ -39,7 +39,7 @@ it('builds a debezium postgres connector config scoped to the tracked replicas',
     $builder = app(SourceFactory::class);
     $config = $builder->source(
         $upstream,
-        config('phpinnacle-ferry.origins.kafka'),
+        config('phpinnacle-ferry.origins.kafka.source'),
     );
 
     expect($builder->name($upstream))
@@ -116,7 +116,7 @@ it('groups captured column annotations across replicas without inferring convert
         ],
     ], ['status' => ReplicaStatus::Pause]);
 
-    $config = app(SourceFactory::class)->source($upstream, config('phpinnacle-ferry.origins.kafka'));
+    $config = app(SourceFactory::class)->source($upstream, config('phpinnacle-ferry.origins.kafka.source'));
 
     expect($config['uuid.columns'])
         ->toBe('warehouse.records.record_id,warehouse.records.filter_id')
@@ -130,18 +130,59 @@ it('groups captured column annotations across replicas without inferring convert
         ->not->toHaveKey('mchar.columns');
 });
 
-it('registers the configured converter classes even without per-column selections', function () {
-    config(['phpinnacle-ferry.kafka.converters' => ['text' => 'example.TextConverter']]);
+it('builds source transforms from the origin configuration in order', function () {
+    config([
+        'phpinnacle-ferry.origins.kafka.source.transforms' => [
+            'flatten' => [
+                'type' => 'io.debezium.transforms.ExtractNewRecordState',
+                'delete.tombstone.handling.mode' => 'rewrite',
+            ],
+            'route' => [
+                'type' => 'org.apache.kafka.connect.transforms.RegexRouter',
+                'regex' => '(.*)',
+                'replacement' => 'prefix_$1',
+            ],
+        ],
+    ]);
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
 
-    $config = app(SourceFactory::class)->source($upstream, config('phpinnacle-ferry.origins.kafka'));
+    $config = app(SourceFactory::class)->source($upstream, config('phpinnacle-ferry.origins.kafka.source'));
+
+    expect($config)
+        ->toMatchArray([
+            'transforms' => 'flatten,route',
+            'transforms.flatten.type' => 'io.debezium.transforms.ExtractNewRecordState',
+            'transforms.flatten.delete.tombstone.handling.mode' => 'rewrite',
+            'transforms.route.type' => 'org.apache.kafka.connect.transforms.RegexRouter',
+            'transforms.route.regex' => '(.*)',
+            'transforms.route.replacement' => 'prefix_$1',
+        ])
+        ->not->toHaveKey('transforms.unwrap.type');
+});
+
+it('disables source transforms when the origin transform map is empty', function () {
+    config(['phpinnacle-ferry.origins.kafka.source.transforms' => []]);
+    $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
+
+    $config = app(SourceFactory::class)->source($upstream, config('phpinnacle-ferry.origins.kafka.source'));
+
+    expect($config)
+        ->toMatchArray(['transforms' => ''])
+        ->not->toHaveKeys(['transforms.unwrap.type', 'transforms.unwrap.delete.tombstone.handling.mode']);
+});
+
+it('registers the configured converter classes even without per-column selections', function () {
+    config(['phpinnacle-ferry.origins.kafka.source.converters' => ['text' => 'example.TextConverter']]);
+    $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
+
+    $config = app(SourceFactory::class)->source($upstream, config('phpinnacle-ferry.origins.kafka.source'));
 
     expect($config)
         ->toMatchArray(['converters' => 'text', 'text.type' => 'example.TextConverter'])
         ->not->toHaveKeys(['text.columns', 'uuid.type', 'integer.type', 'mchar.type']);
 
-    config(['phpinnacle-ferry.kafka.converters' => []]);
-    expect(app(SourceFactory::class)->source($upstream, config('phpinnacle-ferry.origins.kafka')))
+    config(['phpinnacle-ferry.origins.kafka.source.converters' => []]);
+    expect(app(SourceFactory::class)->source($upstream, config('phpinnacle-ferry.origins.kafka.source')))
         ->not
         ->toHaveKey('converters');
 });
@@ -182,7 +223,7 @@ it('unions tables and columns across the tracked replicas of one upstream', func
     $upstream = $upstream->fresh();
     $config = app(SourceFactory::class)->source(
         $upstream,
-        config('phpinnacle-ferry.origins.kafka'),
+        config('phpinnacle-ferry.origins.kafka.source'),
     );
 
     expect(explode(',', $config['table.include.list']))
@@ -198,7 +239,7 @@ it('never lets an unscoped source connector capture the whole database', functio
 
     $config = app(SourceFactory::class)->source(
         $upstream,
-        config('phpinnacle-ferry.origins.kafka'),
+        config('phpinnacle-ferry.origins.kafka.source'),
     );
 
     expect($config['table.include.list'])
@@ -243,7 +284,7 @@ it('leaves pending static replicas without a selected key or captured columns', 
         'mapping' => [],
     ]);
 
-    $config = app(SourceFactory::class)->source($upstream, config('phpinnacle-ferry.origins.kafka'));
+    $config = app(SourceFactory::class)->source($upstream, config('phpinnacle-ferry.origins.kafka.source'));
 
     expect($config['table.include.list'])->toBe('public.customers');
     expect($config['column.include.list'])->toBe('');
@@ -285,7 +326,7 @@ it('uses static mapping keys without a primary key from a non-Rosetta adapter', 
     ], ['status' => ReplicaStatus::Active]);
     $config = app(SourceFactory::class)->source(
         $upstream,
-        config('phpinnacle-ferry.origins.kafka'),
+        config('phpinnacle-ferry.origins.kafka.source'),
     );
     $pipeline = app(\PHPinnacle\Ferry\Origins\Kafka\TransformFactory::class)->pipeline(
         $replica,

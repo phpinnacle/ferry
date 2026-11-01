@@ -24,6 +24,7 @@ class TransformFactory
     /**
      * @param array<string, string> $keyMap
      * @param array<string, string> $fixedValues
+     * @param array<string, array<string, string>> $transforms
      * @return array<string, string>
      */
     public function pipeline(
@@ -31,6 +32,7 @@ class TransformFactory
         StructureItem $object,
         array $keyMap = [],
         array $fixedValues = [],
+        array $transforms = [],
     ): array {
         $columns = $replica->columnMap();
         $reserved = array_fill_keys([
@@ -45,7 +47,7 @@ class TransformFactory
             }
         }
 
-        $pipeline = $this->recordTransforms($replica, array_keys($keyMap));
+        $pipeline = [...$transforms, ...$this->recordTransforms($replica, array_keys($keyMap))];
 
         foreach ($replica->mapping as $index => $mapping) {
             if ($mapping->kind === FieldKind::Static) {
@@ -167,7 +169,7 @@ class TransformFactory
      * @param array<string, array<string, string>> $pipeline
      * @return array<string, string>
      */
-    private static function configuration(array $pipeline): array
+    public static function configuration(array $pipeline): array
     {
         $config = ['transforms' => implode(',', array_keys($pipeline))];
         foreach ($pipeline as $name => $properties) {

@@ -4,6 +4,7 @@ use GuzzleHttp\Psr7\HttpFactory;
 use GuzzleHttp\Psr7\Response;
 use Illuminate\Support\Facades\Queue;
 use PHPinnacle\Ferry\Data\FieldMapping;
+use PHPinnacle\Ferry\Data\TransformSetting;
 use PHPinnacle\Ferry\Enums\ConnectorStatus;
 use PHPinnacle\Ferry\Enums\DestinationType;
 use PHPinnacle\Ferry\Enums\Driver as DatabaseDriver;
@@ -73,7 +74,7 @@ function ferry_kafka_origin(
     $kafkaConnect->shouldReceive('client')->with($config)->andReturn($client);
     $kafkaConnect
         ->shouldReceive('signals')
-        ->with($config)
+        ->with($config['source']['signal'])
         ->andReturn($signals ?? new RecordingSignalProducer);
 
     return new KafkaOrigin(
@@ -190,10 +191,14 @@ it('applies the named origin transport settings to source and sink connectors', 
     $defaults = config('phpinnacle-ferry.origins.kafka');
     $origins = new OriginFactory(app(), [
         'kafka' => $defaults,
-        'analytics' => [...$defaults, 'source' => $settings, 'sink' => $settings],
+        'analytics' => [
+            ...$defaults,
+            'source' => [...$defaults['source'], 'options' => $settings],
+            'sink' => [...$defaults['sink'], 'options' => $settings],
+        ],
     ]);
 
-    foreach (['kafka' => $defaults['source'], 'analytics' => $settings] as $name => $expected) {
+    foreach (['kafka' => $defaults['source']['options'], 'analytics' => $settings] as $name => $expected) {
         $origin = $origins->create($name);
 
         foreach ([$replica->upstream, $replica] as $owner) {
@@ -201,6 +206,7 @@ it('applies the named origin transport settings to source and sink connectors', 
             $actual = array_filter($config, fn (string $key) => str_contains($key, '.converter'), ARRAY_FILTER_USE_KEY);
 
             expect($actual)->toBe($expected);
+            expect($config)->not->toHaveKey('options');
         }
     }
 })->with([
@@ -226,15 +232,58 @@ it('applies arbitrary origin settings only to their source or sink and overrides
     $origin = new OriginFactory(app(), [
         'analytics' => [
             ...config('phpinnacle-ferry.origins.kafka'),
-            'source' => $sourceSettings,
-            'sink' => $sinkSettings,
+            'source' => [
+                ...config('phpinnacle-ferry.origins.kafka.source'),
+                'converters' => ['uuid' => 'org.phpinnacle.toblerone.UuidConverter'],
+                'options' => $sourceSettings,
+            ],
+            'sink' => [...config('phpinnacle-ferry.origins.kafka.sink'), 'options' => $sinkSettings],
         ],
     ])->create('analytics');
 
     expect($origin->make($replica->upstream)->config)
         ->toMatchArray($sourceSettings)
-        ->not->toHaveKey('batch.size')->and($origin->make($replica)->config)->toMatchArray($sinkSettings)
+        ->not->toHaveKeys(['batch.size', 'integer.type', 'mchar.type']);
+    expect($origin->make($replica)->config)
+        ->toMatchArray($sinkSettings)
         ->not->toHaveKeys(['converters', 'uuid.type', 'uuid.columns', 'include.unknown.datatypes']);
+});
+
+it('runs configured sink transforms before the replica pipeline without adding them to the source', function () {
+    config([
+        'phpinnacle-ferry.origins.kafka.sink.transforms' => [
+            'normalize' => [
+                'type' => 'org.apache.kafka.connect.transforms.Cast$Value',
+                'spec' => '_description:string',
+                'predicate' => 'tombstone',
+                'negate' => 'true',
+            ],
+            'headers' => [
+                'type' => 'org.apache.kafka.connect.transforms.DropHeaders',
+                'headers' => 'debug',
+            ],
+        ],
+    ]);
+    $replica = ferry_replica([
+        'transforms' => [new TransformSetting('slug', ['input' => "$['_idrref']", 'output' => 'slug'])],
+    ]);
+    $origin = ferry_kafka_origin(new RecordingConnectClient);
+
+    expect($origin->make($replica)->config)->toMatchArray([
+        'transforms' => 'normalize,headers,replica_0,rename_keys,rename_values',
+        'transforms.normalize.type' => 'org.apache.kafka.connect.transforms.Cast$Value',
+        'transforms.normalize.spec' => '_description:string',
+        'transforms.normalize.predicate' => 'tombstone',
+        'transforms.normalize.negate' => 'true',
+        'transforms.headers.type' => 'org.apache.kafka.connect.transforms.DropHeaders',
+        'transforms.headers.headers' => 'debug',
+        'predicates' => 'tombstone',
+        'predicates.tombstone.type' => 'org.apache.kafka.connect.transforms.predicates.RecordIsTombstone',
+        'transforms.rename_keys.renames' => '_idrref:external_id',
+    ]);
+    expect($origin->make($replica->upstream)->config)
+        ->toMatchArray(['transforms' => 'unwrap'])
+        ->not->toHaveKeys(['transforms.normalize.type', 'transforms.headers.type']);
 });
 
 it('uses each named origin target host only for its sink', function () {

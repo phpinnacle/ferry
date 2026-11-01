@@ -177,7 +177,7 @@ it('creates and persists one UUID key through the tabbed record builder for both
     expect($edit->getComponentByStatePath('mapping')->getSources()[0]['id'])->toBe('record_id');
 
     $source = app(SourceFactory::class);
-    $capture = $source->source($this->upstream, config('phpinnacle-ferry.origins.kafka'));
+    $capture = $source->source($this->upstream, config('phpinnacle-ferry.origins.kafka.source'));
     expect($capture['message.key.columns'])->toBe('public._reference0:tenant_id,row_id');
     expect($capture['column.include.list'])
         ->toBe(
@@ -189,6 +189,7 @@ it('creates and persists one UUID key through the tabbed record builder for both
         $replica,
         $this->object,
         'test-topic',
+        config('phpinnacle-ferry.origins.kafka'),
     );
     $generator = 'replica_0_key';
     expect($sink)

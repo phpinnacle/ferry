@@ -98,7 +98,10 @@ it('adds and persists a slug through the tabbed builder in both editors', functi
         'null',
     ]);
     expect(
-        app(SourceFactory::class)->source($upstream, config('phpinnacle-ferry.origins.kafka'))['column.include.list'],
+        app(SourceFactory::class)->source(
+            $upstream,
+            config('phpinnacle-ferry.origins.kafka.source'),
+        )['column.include.list'],
     )
         ->toBe('public._reference0._idrref,public._reference0.name');
     expect($replica->toArray()['transforms'])->toBe($state['transforms']);
