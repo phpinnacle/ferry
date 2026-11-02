@@ -83,6 +83,8 @@ class AvroSchemaConverter
                 : throw new UnexpectedValueException('Expected Avro documentation to be a string.');
         }
 
+        $schema = [...$schema, ...$this->connectAnnotations($definition)];
+
         if (array_key_exists('logicalType', $definition)) {
             $schema['format'] = is_string($definition['logicalType'])
                 ? $definition['logicalType']
@@ -90,6 +92,61 @@ class AvroSchemaConverter
         }
 
         return [...$schema, 'x-avro' => $definition];
+    }
+
+    /**
+     * @param array<array-key, mixed> $definition
+     * @return Keywords
+     */
+    private function connectAnnotations(array $definition): array
+    {
+        $bounds = match ([$definition['type'], $definition['connect.type'] ?? null]) {
+            ['int', 'int8'] => ['minimum' => -128, 'maximum' => 127],
+            ['int', 'int16'] => ['minimum' => -32_768, 'maximum' => 32_767],
+            default => [],
+        };
+
+        return [
+            ...$bounds,
+            ...match ([$definition['type'], $definition['connect.name'] ?? null]) {
+                ['string', 'io.debezium.data.Uuid'] => ['format' => 'uuid'],
+                ['string', 'io.debezium.data.Enum'] => [
+                    'enum' => $this->allowedValues($definition['connect.parameters'] ?? null),
+                ],
+                ['string', 'io.debezium.data.Json'] => ['format' => 'json', 'contentMediaType' => 'application/json'],
+                ['string', 'io.debezium.data.Xml'] => ['format' => 'xml', 'contentMediaType' => 'application/xml'],
+                ['int', 'io.debezium.time.Date'] => ['format' => 'date'],
+                ['int', 'io.debezium.time.Time'] => ['format' => 'time-millis'],
+                ['long', 'io.debezium.time.MicroTime'] => ['format' => 'time-micros'],
+                ['long', 'io.debezium.time.NanoTime'] => ['format' => 'time-nanos'],
+                ['long', 'io.debezium.time.Timestamp'] => ['format' => 'timestamp-millis'],
+                ['long', 'io.debezium.time.MicroTimestamp'] => ['format' => 'timestamp-micros'],
+                ['long', 'io.debezium.time.NanoTimestamp'] => ['format' => 'timestamp-nanos'],
+                ['string', 'io.debezium.time.ZonedTimestamp'], ['string', 'io.debezium.time.IsoTimestamp'] => [
+                    'format' => 'date-time',
+                ],
+                ['string', 'io.debezium.time.ZonedTime'], ['string', 'io.debezium.time.IsoTime'] => [
+                    'format' => 'time',
+                ],
+                ['string', 'io.debezium.time.IsoDate'] => ['format' => 'iso-date'],
+                ['int', 'io.debezium.time.Year'] => ['format' => 'year'],
+                ['long', 'io.debezium.time.MicroDuration'] => ['format' => 'duration-micros'],
+                ['string', 'io.debezium.time.Interval'] => ['format' => 'duration'],
+                default => [],
+            },
+        ];
+    }
+
+    /** @return list<string> */
+    private function allowedValues(mixed $parameters): array
+    {
+        $allowed = is_array($parameters) ? $parameters['allowed'] ?? null : null;
+
+        if (!is_string($allowed)) {
+            throw new UnexpectedValueException('Expected Debezium enum allowed values to be a string.');
+        }
+
+        return explode(',', $allowed);
     }
 
     /**

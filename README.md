@@ -135,6 +135,31 @@ nullable unions, named types, enums, arrays, maps, fixed values, and logical typ
 Avro defaults and nullability remain independent: every record field is present
 in `required`, including nullable fields and fields with defaults. Logical types
 retain their underlying representation and show their logical name as a format.
+Kafka Connect and Debezium annotations are interpreted within records, arrays,
+maps, and nullable unions:
+
+| Annotation | JSON Schema presentation |
+| --- | --- |
+| `connect.type: int8` / `int16` on Avro `int` | Integer bounds of -128–127 / -32768–32767 |
+| `io.debezium.data.Uuid` | String with `uuid` format |
+| `io.debezium.data.Enum` | String with `enum` values from `connect.parameters.allowed`, preserving spaces, empty values, and order |
+| `io.debezium.data.Json` / `Xml` | String with `json` / `xml` format and `application/json` / `application/xml` content media type |
+| `io.debezium.time.Date` | Integer days since the epoch with `date` format |
+| `io.debezium.time.Time` / `MicroTime` / `NanoTime` | Integer with `time-millis` / `time-micros` / `time-nanos` format |
+| `io.debezium.time.Timestamp` / `MicroTimestamp` / `NanoTimestamp` | Integer with `timestamp-millis` / `timestamp-micros` / `timestamp-nanos` format |
+| `io.debezium.time.ZonedTimestamp` / `IsoTimestamp` | String with `date-time` format |
+| `io.debezium.time.ZonedTime` / `IsoTime` | String with `time` format |
+| `io.debezium.time.IsoDate` | String with `iso-date` format, preserving Debezium's UTC suffix |
+| `io.debezium.time.Year` / `MicroDuration` / `Interval` | Original representation with `year` / `duration-micros` / `duration` format |
+
+Debezium names above come from `connect.name`; explicit Avro `logicalType` takes
+precedence over the presentation format. Unknown annotations retain their Avro
+representation. Original metadata remains in `x-avro`, including
+`connect.parameters.__debezium.source.column.type`, `.length`, and `.scale`.
+These describe the source SQL column and do not impose constraints on values
+that might have been changed by source transforms. No record values are converted.
+See the [Debezium data type mappings](https://debezium.io/documentation/reference/stable/connectors/postgresql.html#postgresql-data-types).
+
 This projection is for inspection, not Avro validation or compatibility checks.
 Referenced Avro schemas are resolved by the Registry API for the preview; the
 Source and References tabs retain the registered definition and references.
