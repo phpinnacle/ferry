@@ -20,6 +20,7 @@ return [
             \PHPinnacle\Ferry\Transformations\TimestampConverter::class,
             \PHPinnacle\Ferry\Transformations\BooleanToString::class,
             \PHPinnacle\Ferry\Transformations\StringMap::class,
+            \PHPinnacle\Ferry\Transformations\EmptyStringToNull::class,
             \PHPinnacle\Ferry\Transformations\Toggle::class,
             \PHPinnacle\Ferry\Transformations\Json::class,
             \PHPinnacle\Ferry\Transformations\Money::class,

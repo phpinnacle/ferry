@@ -269,7 +269,7 @@ Transform labels, descriptions and form parameters use `phpinnacle-ferry::transf
 
 Each transformation implements `PHPinnacle\Ferry\Contracts\Transform` and owns its editor block, input compatibility, output JSON Schema and Kafka Connect configuration. Configure its class in `phpinnacle-ferry.kafka.transforms`; `FerryServiceProvider` resolves each class through Laravel's container and registers the resulting objects in the shared `TransformRegistry`. Forms and workers use the same instances, keyed by `getKey()`.
 
-The default list contains Cast, Filter, InsertUuid, Slug, TimestampConverter, BooleanToString, StringMap, Toggle, Json, Money and Radix. Add the optional string transforms to this list as needed:
+The default list contains Cast, Filter, InsertUuid, Slug, TimestampConverter, BooleanToString, StringMap, EmptyStringToNull, Toggle, Json, Money and Radix. Add the optional string transforms to this list as needed:
 
 ```php
 // kafka.transforms in config/phpinnacle-ferry.php
@@ -281,6 +281,7 @@ The default list contains Cast, Filter, InsertUuid, Slug, TimestampConverter, Bo
     \PHPinnacle\Ferry\Transformations\TimestampConverter::class,
     \PHPinnacle\Ferry\Transformations\BooleanToString::class,
     \PHPinnacle\Ferry\Transformations\StringMap::class,
+    \PHPinnacle\Ferry\Transformations\EmptyStringToNull::class,
     \PHPinnacle\Ferry\Transformations\Toggle::class,
     \PHPinnacle\Ferry\Transformations\Json::class,
     \PHPinnacle\Ferry\Transformations\Money::class,
@@ -293,7 +294,9 @@ The default list contains Cast, Filter, InsertUuid, Slug, TimestampConverter, Bo
 
 Json serializes a selected field to a JSON string without a schema/payload envelope, preserving nulls. Strings become quoted JSON strings; arrays and objects are supported. Kafka Connect supplies the encoding, including its native logical-type and Base64 byte encoding. Ferry uses field mode so the enclosing record remains available to JDBC.
 
-Money converts Decimal amounts to INT64 currency minor units using the selected uppercase ISO currency code: RUB `1.2300` becomes `123`, JPY `123.0000` becomes `123`, and KWD `1.2340` becomes `1234`. Numeric schemas, including scale-zero numeric columns represented as integers, are offered by the editor. The actual Kafka value must be Decimal (`BigDecimal`); use Debezium's `decimal.handling.mode=precise` and compatible serializers. Cast-generated integers or floating-point numbers and numeric constants are not Decimal inputs. Currency support and fraction digits come from Toblerone's ICU data. Fractional minor units and INT64 overflow fail the task; values are never rounded or truncated.
+EmptyStringToNull replaces the exact empty string (`""`) with null. Its `trim` toggle defaults to false; when enabled, leading and trailing whitespace is removed from every selected string before checking for emptiness, so `"   "` becomes null and `"  text  "` becomes `"text"`. Existing nulls and tombstones are preserved. The output JSON Schema is `string|null`, without source defaults, formats or constraints; static destinations must accept nullable plain text. It supports source fields and string constants and emits `org.phpinnacle.toblerone.EmptyStringToNullTransform$Key` or `$Value` before renames. Install [Toblerone v0.0.11 or later](https://github.com/phpinnacle/toblerone/releases/tag/v0.0.11) on every Connect worker. Ferry stores the native Boolean `trim` setting and does not execute string conversion in PHP.
+
+Money converts Decimal or FLOAT64 amounts to INT64 currency minor units using the selected uppercase ISO currency code: RUB `1.2300` becomes `123`, JPY `123.0000` becomes `123`, and KWD `1.2340` becomes `1234`. Numeric schemas, including scale-zero numeric columns represented as integers, are offered by the editor. The actual Kafka value must be Decimal (`BigDecimal`) or FLOAT64 (`Double`); use Debezium's `decimal.handling.mode=precise` or `double` with compatible serializers. FLOAT64 requires [Toblerone v0.0.12 or later](https://github.com/phpinnacle/toblerone/releases/tag/v0.0.12) and also supports Ferry's floating-point constants and `Cast(float64) → Money` chains. Integer and FLOAT32 values remain unsupported; integer constants need an explicit Cast to `float64` first. Double values use their canonical decimal representation, so BYN `0.29` becomes `29`. Precision lost upstream cannot be recovered; use `precise` when the original decimal precision matters. Currency support and fraction digits come from Toblerone's ICU data. Fractional minor units, non-finite values and INT64 overflow fail the task; values are never rounded or truncated. Floating-point arithmetic artifacts such as `0.1 + 0.2` can therefore fail conversion.
 
 Radix converts integer values to strings and parses strings as signed 32-bit integers in bases 2 through 36. Temporal fields are excluded. Invalid digits and string values outside the signed 32-bit range fail the task. Integer input may be 64-bit, so reversing that conversion is not guaranteed for larger values. All three transforms preserve nullability, discard obsolete input constraints and support both key and value targets, including tombstones. Install the corresponding Toblerone classes on the Kafka Connect worker.
 

@@ -18,6 +18,58 @@ require_once __DIR__ . '/../Fakes/CustomersDestination.php';
 
 uses(TestCase::class);
 
+it('keeps independent trim toggles when adding, editing and reopening empty string transforms', function () {
+    Queue::fake();
+    $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
+    TestCase::makeItem($upstream, ['fields' => [
+        'name' => Schema::fromArray(['type' => 'string']),
+        'note' => Schema::fromArray(['type' => 'string']),
+    ]]);
+    $page = Livewire::test(ReplicaForm::class, [
+        'state' => [
+            'upstream_id' => $upstream->id,
+            'source' => 'object-0',
+            'type' => DestinationType::Dynamic->value,
+            'name' => 'Empty string transforms',
+            'mapping' => [
+                ['kind' => 'source', 'source' => '_idrref', 'target' => 'id', 'options' => []],
+                ['kind' => 'source', 'source' => 'name', 'target' => 'name', 'options' => []],
+                ['kind' => 'source', 'source' => 'note', 'target' => 'note', 'options' => []],
+            ],
+        ],
+    ]);
+    foreach (['name' => [], 'note' => ['trim' => true]] as $source => $params) {
+        $mapping = $page->instance()->form->getComponentByStatePath('mapping');
+        $path = 'mapping.' . $mapping->getSourceRowIndex($source) . '.options.transforms';
+        $action = TestAction::make('fieldTransforms')->schemaComponent($path, 'form');
+        $page->callAction($action->arguments(['block' => 'empty_string_to_null']), ['data' => $params])
+            ->assertHasNoActionErrors();
+        $page->call('$refresh');
+    }
+
+    $replica = $page->instance()->record;
+    $replica->update($page->instance()->form->getState());
+    $reopened = Livewire::test(ReplicaForm::class, ['record' => $replica->fresh(), 'state' => []]);
+    $mapping = $reopened->instance()->form->getComponentByStatePath('mapping');
+    foreach (['name' => false, 'note' => true] as $source => $trim) {
+        $path = 'mapping.' . $mapping->getSourceRowIndex($source) . '.options.transforms';
+        $editor = $reopened->instance()->form->getComponentByStatePath($path);
+        expect($editor->getSettings())->toBe([
+            ['type' => 'empty_string_to_null', 'data' => ['trim' => $trim]],
+        ]);
+        expect($editor->getInputSchema()->toArray())->toBe(['type' => ['string', 'null']]);
+    }
+
+    $path = 'mapping.' . $mapping->getSourceRowIndex('note') . '.options.transforms';
+    $action = TestAction::make('fieldTransforms')->schemaComponent($path, 'form');
+    $reopened->callAction($action->arguments(['block' => 'empty_string_to_null', 'index' => 0]), [
+        'data' => ['trim' => false],
+    ])->assertHasNoActionErrors();
+    $reopened->call('$refresh');
+    $replica->update($reopened->instance()->form->getState());
+    expect($replica->fresh()->mapping[2]->transforms()[0]->data)->toBe(['trim' => false]);
+});
+
 it('saves independent money and radix settings and JSON output after Livewire updates', function () {
     Queue::fake();
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);

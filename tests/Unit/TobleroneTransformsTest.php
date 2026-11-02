@@ -126,6 +126,53 @@ it('compiles money, radix and JSON before renames for the selected target', func
     'key' => [TransformTarget::Key, ['amount' => 'result']],
 ]);
 
+it('casts numeric sources to FLOAT64 before converting money to integer minor units', function () {
+    $object = StructureItems::make(['fields' => ['amount' => Schema::fromArray(['type' => 'number'])]]);
+    $mapping = new FieldMapping('amount', 'minor', [
+        'transforms' => [
+            ['type' => 'cast', 'data' => ['type' => 'float64']],
+            ['type' => 'money', 'data' => ['currency' => 'BYN']],
+        ],
+    ]);
+    $replica = new Replica(['schema' => $object->schema, 'mapping' => [$mapping]]);
+
+    expect(app(ReplicaSchemaResolver::class)->outputSchema($replica, $mapping)?->toArray())
+        ->toBe(['type' => 'integer']);
+    expect(app(TransformFactory::class)->pipeline($replica, $object))->toMatchArray([
+        'transforms.field_0_0.type' => 'org.apache.kafka.connect.transforms.Cast$Value',
+        'transforms.field_0_0.spec' => 'amount:float64',
+        'transforms.field_0_1.type' => 'org.phpinnacle.toblerone.MoneyTransform$Value',
+        'transforms.field_0_1.fields' => 'amount',
+        'transforms.field_0_1.currency' => 'BYN',
+        'transforms.field_0_1.mode' => 'minor',
+    ]);
+});
+
+it('inserts floating-point constants as FLOAT64 before converting money', function () {
+    $object = StructureItems::make();
+    $mapping = new FieldMapping(
+        null,
+        'minor',
+        [
+            'transforms' => [['type' => 'money', 'data' => ['currency' => 'BYN']]],
+        ],
+        0.29,
+        FieldKind::Static,
+    );
+    $replica = new Replica(['schema' => $object->schema, 'mapping' => [$mapping]]);
+
+    expect(app(ReplicaSchemaResolver::class)->outputSchema($replica, $mapping)?->toArray())
+        ->toBe(['type' => 'integer']);
+    expect(app(TransformFactory::class)->pipeline($replica, $object))->toMatchArray([
+        'transforms.field_0_0.static.value' => '0.29',
+        'transforms.field_0_0_cast.spec' => '__ferry_static_0:float64',
+        'transforms.field_0_1.type' => 'org.phpinnacle.toblerone.MoneyTransform$Value',
+        'transforms.field_0_1.fields' => '__ferry_static_0',
+        'transforms.field_0_1.currency' => 'BYN',
+        'transforms.field_0_1.mode' => 'minor',
+    ]);
+});
+
 it('offers Toblerone transforms only for their supported input types', function (array $input, array $accepted) {
     foreach ([BooleanToString::make(), StringMap::make(), Toggle::make()] as $transform) {
         expect($transform->accepts(Schema::fromArray($input)))

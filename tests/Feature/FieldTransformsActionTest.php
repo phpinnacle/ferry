@@ -131,7 +131,17 @@ it('validates repeated numeric casts and offers transforms for the final type', 
     expect($this->field->getContainer()->getState()['transforms'])
         ->toBe($settings)
         ->and(array_keys($this->field->getAvailableBlocks()))
-        ->toBe(['cast', 'filter', 'timestamp_converter', 'string_map', 'json', 'radix', 'trim', 'mask']);
+        ->toBe([
+            'cast',
+            'filter',
+            'timestamp_converter',
+            'string_map',
+            'empty_string_to_null',
+            'json',
+            'radix',
+            'trim',
+            'mask',
+        ]);
 });
 
 it('uses block colors for configurable and settings-free badges', function () {
@@ -278,6 +288,7 @@ it('offers only transforms that accept the output of the current chain', functio
         'filter',
         'timestamp_converter',
         'string_map',
+        'empty_string_to_null',
         'json',
         'radix',
         'trim',
@@ -336,6 +347,7 @@ it('offers and validates string transforms for formatted strings', function (arr
         'filter',
         'timestamp_converter',
         'string_map',
+        'empty_string_to_null',
         'json',
         'radix',
         'trim',
@@ -464,6 +476,7 @@ it('lets a custom array transform participate in the same schema chain', functio
         'filter',
         'timestamp_converter',
         'string_map',
+        'empty_string_to_null',
         'json',
         'radix',
         'trim',

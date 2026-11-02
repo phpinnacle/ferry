@@ -1,6 +1,10 @@
 <?php
 
 return [
+    'empty_string_to_null' => 'Empty string to null',
+    'empty_string_to_null_description' => 'Replace empty strings with null. Existing null values remain null.',
+    'empty_string_to_null_trim' => 'Trim whitespace',
+    'empty_string_to_null_trim_help' => 'Trim leading and trailing whitespace in all selected strings before checking for an empty value.',
     'uuid_heading' => 'UUID: :field',
     'slug_heading' => 'Slug: :field',
     'uuid_field' => 'Field name',
@@ -12,7 +16,7 @@ return [
     'json' => 'Serialize to JSON',
     'json_description' => 'Serialize this field to a JSON string. Null values remain null.',
     'money' => 'Money to minor units',
-    'money_description' => 'Convert Kafka Decimal amounts to integer currency minor units without rounding. Requires Decimal input; floating-point and integer values fail.',
+    'money_description' => 'Convert Kafka Decimal or FLOAT64 amounts to integer currency minor units without rounding. Integer and FLOAT32 values fail. Requires Toblerone 0.0.12 or later for FLOAT64.',
     'money_currency' => 'Currency code',
     'money_currency_help' => 'Three uppercase ISO letters, for example RUB, JPY or KWD. Kafka Connect validates currency support using its ICU data.',
     'radix' => 'Convert number base',
