@@ -28,6 +28,10 @@ return [
         ],
     ],
     'timeout' => 5,
+    'schema_registry' => [
+        'base_uri' => env('FERRY_SCHEMA_REGISTRY_URL'),
+        'headers' => [],
+    ],
     'structure' => [
         'chunk_size' => 100,
         'timeout' => 120,
@@ -87,6 +91,10 @@ return [
         'replica' => [
             'icon' => 'phosphor-arrows-left-right',
             'sort' => 91,
+        ],
+        'schema_registry' => [
+            'icon' => 'phosphor-tree-structure',
+            'sort' => 92,
         ],
     ],
 ];

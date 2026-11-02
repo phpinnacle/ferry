@@ -5,6 +5,7 @@ namespace PHPinnacle\Ferry;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Container\Container;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\Http;
 use PHPinnacle\Ferry\Contracts\Transform;
 use PHPinnacle\Ferry\Services\OriginFactory;
 use PHPinnacle\Ferry\Services\RosettaAdapter;
@@ -37,6 +38,21 @@ class FerryServiceProvider extends PackageServiceProvider
 
     public function packageRegistered(): void
     {
+        $this->app->bind(Services\SchemaRegistryClient::class, function () {
+            /** @var array<string, string> $headers */
+            $headers = Config::array('phpinnacle-ferry.schema_registry.headers');
+
+            return new Services\SchemaRegistryClient(
+                Http::baseUrl(
+                    Config::string('phpinnacle-ferry.schema_registry.base_uri'),
+                )
+                    ->accept('application/vnd.schemaregistry.v1+json')
+                    ->withHeaders($headers)
+                    ->connectTimeout(Config::integer('phpinnacle-ferry.timeout'))
+                    ->timeout(Config::integer('phpinnacle-ferry.timeout')),
+            );
+        });
+
         $this->app->singleton(TransformRegistry::class, function (Container $app) {
             $registry = new TransformRegistry;
             /** @var list<class-string<Transform>> $transforms */

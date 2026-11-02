@@ -11,6 +11,8 @@ class FerryPlugin implements Plugin
 {
     public const string ID = 'phpinnacle/ferry';
 
+    private bool $hasSchemaRegistry = false;
+
     public function __construct(
         private readonly DestinationFactory $destinations,
     ) {}
@@ -40,11 +42,30 @@ class FerryPlugin implements Plugin
         return self::ID;
     }
 
+    public function schemaRegistry(bool $condition = true): static
+    {
+        $this->hasSchemaRegistry = $condition;
+
+        return $this;
+    }
+
+    public function hasSchemaRegistry(): bool
+    {
+        return $this->hasSchemaRegistry;
+    }
+
     public function register(Panel $panel): void
     {
         $panel->resources([
             Resources\Upstreams\UpstreamResource::class,
             Resources\Replicas\ReplicaResource::class,
         ]);
+
+        if ($this->hasSchemaRegistry) {
+            $panel->pages([
+                Pages\SchemaRegistry::class,
+                Pages\ViewSchemaRegistrySubject::class,
+            ]);
+        }
     }
 }

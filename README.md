@@ -45,6 +45,105 @@ $this->app->bind(StreamFactoryInterface::class, HttpFactory::class);
 
 Upstreams store driver-specific settings in `config`, cast as `encrypted:array` in a `text` column and hidden from model serialization. `Driver::schema()` supplies the Filament fields for the selected database driver; changing the driver during creation resets its configuration and applies its default port. The edit form keeps `driver` and `origin` read-only while allowing connection settings to change. PostgreSQL offers `schema` and an optional `sslmode` selector backed by `Enums\SSLMode`: `disable`, `allow`, `prefer`, `require`, `verify-ca`, and `verify-full`. The selected mode remains a native string in the saved configuration and Laravel credentials; leaving it blank keeps the driver's default behavior. Editing keeps the saved password when its field is left blank. `Upstream::credentials()` combines the configuration with the selected driver for Laravel's connection factory, including driver-specific options.
 
+## Schema Registry viewer
+
+Enable the optional Schema Registry pages in a panel:
+
+```php
+use PHPinnacle\Ferry\FerryPlugin;
+
+FerryPlugin::make()->schemaRegistry();
+```
+
+Set `phpinnacle-ferry.schema_registry.base_uri` through `FERRY_SCHEMA_REGISTRY_URL`
+to the Registry REST API base URL. The connection is independent of the Kafka
+Connect API and serializer configuration. Configure
+`phpinnacle-ferry.schema_registry.headers` for authentication; requests use the
+existing `phpinnacle-ferry.timeout` setting. Enabling the viewer does not change
+connector settings or register schemas.
+
+The application must authorize the `view_schema_registry` gate. The viewer shows
+the configured registry across subjects, without applying Ferry tenant filters;
+grant this ability only to users allowed to inspect that registry.
+
+**Integrations → Schema Registry** lists each active subject's latest schema,
+format, reference count, and version. The table reads `GET /schemas` with
+`latestOnly=true`, searches through `subjectPrefix`, and paginates through
+`offset` and `limit` on the server. Pagination offers previous and next pages;
+the API does not return a total count. Opening a subject displays its latest schema;
+the page header offers a version selector, newest first, and **Refresh**.
+The **Details** section contains the schema ID, version, format, and effective
+compatibility badge, including the Registry's global fallback. Separate tabs show
+the structure, original source, and references; **References** appears only when
+the selected version has references.
+The table and infolists use REST API data directly, without Eloquent models or
+database copies. Refresh fetches current Registry state. API failures are shown
+separately from empty results.
+
+**Show deleted** includes soft-deleted schemas alongside active schemas and resets
+pagination while preserving the subject prefix. **Hide deleted** returns to the
+active list. The mode is kept in the `deleted` URL parameter and carried into
+subject versions, schema source, Avro reference resolution, and the return link.
+Responses that include a true `deleted` flag are marked **Deleted**; the version
+page shows this badge on the right of the **Details** heading. Permanently
+deleted schemas cannot be retrieved.
+
+Deletion requires separate gates: `delete_schema_registry` for soft deletion and
+`force_delete_schema_registry` for permanent deletion. Both also require page
+access through `view_schema_registry`. The table offers subject deletion, which
+removes all active versions and the subject compatibility configuration. The
+subject page offers **Delete** for its selected numeric version; after success it
+returns to the list, preserving deleted mode. Each row and version page offers soft
+deletion for an active schema or permanent deletion for a soft-deleted schema,
+according to the API's deletion status. All deletions require confirmation
+identifying the target and mode.
+Soft deletion retains schema IDs for reading existing messages. Permanent deletion
+is available in **Show deleted** mode and sends a separate `DELETE` request with
+`permanent=true`. It can make existing messages unreadable and cannot be undone.
+The Registry enforces prior soft deletion and reference constraints; the UI never
+cascades to dependencies or automatically soft-deletes before permanent deletion.
+Registry failures produce an error notification without a success transition.
+Deleting the last version also removes the subject compatibility configuration.
+See Confluent's [schema deletion guidelines](https://docs.confluent.io/platform/8.1/schema-registry/schema-deletion-guidelines.html).
+
+The subject page also offers **Restore** for a soft-deleted selected schema,
+requiring the separate `restore_schema_registry` gate and page access. This action
+is not available in the table or bulk-action menu. After confirmation, it retrieves
+the original definition and re-registers its schema, format, references, metadata,
+and rules through `POST /subjects/{subject}/versions`. It then looks up the active
+registration and displays the Registry-assigned version on the same page, updating
+the version selector immediately. The version number may change. The Registry
+applies current compatibility and reference constraints; dependencies, deleted
+subject configuration, and Registry modes are not changed. Permanently deleted
+definitions cannot be restored here.
+If registration succeeds but the follow-up lookup fails, refresh before retrying.
+
+The bulk-action menu offers one **Delete selected subjects** action for the current
+page. Active subjects are soft-deleted; already soft-deleted subjects are deleted
+permanently. Confirmation shows the number of subjects for each operation and
+warns that permanent deletion cannot be undone. The selection and deletion modes
+are fixed when confirmation opens; subjects whose selection or state changes
+before submission are skipped. Each subject requires the same gate as its
+individual deletion action; unauthorized subjects are skipped. Requests run per
+subject without a cross-subject transaction. Processing continues after a Registry
+rejection, refreshes the table, clears the selection, and reports the number
+deleted when some subjects fail or are skipped.
+
+Avro structure previews use Eidos's inline `JsonSchemaEntry` with a JSON Schema
+presentation built by `Services\AvroSchemaConverter`. It presents records,
+nullable unions, named types, enums, arrays, maps, fixed values, and logical types.
+Avro defaults and nullability remain independent: every record field is present
+in `required`, including nullable fields and fields with defaults. Logical types
+retain their underlying representation and show their logical name as a format.
+This projection is for inspection, not Avro validation or compatibility checks.
+Referenced Avro schemas are resolved by the Registry API for the preview; the
+Source and References tabs retain the registered definition and references.
+
+JSON Schema definitions use Eidos directly. Recursive schemas and unsupported
+tree formats, including Protobuf, show an explicit notice and remain available
+in the Source tab. Source is formatted for reading; copying preserves the
+registered text. Arbitrary schema registration and compatibility changes are not exposed.
+
 ## Upstream structure
 
 Every upstream owns one `Models\Structure`, available through `$upstream->structure`. It stores the preparation status, revision, run id, progress and adapter context on the Ferry database connection. The nullable `Upstream.adapter` stores the selected structure adapter key. The form offers **1C Rosetta** (`rosetta`) and an empty **Do not read structure** option, with no default selection. Without an adapter, the structure stays `StructureStatus::Pending`, has no run ID, queues no preparation jobs, and hides the preparation action. Connection settings can still be tested independently. The adapter can be selected only during creation and remains read-only on the edit form, including an empty selection, like driver and origin. Changing connection settings while an adapter is selected starts a new preparation run after the database transaction commits. Structure jobs live under `Jobs\Structure` and carry the upstream id, run id and chunk offset; credentials never travel through the queue.
