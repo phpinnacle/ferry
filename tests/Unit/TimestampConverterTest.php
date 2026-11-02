@@ -60,7 +60,12 @@ it('projects timestamp output types without retaining input constraints', functi
     'timestamp' => ['Timestamp', ['type' => 'string', 'format' => 'date-time']],
 ]);
 
-it('validates and dehydrates native timestamp settings', function (array $input, array $params, ?array $expected) {
+it('validates and dehydrates native timestamp settings', function (
+    array $input,
+    array $params,
+    ?array $expected,
+    ?string $error = null,
+) {
     $schema = FilamentSchema::make(SchemaHost::make())
         ->statePath('data')
         ->components(
@@ -69,7 +74,10 @@ it('validates and dehydrates native timestamp settings', function (array $input,
     $schema->fill($params);
 
     if ($expected === null) {
-        expect($schema->getState(...))->toThrow(ValidationException::class);
+        expect($schema->getState(...))
+            ->toThrow(
+                fn (ValidationException $exception) => expect($exception->errors())->toHaveKey('data.' . $error),
+            );
 
         return;
     }
@@ -101,12 +109,17 @@ it('validates and dehydrates native timestamp settings', function (array $input,
         ['target_type' => 'string', 'format' => "yyyy-MM-dd'T'HH:mm:ss.SSSXXX"],
         ['target_type' => 'string', 'format' => "yyyy-MM-dd'T'HH:mm:ss.SSSXXX", 'unix_precision' => 'milliseconds'],
     ],
-    'missing output type' => [['type' => 'integer'], [], null],
-    'invalid output type' => [['type' => 'integer'], ['target_type' => 'float64'], null],
-    'missing text input format' => [['type' => 'string'], ['target_type' => 'Timestamp'], null],
-    'missing text output format' => [['type' => 'integer'], ['target_type' => 'string'], null],
-    'invalid precision' => [['type' => 'integer'], ['target_type' => 'Timestamp', 'unix_precision' => 'minutes'], null],
-    'non-string format' => [['type' => 'integer'], ['target_type' => 'string', 'format' => []], null],
+    'missing output type' => [['type' => 'integer'], [], null, 'target_type'],
+    'invalid output type' => [['type' => 'integer'], ['target_type' => 'float64'], null, 'target_type'],
+    'missing text input format' => [['type' => 'string'], ['target_type' => 'Timestamp'], null, 'format'],
+    'missing text output format' => [['type' => 'integer'], ['target_type' => 'string'], null, 'format'],
+    'invalid precision' => [
+        ['type' => 'integer'],
+        ['target_type' => 'Timestamp', 'unix_precision' => 'minutes'],
+        null,
+        'unix_precision',
+    ],
+    'non-string format' => [['type' => 'integer'], ['target_type' => 'string', 'format' => []], null, 'format'],
 ]);
 
 it('refreshes format requirements and keeps repeated timestamp forms independent', function () {

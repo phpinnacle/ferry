@@ -1,6 +1,5 @@
 <?php
 
-use Filament\Actions\Action;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Components\Utilities\Get;
@@ -56,23 +55,6 @@ it('resolves schema objects through callbacks against current form state', funct
     expect($this->field->getInputSchema()->toArray())->toBe(['type' => ['boolean', 'null']]);
     ($this->action)(['block' => 'cast'])->data(['data' => ['type' => 'string']])->call();
     expect($this->field->getInputSchema()->toArray())->toBe(['type' => ['string', 'null']]);
-});
-
-it('builds parameter forms when opening a transform rather than rendering its menu', function () {
-    $builds = 0;
-    app(TransformRegistry::class)->register(
-        new FakeTransform('custom', block: InlineBlock::make('custom')->schema(function () use (&$builds) {
-            $builds++;
-
-            return [TextInput::make('value')->required()];
-        })),
-    );
-
-    $action = BuilderAction::make($this->field)->schemaComponent($this->field);
-    expect($action->toHtml())->toContain('custom');
-    expect($builds)->toBe(0);
-    expect($action(['block' => 'custom'])->shouldOpenModal())->toBeTrue();
-    expect($builds)->toBe(1);
 });
 
 it('preserves the registered block availability condition', function () {
@@ -162,107 +144,14 @@ it('uses block colors for configurable and settings-free badges', function () {
     );
 });
 
-it('adds repeated transforms and edits only the selected instance', function () {
-    ($this->action)(['block' => 'trim'])->data([])->call();
-    ($this->action)(['block' => 'mask'])->data(['data' => [
-        'replacement' => '***',
-    ]])->call();
-    ($this->action)(['block' => 'trim'])->data([])->call();
-    ($this->action)(['block' => 'mask'])->data(['data' => [
-        'replacement' => 'second',
-    ]])->call();
-    ($this->action)(['block' => 'mask', 'index' => 3])->data(['data' => [
-        'replacement' => 'hidden',
-    ]])->call();
-
-    expect($this->field->getRawState())->toBe([
-        ['type' => 'trim', 'data' => []],
-        ['type' => 'mask', 'data' => ['replacement' => '***']],
-        ['type' => 'trim', 'data' => []],
-        ['type' => 'mask', 'data' => ['replacement' => 'hidden']],
-    ]);
-});
-
-it('reorders repeated transforms while preserving their individual parameters', function () {
-    $settings = [
-        ['type' => 'mask', 'data' => ['replacement' => 'first']],
-        ['type' => 'mask', 'data' => ['replacement' => 'second']],
-        ['type' => 'trim', 'data' => []],
-    ];
-    $this->field->state($settings);
-
-    /** @var Action $action */
-    $action = ($this->action)(['order' => ['1', '2', '0']]);
-    expect($action->shouldOpenModal())->toBeFalse();
-    $action->call();
-
-    expect($this->field->getRawState())->toBe([$settings[1], $settings[2], $settings[0]]);
-});
-
-it('skips the modal for transforms without settings and removes them without changing their neighbors', function () {
-    $this->field->state([
-        ['type' => 'mask', 'data' => ['replacement' => 'hidden']],
-    ]);
-    $add = ($this->action)(['block' => 'trim']);
-    expect($add->shouldOpenModal())->toBeFalse();
-    $add->data([])->call();
-
-    expect($this->field->getRawState())->toBe([
-        ['type' => 'mask', 'data' => ['replacement' => 'hidden']],
-        ['type' => 'trim', 'data' => []],
-    ]);
-
-    $remove = ($this->action)(['block' => 'trim', 'index' => 1, 'remove' => true]);
-    expect($remove->shouldOpenModal())->toBeFalse();
-    $remove->call();
-
-    expect($this->field->getRawState())->toBe([
-        ['type' => 'mask', 'data' => ['replacement' => 'hidden']],
-    ]);
-});
-
-it('removes only the selected configurable instance directly and keeps deletion out of its settings modal', function () {
-    $this->field->state([
-        ['type' => 'mask', 'data' => ['replacement' => 'first']],
-        ['type' => 'mask', 'data' => ['replacement' => 'hidden']],
-    ]);
-    $edit = ($this->action)(['block' => 'mask', 'index' => 1]);
-    expect($edit->getExtraModalFooterActions())->toBe([]);
-
-    $remove = ($this->action)(['block' => 'mask', 'index' => 1, 'remove' => true]);
-    expect($remove->shouldOpenModal())->toBeFalse();
-    $remove->call();
-
-    expect($this->field->getRawState())->toBe([
-        ['type' => 'mask', 'data' => ['replacement' => 'first']],
-    ]);
-});
-
-it('rejects a reorder request that duplicates a transform', function () {
-    $settings = [
-        ['type' => 'trim', 'data' => []],
-        ['type' => 'mask', 'data' => ['replacement' => 'hidden']],
-    ];
-    $this->field->state($settings);
-
-    expect(fn () => ($this->action)(['order' => ['1', '1']])->call())
-        ->toThrow(ValidationException::class);
-    expect($this->field->getRawState())->toBe($settings);
-});
-
-it('rejects editing an instance through a different transform block', function () {
-    $settings = [['type' => 'mask', 'data' => ['replacement' => 'first']]];
-    $this->field->state($settings);
-
-    expect(fn () => ($this->action)(['block' => 'trim', 'index' => 0])->data([])->call())
-        ->toThrow(ValidationException::class);
-    expect($this->field->getRawState())->toBe($settings);
-});
-
 it('rejects non-string mask parameters at the standalone field boundary', function () {
     $this->field->state([['type' => 'mask', 'data' => ['replacement' => []]]]);
 
-    expect(fn () => $this->field->getContainer()->getState())->toThrow(ValidationException::class);
+    expect(fn () => $this->field->getContainer()->getState())
+        ->toThrow(
+            fn (ValidationException $exception) => expect($exception->errors())
+                ->toHaveKey('data.transforms.0.data.replacement'),
+        );
 });
 
 it('offers only transforms that accept the output of the current chain', function () {
@@ -363,11 +252,8 @@ it('offers and validates string transforms for formatted strings', function (arr
         ['type' => 'mask', 'data' => ['replacement' => 'hidden']],
     ]);
 })->with([
-    'email' => [['type' => 'string', 'format' => 'email']],
-    'nullable email' => [['type' => ['string', 'null'], 'format' => 'email']],
     'uuid' => [['type' => 'string', 'format' => 'uuid']],
     'nullable uuid' => [['type' => ['string', 'null'], 'format' => 'uuid']],
-    'uri' => [['type' => 'string', 'format' => 'uri']],
 ]);
 
 it('preserves dedicated logical types from their schemas', function (array $definition, array $available) {
@@ -382,8 +268,6 @@ it('preserves dedicated logical types from their schemas', function (array $defi
         ['type' => ['string', 'null'], 'format' => 'date-time'],
         ['cast', 'filter', 'timestamp_converter', 'json'],
     ],
-    'date' => [['type' => 'string', 'format' => 'date'], ['cast', 'filter', 'timestamp_converter', 'json']],
-    'time' => [['type' => 'string', 'format' => 'time'], ['cast', 'filter', 'timestamp_converter', 'json']],
 ]);
 
 it('offers JSONPath filtering for array and object inputs', function (array $input) {

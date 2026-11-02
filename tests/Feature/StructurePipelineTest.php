@@ -196,10 +196,10 @@ it('resumes instead of reading the source again when the preparation job is rede
     );
 });
 
-it('imports a repeated chunk without duplicating the snapshot', function () use ($makeAdapter) {
+it('keeps item and processed counts unchanged when importing a repeated chunk', function () use ($makeAdapter) {
     Queue::fake();
 
-    $adapter = $makeAdapter(2);
+    $makeAdapter(2);
     $upstream = TestCase::makeUpstream();
     $chunk = new FetchStructureChunkJob($upstream->id, (string) $upstream->structure->run_id, 0);
 

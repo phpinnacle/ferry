@@ -51,6 +51,7 @@ it('validates transform settings on unconnected sources', function (
     bool $binding,
     string $type,
     array $transforms,
+    array $validTransforms,
 ) {
     app(TransformRegistry::class)->register(Trim::make(), MaskField::make());
     $source = ['properties' => ['input' => ['type' => $type]]];
@@ -70,20 +71,39 @@ it('validates transform settings on unconnected sources', function (
     $schema = FilamentSchema::make(SchemaHost::make())->statePath('data')->components([$field]);
     $schema->fill(['widget' => []]);
     $settingsKey = $field->getSourceRowIndexes()['input'];
+    $error = 'data.widget.' . $settingsKey . '.options.transforms' . ($type === 'string' ? '.0.data.replacement' : '');
     $schema->getComponentByStatePath('widget.' . $settingsKey . '.options.transforms')->state($transforms);
 
-    expect($schema->getState(...))->toThrow(ValidationException::class);
+    expect($schema->getState(...))
+        ->toThrow(
+            fn (ValidationException $exception) => expect($exception->errors())->toHaveKey($error),
+        );
+    $schema->getComponentByStatePath('widget.' . $settingsKey . '.options.transforms')->state($validTransforms);
+    expect($schema->getState()['widget'][$settingsKey])->toMatchArray([
+        'target' => null,
+        'options' => ['transforms' => $validTransforms],
+    ]);
+    $schema->getComponentByStatePath('widget.' . $settingsKey . '.options.transforms')->state($transforms);
 
-    if ($binding) {
-        $field->getAction('bind')(['source' => 'input'])->call();
-    } else {
-        $state = $field->getRawState();
-        $state[$field->getSourceRowIndex('input')]['target'] = 'output';
-        $field->rawState($state);
-    }
+    $state = $field->getRawState();
+    $state[$settingsKey]['target'] = 'output';
+    $field->rawState($state);
+    expect($field->getRawState()[$settingsKey]['target'])->toBe('output');
 
-    expect($schema->getState(...))->toThrow(ValidationException::class);
+    expect($schema->getState(...))
+        ->toThrow(
+            fn (ValidationException $exception) => expect($exception->errors())->toHaveKey($error),
+        );
+    $schema->getComponentByStatePath('widget.' . $settingsKey . '.options.transforms')->state($validTransforms);
+    expect($schema->getState()['widget'][$settingsKey])->toMatchArray([
+        'target' => 'output',
+        'options' => ['transforms' => $validTransforms],
+    ]);
 })->with([false, true])->with([
-    'incompatible transform' => ['boolean', [['type' => 'trim', 'data' => []]]],
-    'missing parameters' => ['string', [['type' => 'mask', 'data' => []]]],
+    'incompatible transform' => ['boolean', [['type' => 'trim', 'data' => []]], []],
+    'missing parameters' => [
+        'string',
+        [['type' => 'mask', 'data' => []]],
+        [['type' => 'mask', 'data' => ['replacement' => 'hidden']]],
+    ],
 ]);

@@ -496,7 +496,11 @@ it('treats missing resources as successful pause or removal', function (string $
     $origin = ferry_kafka_origin($http);
     $origin->{$operation}($connector);
     $origin->{$operation}($connector);
-    expect($connector->fresh())->not->toBeNull()->and(count($http->requests))->toBe(2);
+    expect($connector->fresh())->not->toBeNull();
+    $route = $operation === 'pause'
+        ? ['PUT', '/connectors/' . $connector->name . '/pause']
+        : ['DELETE', '/connectors/' . $connector->name];
+    expect($http->routes())->toBe([$route, $route]);
 })->with(['pause', 'remove']);
 
 it('propagates remote failures without changing persisted state', function (string $operation) {

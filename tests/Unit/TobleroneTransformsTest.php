@@ -83,7 +83,14 @@ it('validates money and radix settings at their form boundary', function (string
         ->components(SchemaHost::transformSchema($transform));
     $schema->fill($params);
 
-    expect($schema->getState(...))->toThrow(ValidationException::class);
+    expect($schema->getState(...))
+        ->toThrow(
+            fn (ValidationException $exception) => expect($exception->errors())
+                ->toHaveKey('data.' . ($type === 'money' ? 'currency' : 'radix')),
+        );
+    $valid = $type === 'money' ? ['currency' => 'KWD'] : ['radix' => 16];
+    $schema->fill($valid);
+    expect($schema->getState())->toBe($valid);
 })->with([
     'missing currency' => ['money', []],
     'lowercase currency' => ['money', ['currency' => 'rub']],
@@ -98,6 +105,7 @@ it('validates money and radix settings at their form boundary', function (string
 it('compiles money, radix and JSON before renames for the selected target', function (
     TransformTarget $target,
     array $keyMap,
+    string $chain,
 ) {
     $object = StructureItems::make(['fields' => ['amount' => Schema::fromArray(['type' => ['number', 'null']])]]);
     $mapping = new FieldMapping('amount', 'result', [
@@ -112,6 +120,7 @@ it('compiles money, radix and JSON before renames for the selected target', func
     expect(app(ReplicaSchemaResolver::class)->outputSchema($replica, $mapping)?->toArray())
         ->toBe(['type' => ['string', 'null']]);
     expect(app(TransformFactory::class)->pipeline($replica, $object, $keyMap))->toMatchArray([
+        'transforms' => $chain,
         'transforms.field_0_0.type' => 'org.phpinnacle.toblerone.MoneyTransform$' . ucfirst($target->value),
         'transforms.field_0_0.fields' => 'amount',
         'transforms.field_0_0.currency' => 'KWD',
@@ -122,8 +131,8 @@ it('compiles money, radix and JSON before renames for the selected target', func
         'transforms.field_0_2.fields' => 'amount',
     ]);
 })->with([
-    'value' => [TransformTarget::Value, []],
-    'key' => [TransformTarget::Key, ['amount' => 'result']],
+    'value' => [TransformTarget::Value, [], 'field_0_0,field_0_1,field_0_2,rename_values'],
+    'key' => [TransformTarget::Key, ['amount' => 'result'], 'field_0_0,field_0_1,field_0_2,rename_keys,rename_values'],
 ]);
 
 it('casts numeric sources to FLOAT64 before converting money to integer minor units', function () {
@@ -139,6 +148,7 @@ it('casts numeric sources to FLOAT64 before converting money to integer minor un
     expect(app(ReplicaSchemaResolver::class)->outputSchema($replica, $mapping)?->toArray())
         ->toBe(['type' => 'integer']);
     expect(app(TransformFactory::class)->pipeline($replica, $object))->toMatchArray([
+        'transforms' => 'field_0_0,field_0_1,rename_values',
         'transforms.field_0_0.type' => 'org.apache.kafka.connect.transforms.Cast$Value',
         'transforms.field_0_0.spec' => 'amount:float64',
         'transforms.field_0_1.type' => 'org.phpinnacle.toblerone.MoneyTransform$Value',
@@ -164,6 +174,7 @@ it('inserts floating-point constants as FLOAT64 before converting money', functi
     expect(app(ReplicaSchemaResolver::class)->outputSchema($replica, $mapping)?->toArray())
         ->toBe(['type' => 'integer']);
     expect(app(TransformFactory::class)->pipeline($replica, $object))->toMatchArray([
+        'transforms' => 'field_0_0,field_0_0_cast,field_0_1,rename_values',
         'transforms.field_0_0.static.value' => '0.29',
         'transforms.field_0_0_cast.spec' => '__ferry_static_0:float64',
         'transforms.field_0_1.type' => 'org.phpinnacle.toblerone.MoneyTransform$Value',
@@ -275,7 +286,10 @@ it('preserves empty and whitespace boolean labels through native forms', functio
     $schema->fill(['true' => '', 'false' => '   ']);
     expect($schema->getState())->toBe(['true' => '', 'false' => '   ']);
     $schema->fill(['true' => [], 'false' => 'no']);
-    expect($schema->getState(...))->toThrow(ValidationException::class);
+    expect($schema->getState(...))
+        ->toThrow(
+            fn (ValidationException $exception) => expect($exception->errors())->toHaveKey('data.true'),
+        );
 });
 
 it('edits the replacement dictionary using native KeyValue while preserving exact text', function () {
@@ -293,7 +307,10 @@ it('validates replacement dictionary values at the native form boundary', functi
         ->statePath('data')
         ->components(SchemaHost::transformSchema(StringMap::make()));
     $schema->fill(['mapping' => $mapping]);
-    expect($schema->getState(...))->toThrow(ValidationException::class);
+    expect($schema->getState(...))
+        ->toThrow(
+            fn (ValidationException $exception) => expect($exception->errors())->toHaveKey('data.mapping'),
+        );
 })->with([
     'empty dictionary' => [[]],
     'numeric replacement' => [['draft' => 1]],

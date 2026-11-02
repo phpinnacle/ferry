@@ -188,6 +188,12 @@ it('builds a static sink with fixed fields and its target upstream', function (
         'mapping' => [
             new FieldMapping(source: '_idrref', target: 'customer_id'),
             new FieldMapping(source: '_fld1', target: 'name'),
+            new FieldMapping(
+                source: null,
+                target: 'tax_number',
+                static: 'none',
+                kind: \PHPinnacle\Ferry\Enums\FieldKind::Static,
+            ),
         ],
     ]);
 
@@ -204,15 +210,15 @@ it('builds a static sink with fixed fields and its target upstream', function (
     expect($config['table.name.format'])
         ->toBe('customers')
         ->and($config['fields.whitelist'])
-        ->toBe('customer_id,name,type,profile_id')
+        ->toBe('customer_id,name,tax_number,type,profile_id')
         ->and($config['pk.mode'])
         ->toBe('record_key')
         ->and($config['pk.fields'])
         ->toBe('customer_id')
         ->and($config['transforms.rename_values.renames'])
-        ->toBe('_fld1:name,__ferry_fixed_type:type,__ferry_fixed_profile_id:profile_id')
+        ->toBe('_fld1:name,__ferry_static_2:tax_number,__ferry_fixed_type:type,__ferry_fixed_profile_id:profile_id')
         ->and($config['transforms'])
-        ->toBe('insert_type,insert_profile_id,rename_keys,rename_values')
+        ->toBe('field_2_0,insert_type,insert_profile_id,rename_keys,rename_values')
         ->and($config['transforms.insert_type.type'])
         ->toBe('org.apache.kafka.connect.transforms.InsertField$Value')
         ->and($config['transforms.insert_type.static.field'])

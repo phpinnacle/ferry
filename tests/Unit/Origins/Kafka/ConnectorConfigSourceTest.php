@@ -111,7 +111,14 @@ it('groups captured column annotations across replicas without inferring convert
             new FieldMapping(source: 'record_id', target: 'id'),
             new FieldMapping(source: 'type_code', target: 'type_code'),
             new FieldMapping(source: 'filter_id', target: null, options: [
-                'transforms' => [['type' => 'filter', 'data' => ['condition' => '@ != null']]],
+                'transforms' => [[
+                    'type' => 'filter',
+                    'data' => [
+                        'mode' => 'exclude',
+                        'condition' => '@ != null',
+                        'missing_or_null_behavior' => 'include',
+                    ],
+                ]],
             ]),
         ],
     ], ['status' => ReplicaStatus::Pause]);

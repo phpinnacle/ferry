@@ -280,7 +280,11 @@ it('uses the preceding record schema for dependent tabs and rejects invalid orde
     $action->callBefore();
     $action->call();
 
-    expect($form->getState(...))->toThrow(ValidationException::class);
+    expect($form->getState(...))
+        ->toThrow(
+            fn (ValidationException $exception) => expect($exception->errors())
+                ->toHaveKey('data.transforms.' . $items[1] . '.data.input'),
+        );
 });
 
 it('updates a dynamic table when only the record transform changes its column type', function () {

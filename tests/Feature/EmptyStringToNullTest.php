@@ -55,6 +55,7 @@ it('compiles empty string conversion before renames with the selected target and
     array $keyMap,
     array $params,
     string $trim,
+    string $chain,
 ) {
     $object = StructureItems::make(['fields' => ['name' => Schema::fromArray(['type' => 'string'])]]);
     $mapping = new FieldMapping('name', 'result', [
@@ -68,15 +69,22 @@ it('compiles empty string conversion before renames with the selected target and
     expect(app(ReplicaSchemaResolver::class)->outputSchema($replica, $mapping)?->toArray())
         ->toBe(['type' => ['string', 'null']]);
     expect(app(TransformFactory::class)->pipeline($replica, $object, $keyMap))->toMatchArray([
+        'transforms' => $chain,
         'transforms.field_0_0.type' => 'org.phpinnacle.toblerone.EmptyStringToNullTransform$' . ucfirst($target->value),
         'transforms.field_0_0.fields' => 'name',
         'transforms.field_0_0.trim' => $trim,
     ]);
 })->with([
-    'default' => [TransformTarget::Value, [], [], 'false'],
-    'explicit false' => [TransformTarget::Value, [], ['trim' => false], 'false'],
-    'trimmed value' => [TransformTarget::Value, [], ['trim' => true], 'true'],
-    'trimmed key' => [TransformTarget::Key, ['name' => 'result'], ['trim' => true], 'true'],
+    'default' => [TransformTarget::Value, [], [], 'false', 'field_0_0,rename_values'],
+    'explicit false' => [TransformTarget::Value, [], ['trim' => false], 'false', 'field_0_0,rename_values'],
+    'trimmed value' => [TransformTarget::Value, [], ['trim' => true], 'true', 'field_0_0,rename_values'],
+    'trimmed key' => [
+        TransformTarget::Key,
+        ['name' => 'result'],
+        ['trim' => true],
+        'true',
+        'field_0_0,rename_keys,rename_values',
+    ],
 ]);
 
 it('inserts empty constants before applying empty string conversion', function () {
@@ -91,6 +99,7 @@ it('inserts empty constants before applying empty string conversion', function (
     $replica = new Replica(['schema' => $object->schema, 'mapping' => [$mapping]]);
 
     expect(app(TransformFactory::class)->pipeline($replica, $object))->toMatchArray([
+        'transforms' => 'field_0_0,field_0_1,rename_values',
         'transforms.field_0_0.static.value' => '',
         'transforms.field_0_1.type' => 'org.phpinnacle.toblerone.EmptyStringToNullTransform$Value',
         'transforms.field_0_1.fields' => '__ferry_static_0',

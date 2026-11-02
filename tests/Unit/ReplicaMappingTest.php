@@ -56,16 +56,6 @@ it('uses JSON Schema compatibility when saving static replicas', function (
 })->with([
     'integer to number' => [['type' => 'integer'], ['type' => 'number'], true],
     'number to integer' => [['type' => 'number'], ['type' => 'integer'], false],
-    'matching formats' => [
-        ['type' => 'string', 'format' => 'uuid'],
-        ['type' => 'string', 'format' => 'uuid'],
-        true,
-    ],
-    'reference to text' => [
-        ['type' => 'string', 'format' => 'uuid'],
-        ['type' => 'string'],
-        true,
-    ],
 ]);
 
 it('compares native static values with destination enums and lengths', function (

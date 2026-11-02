@@ -79,7 +79,11 @@ it('preserves filter modes, explicit missing behavior and tombstones', function 
         'predicate' => 'tombstone',
         'negate' => 'true',
     ]);
-})->with(['include', 'exclude'])->with(['include', 'exclude', 'fail']);
+})->with([
+    'include missing' => ['exclude', 'include'],
+    'exclude missing' => ['include', 'exclude'],
+    'fail missing' => ['exclude', 'fail'],
+]);
 
 it('preserves a complete input schema including nested constraints and nullability', function () {
     $input = Schema::fromArray([
@@ -139,18 +143,25 @@ it('shows a predicate example for the input type in both the hint and placeholde
     'union' => [['type' => ['string', 'number']], '@ != null'],
 ]);
 
-it('validates user filter settings through the native form', function (array $params) {
+it('validates user filter settings through the native form', function (array $params, string $field, string $rule) {
     $schema = FilamentSchema::make(SchemaHost::make())
         ->statePath('data')
         ->components(SchemaHost::transformSchema(Filter::make()));
     $schema->fill($params);
 
-    expect($schema->getState(...))->toThrow(ValidationException::class);
+    expect($schema->getState(...))->toThrow(function (ValidationException $exception) use ($field, $rule) {
+        expect($exception->errors())->toHaveKey('data.' . $field);
+        expect($exception->validator->failed()['data.' . $field])->toHaveKey($rule);
+    });
 })->with([
-    [['mode' => 'drop', 'condition' => '@ == true', 'missing_or_null_behavior' => 'fail']],
-    [['mode' => 'exclude', 'condition' => '@ == true', 'missing_or_null_behavior' => 'ignore']],
-    [['mode' => 'exclude', 'condition' => '@ == true']],
-    [['mode' => 'exclude', 'condition' => '', 'missing_or_null_behavior' => 'fail']],
-    [['mode' => 'exclude', 'condition' => '   ', 'missing_or_null_behavior' => 'fail']],
-    [['mode' => 'exclude', 'condition' => [], 'missing_or_null_behavior' => 'fail']],
+    [['mode' => 'drop', 'condition' => '@ == true', 'missing_or_null_behavior' => 'fail'], 'mode', 'In'],
+    [
+        ['mode' => 'exclude', 'condition' => '@ == true', 'missing_or_null_behavior' => 'ignore'],
+        'missing_or_null_behavior',
+        'In',
+    ],
+    [['mode' => 'exclude', 'condition' => '@ == true'], 'missing_or_null_behavior', 'Required'],
+    [['mode' => 'exclude', 'condition' => '', 'missing_or_null_behavior' => 'fail'], 'condition', 'Required'],
+    [['mode' => 'exclude', 'condition' => '   ', 'missing_or_null_behavior' => 'fail'], 'condition', 'Required'],
+    [['mode' => 'exclude', 'condition' => [], 'missing_or_null_behavior' => 'fail'], 'condition', 'Required'],
 ]);

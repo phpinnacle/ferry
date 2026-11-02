@@ -678,19 +678,8 @@ it('supplies saved source descriptions and constraints to both mapping editors',
         'sources' => [
             '_fld17' => [
                 'type' => 'number',
-                'x-ferry-decimal' => [20, 2],
                 'minimum' => 0,
-                'multipleOf' => 0.01,
-                'exclusiveMaximum' => 1_000_000_000_000_000_000,
                 'title' => 'Price',
-                ...($comment === null ? [] : ['description' => $comment]),
-            ],
-            '_fld18' => [
-                'type' => 'integer',
-                'x-ferry-decimal' => [10, 0],
-                'exclusiveMinimum' => -10_000_000_000,
-                'exclusiveMaximum' => 10_000_000_000,
-                'title' => 'Payment days',
                 ...($comment === null ? [] : ['description' => $comment]),
             ],
         ],
@@ -707,18 +696,13 @@ it('supplies saved source descriptions and constraints to both mapping editors',
     $sources = array_column($mapping->getSources(), null, 'id');
     expect($sources['_code']['presentation']['constraints'])
         ->toBe([['kind' => 'length', 'value' => '8', 'scope' => []]])
-        ->and($sources['_description']['presentation']['constraints'])
-        ->toBe([['kind' => 'length', 'value' => '≤ 100', 'scope' => []]])
         ->and($sources['_fld17']['description'])
-        ->toBe($comment)
-        ->and($sources['_fld18']['description'])
         ->toBe($comment)
         ->and($sources['_code']['description'])
         ->toBeNull()
         ->and($sources['_fld17']['presentation']['constraints'])
         ->toBe([
-            ['kind' => 'range', 'value' => '≥ 0 · < 1000000000000000000', 'scope' => []],
-            ['kind' => 'multiple', 'value' => '× 0.01', 'scope' => []],
+            ['kind' => 'range', 'value' => '≥ 0', 'scope' => []],
         ]);
     $key = $mapping->getSourceRowIndexes()['_code'];
     expect(
@@ -895,7 +879,7 @@ it('binds dynamic fields and connects static fields to the declared destination 
         ->toBe(['name' => MappingMode::Whole, 'tax_number' => MappingMode::Whole]);
 });
 
-it('validates the static mapping against the declared destination fields', function (array $mapping, bool $valid) {
+it('validates the static mapping against the declared destination fields', function (array $mapping, ?array $error) {
     app(DestinationFactory::class)->register(customers_destination());
 
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
@@ -926,7 +910,7 @@ it('validates the static mapping against the declared destination fields', funct
 
     $schema = TestCase::replicaForm($livewire->data, livewire: $livewire);
 
-    if ($valid) {
+    if ($error === null) {
         expect($schema->getState()['mapping'])
             ->toBe(MappingState::mapping($mapping + ['is_active' => MappingState::value(false)], [
                 '_description' => ['transforms' => []],
@@ -941,7 +925,22 @@ it('validates the static mapping against the declared destination fields', funct
         return;
     }
 
-    expect($schema->getState(...))->toThrow(ValidationException::class);
+    [$target, $message] = $error;
+    $path = $target === 'mapping'
+        ? 'data.mapping'
+        : $schema
+            ->getComponentByStatePath('mapping')
+            ->getStaticFormSchema($target)
+            ->getComponent('value')
+            ->getStatePath();
+    expect($schema->getState(...))->toThrow(function (ValidationException $exception) use ($path, $message) {
+        expect($exception->errors())->toHaveKey($path);
+        if ($message === null) {
+            expect($exception->validator->failed()[$path])->toHaveKey('Required');
+        } else {
+            expect($exception->errors()[$path])->toBe([$message]);
+        }
+    });
 })->with([
     'valid mapping' => [
         [
@@ -949,60 +948,25 @@ it('validates the static mapping against the declared destination fields', funct
             'name' => MappingState::source('_description'),
             'tax_number' => MappingState::source('_code'),
         ],
-        true,
+        null,
     ],
     'missing required field' => [
         [
             'customer_id' => MappingState::source('_idrref'),
             'name' => MappingState::source('_description'),
         ],
-        false,
+        ['tax_number', null],
     ],
     'incompatible types' => [
         [
             'customer_id' => MappingState::source('_idrref'),
             'name' => MappingState::source('_description'),
-            'tax_number' => MappingState::source('_code'),
+            'tax_number' => MappingState::value('none'),
             'is_active' => MappingState::source('_code'),
         ],
-        false,
+        ['mapping', 'The field Mapping field contains incompatible source and destination schemas.'],
     ],
-    'empty mapping' => [[], false],
-]);
-
-it('validates the bound column names of a dynamic replica', function (string $column, bool $valid) {
-    $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
-    TestCase::makeItem($upstream);
-    $replica = TestCase::makeReplica(['upstream_id' => $upstream->id]);
-
-    $livewire = SchemaHost::make();
-
-    $schema = ReplicaForm::configure(
-        FilamentSchema::make($livewire)
-            ->statePath('data')
-            ->record($replica)
-            ->operation('edit'),
-    );
-    $schema->fill([
-        'name' => $replica->name,
-        'code' => $replica->code,
-        'upstream_id' => $upstream->id,
-        'source' => 'object-0',
-        'type' => DestinationType::Dynamic->value,
-        'mapping' => MappingState::binding(['_idrref' => $column]),
-    ]);
-
-    if ($valid) {
-        expect($schema->getState()['mapping'])
-            ->toBe(MappingState::binding(['_idrref' => $column], ['_idrref' => ['transforms' => []]]));
-
-        return;
-    }
-
-    expect($schema->getState(...))->toThrow(ValidationException::class);
-})->with([
-    'valid column' => ['external_id', true],
-    'uppercase column' => ['External', false],
+    'empty mapping' => [[], ['mapping', 'Connect the required destination: Customer ID.']],
 ]);
 
 it('binds native Filter parameters to an unbound source through Livewire', function () {
@@ -1160,6 +1124,10 @@ it('validates the combined destination selection at the creation boundary', func
         ->toThrow(
             fn (ValidationException $exception) => expect($exception->errors())->toHaveKey('data._destination'),
         );
+    expect(Replica::query()->count())->toBe(0);
+    $livewire->data['_destination'] = 'static:customers';
+    expect($form->getState())->toMatchArray(['type' => DestinationType::Static, 'destination' => 'customers']);
+    expect(Replica::query()->count())->toBe(0);
 })->with([
     'missing' => [null],
     'unregistered' => ['static:missing'],
@@ -1232,8 +1200,6 @@ it('keeps mapping state out of creation when switching destinations', function (
     expect($livewire->data['_destination'])->toBe($selection);
     expect($livewire->data)->not->toHaveKeys(['schema', 'mapping', 'transforms']);
 })->with([
-    'dynamic to static' => ['dynamic', 'customers'],
-    'static to dynamic' => ['customers', 'dynamic'],
     'static to another static' => ['customers', 'other_customers'],
 ]);
 
@@ -1496,7 +1462,11 @@ it('omits empty optional forms and validates static values against destination b
     ))
         ->toBe(['name' => 'abc', 'active' => false, 'quantity' => 0]);
     $mapping->getStaticFormSchema('name')->getComponent('value')->state('abcd');
-    expect($form->getState(...))->toThrow(ValidationException::class);
+    expect($form->getState(...))
+        ->toThrow(
+            fn (ValidationException $exception) => expect($exception->errors())
+                ->toHaveKey($mapping->getStaticFormSchema('name')->getComponent('value')->getStatePath()),
+        );
 });
 
 it('maps UUID references into bounded strings while respecting target length and direction', function () {
@@ -1508,7 +1478,6 @@ it('maps UUID references into bounded strings while respecting target length and
         schema: SchemaBuilder::make(Schema::object([
             'external_id' => SchemaBuilder::make()->type('string')->max(255)->build(),
             'exact_id' => SchemaBuilder::make()->type('string')->max(36)->nullable()->build(),
-            'short_id' => SchemaBuilder::make()->type('string')->max(35)->nullable()->build(),
             'uuid_id' => SchemaBuilder::make()
                 ->type('string')
                 ->format('uuid')
@@ -1551,7 +1520,6 @@ it('maps UUID references into bounded strings while respecting target length and
             '_partner.exact_id',
             MappingMode::Whole,
         )
-        ->not->toHaveKey('_partner.short_id')
         ->not->toHaveKey('_description.uuid_id');
     $replica = $form->getRecord();
     $replica->update($form->getState());

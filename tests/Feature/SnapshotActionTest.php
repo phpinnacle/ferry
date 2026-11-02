@@ -88,9 +88,16 @@ it('requires ready connectors for manual rereads', function (bool $replicaOwner,
     ->with(['source paused', 'source unapplied', 'sink failed', 'replica paused']);
 
 it('authorizes rereads through the owner update policy', function (bool $replicaOwner) {
-    $replica = TestCase::makeReplica();
-    auth()->user()->name = 'denied';
-    $owner = $replicaOwner ? $replica : $replica->upstream;
+    $replica = TestCase::makeReplica([], ['status' => ReplicaStatus::Active]);
+    foreach ([$replica->upstream->connector, $replica->connector] as $connector) {
+        $connector->markApplied();
+        $connector->recordStatus(ConnectorStatus::Running);
+    }
 
+    $owner = $replicaOwner ? $replica->refresh() : $replica->upstream->refresh();
+
+    expect(RequestSnapshotAction::make()->record($owner)->isVisible())->toBeTrue();
+    expect(RequestSnapshotAction::make()->record($owner)->isAuthorized())->toBeTrue();
+    auth()->user()->name = 'denied';
     expect(RequestSnapshotAction::make()->record($owner)->isAuthorized())->toBeFalse();
 })->with(['replica' => true, 'upstream' => false]);

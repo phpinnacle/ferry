@@ -104,7 +104,7 @@ it('prepares typed replica attributes from its form', function (?string $destina
     }
 })->with(['dynamic' => [null], 'static' => ['customers']]);
 
-it('keeps a static value through creating, filling and updating a static replica', function () {
+it('keeps a static value through its initial mapping save, refill and update', function () {
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
     TestCase::makeItem($upstream, [
         'fields' => [
@@ -115,7 +115,6 @@ it('keeps a static value through creating, filling and updating a static replica
     $livewire = SchemaHost::make();
     $state = MappingState::mapping([
         'name' => MappingState::source('_description'),
-        'is_active' => MappingState::value(true),
         'tax_number' => MappingState::value('none'),
         'customer_id' => MappingState::source('_idrref'),
     ], ['_description' => ['transforms' => []], '_idrref' => ['transforms' => []], '_code' => ['transforms' => []]]);
@@ -129,7 +128,13 @@ it('keeps a static value through creating, filling and updating a static replica
         'destination' => 'customers',
         'mapping' => $state,
     ], livewire: $livewire);
+    $mapping = $createForm->getComponentByStatePath('mapping');
+    expect($mapping->hasStaticForms())->toBeTrue();
+    $value = $mapping->getStaticFormSchema('is_active')->getComponent('value');
+    expect($value->getState())->toBeFalse();
+    $value->state(true);
     $createState = $createForm->getState();
+    $state[] = ['kind' => 'static', 'target' => 'is_active', 'static' => true, 'options' => []];
 
     expect($createState['mapping'])
         ->toEqual($state);
@@ -139,10 +144,10 @@ it('keeps a static value through creating, filling and updating a static replica
     $replica->update($createState);
 
     expect(array_column($replica->mapping, 'source'))
-        ->toBe(['_description', null, null, '_idrref', '_code'])
+        ->toBe(['_description', null, '_idrref', '_code', null])
         ->and($replica->constantColumns())
-        ->toBe(['is_active', 'tax_number'])
-        ->and(app(ReplicaSchemaResolver::class)->outputSchema($replica, $replica->mapping[1])?->singleType())
+        ->toBe(['tax_number', 'is_active'])
+        ->and(app(ReplicaSchemaResolver::class)->outputSchema($replica, $replica->mapping[4])?->singleType())
         ->toBe('boolean');
 
     $form = ReplicaForm::configure(FormSchema::make($livewire)->statePath('data')->record($replica)->operation('edit'));
@@ -153,13 +158,13 @@ it('keeps a static value through creating, filling and updating a static replica
     $form->getComponentByStatePath('mapping')->getStaticFormSchema('is_active')->getComponent('value')->state(false);
     $replica->update($form->getState());
 
-    expect($replica->fresh()->mapping[1]->static)
+    expect($replica->fresh()->mapping[4]->static)
         ->toBeFalse()
-        ->and($replica->fresh()->mapping[1]->transforms())
+        ->and($replica->fresh()->mapping[4]->transforms())
         ->toBe([]);
 });
 
-it('keeps transforms through creating, filling and updating a replica', function () {
+it('keeps transforms through their initial mapping save, refill and update', function () {
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
     TestCase::makeItem($upstream, [
         'fields' => [
@@ -326,6 +331,18 @@ it('validates destination column names with every source key mapped', function (
         ->toThrow(ValidationException::class, __('phpinnacle-ferry::validation.replica_schema.column_format', [
             'column' => $column,
         ]));
+
+    $mapping = $form->getComponentByStatePath('mapping');
+    $rows = $mapping->getRawState();
+    foreach ($rows as &$row) {
+        if ($row['target'] === $column) {
+            $row['target'] = 'valid_column';
+        }
+    }
+
+    unset($row);
+    $mapping->rawState($rows);
+    expect(array_column($form->getState()['mapping'], 'target'))->toContain('valid_column');
 })->with([
     'bound column' => [['_description' => 'Title'], 'Title'],
     'constant column' => [['bad-column' => ['value' => 'x']], 'bad-column'],
@@ -481,63 +498,6 @@ it('rejects editing when its previously registered destination is removed', func
         ->toThrow(ValidationException::class, __('phpinnacle-ferry::resources.replica.errors.static_destination_missing', [
             'destination' => 'customers',
         ]));
-});
-
-it('rejects an unregistered destination at the create form boundary', function () {
-    $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
-    TestCase::makeItem($upstream);
-
-    expect(fn () => TestCase::replicaCreationState([
-        'upstream_id' => $upstream->id,
-        'name' => 'Missing destination',
-        'code' => 'missing',
-        'source' => 'object-0',
-        '_destination' => 'static:missing',
-        'mapping' => [],
-    ]))
-        ->toThrow(ValidationException::class);
-
-    expect(Replica::query()->count())->toBe(0);
-});
-
-it('edits a Boolean constant through the built-in form without a cast', function () {
-    $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
-    TestCase::makeItem($upstream, ['fields' => [
-        '_description' => Schema::fromArray(['type' => 'string', 'maxLength' => 100]),
-        '_code' => Schema::fromArray(['type' => 'string', 'maxLength' => 11, 'minLength' => 11]),
-    ]]);
-    $livewire = SchemaHost::make();
-
-    $form = TestCase::replicaForm([
-        'upstream_id' => $upstream->id,
-        'name' => 'Static source',
-        'code' => 'static_source',
-        'source' => 'object-0',
-        'type' => DestinationType::Static->value,
-        'destination' => 'customers',
-        'mapping' => MappingState::mapping([
-            'name' => MappingState::source('_description'),
-            'tax_number' => MappingState::source('_code'),
-            'customer_id' => MappingState::source('_idrref'),
-        ]),
-    ], livewire: $livewire);
-    $mapping = $form->getComponentByStatePath('mapping');
-    expect($mapping->hasStaticForms())->toBeTrue();
-    $mapping->getStaticFormSchema('is_active')->getComponent('value')->state(false);
-    $state = $form->getState();
-    $constant = collect($state['mapping'])->firstWhere('kind', 'static');
-    expect($constant)->toBe(['kind' => 'static', 'target' => 'is_active', 'static' => false, 'options' => []]);
-    $replica = $form->getRecord();
-    $replica->update($state);
-    expect(
-        app(ReplicaSchemaResolver::class)
-            ->outputSchema($replica, collect($replica->mapping)->firstWhere('target', 'is_active'))
-            ?->singleType(),
-    )
-        ->toBe('boolean');
-    $edit = ReplicaForm::configure(FormSchema::make($livewire)->statePath('data')->record($replica)->operation('edit'));
-    $edit->fill($replica->fresh()->toArray());
-    expect($edit->getState()['mapping'])->toEqual($state['mapping']);
 });
 
 it('creates an unmapped pending replica from only its identifying fields', function (DestinationType $type) {

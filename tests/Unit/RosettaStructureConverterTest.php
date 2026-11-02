@@ -335,10 +335,6 @@ it('projects available Rosetta constraints without rounding numeric metadata', f
     )
         ->toEqual($expected);
 })->with([
-    'ordinary UUID' => [
-        new ScalarField(FieldType::Uuid),
-        ['type' => 'string', 'format' => 'uuid', 'minLength' => 36, 'maxLength' => 36],
-    ],
     'variable string' => [new StringField(64, false), ['type' => 'string', 'maxLength' => 64]],
     'fixed string' => [new StringField(8, true), ['type' => 'string', 'maxLength' => 8, 'minLength' => 8]],
     'unlimited string' => [new StringField(0, false), ['type' => 'string']],

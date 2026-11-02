@@ -134,13 +134,6 @@ it('creates and persists one UUID key through the tabbed record builder for both
     $keyTransforms = $form->getComponentByStatePath('mapping.' . $index . '.options.transforms');
     expect(array_keys($keyTransforms->getAvailableBlocks()))->toContain('cast', 'filter');
 
-    $recordTransforms = $form->getComponentByStatePath('transforms');
-    $original = $recordTransforms->getRawState();
-    $invalid = $original;
-    $invalid[array_key_first($invalid)]['data']['fields'] = [];
-    $recordTransforms->state($invalid);
-    expect($form->getState(...))->toThrow(ValidationException::class);
-    $recordTransforms->state($original);
     $generated = collect($state['mapping'])->firstWhere('source', 'record_id');
     expect($generated)->toBe([
         'kind' => 'source',

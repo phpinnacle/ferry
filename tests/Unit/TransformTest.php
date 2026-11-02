@@ -147,7 +147,10 @@ it('disables and rejects the current cast type in the native form', function (ar
     $schema->fill(['type' => $current]);
 
     expect($schema->getComponent('type')->isOptionDisabled($current, ''))->toBeTrue();
-    expect($schema->getState(...))->toThrow(ValidationException::class);
+    expect($schema->getState(...))
+        ->toThrow(
+            fn (ValidationException $exception) => expect($exception->errors())->toHaveKey('data.type'),
+        );
 })->with([
     [['type' => 'string'], 'string'],
     [['type' => 'boolean'], 'boolean'],
@@ -187,7 +190,10 @@ it('rejects unsupported cast targets in the native form', function (string $type
         ->components(SchemaHost::transformSchema(Cast::make()));
     $schema->fill(['type' => $type]);
 
-    expect($schema->getState(...))->toThrow(ValidationException::class);
+    expect($schema->getState(...))
+        ->toThrow(
+            fn (ValidationException $exception) => expect($exception->errors())->toHaveKey('data.type'),
+        );
 })->with(['integer', 'array']);
 
 it('keeps the Kafka null replacement default implicit and persists disabling it', function (?string $setting) {
@@ -220,7 +226,11 @@ it('validates null replacement settings before dehydration', function () {
         ->components(SchemaHost::transformSchema(Cast::make()));
     $schema->fill(['type' => 'string', 'replace_null_with_default' => 'invalid']);
 
-    expect($schema->getState(...))->toThrow(ValidationException::class);
+    expect($schema->getState(...))
+        ->toThrow(
+            fn (ValidationException $exception) => expect($exception->errors())
+                ->toHaveKey('data.replace_null_with_default'),
+        );
 });
 
 it('inserts a string constant without registering a transform', function () {
@@ -312,6 +322,7 @@ it('dehydrates native settings forms into string parameters and omits an empty e
     Transform $transform,
     array $params,
     ?array $expected,
+    ?string $error = null,
 ) {
     $livewire = SchemaHost::make();
     $schema = FilamentSchema::make($livewire)->statePath('data')->components(SchemaHost::transformSchema($transform));
@@ -322,7 +333,10 @@ it('dehydrates native settings forms into string parameters and omits an empty e
     }
 
     if ($expected === null) {
-        expect($schema->getState(...))->toThrow(ValidationException::class);
+        expect($schema->getState(...))
+            ->toThrow(
+                fn (ValidationException $exception) => expect($exception->errors())->toHaveKey('data.' . $error),
+            );
 
         return;
     }
@@ -333,15 +347,15 @@ it('dehydrates native settings forms into string parameters and omits an empty e
     'numeric indexes' => [Substring::make(), ['start' => 1, 'end' => 4], ['start' => '1', 'end' => '4']],
     'empty end' => [Substring::make(), ['start' => '2', 'end' => null], ['start' => '2']],
     'zero end' => [Substring::make(), ['start' => 0, 'end' => 0], ['start' => '0', 'end' => '0']],
-    'invalid form indexes' => [Substring::make(), ['start' => 4, 'end' => 1], null],
+    'invalid form indexes' => [Substring::make(), ['start' => 4, 'end' => 1], null, 'end'],
     'default mask' => [MaskField::make(), [], ['replacement' => '***']],
-    'invalid mask form' => [MaskField::make(), ['replacement' => ''], null],
-    'non-string mask form' => [MaskField::make(), ['replacement' => 123], null],
-    'cleared start' => [Substring::make(), ['start' => null], null],
-    'negative start' => [Substring::make(), ['start' => '-1'], null],
-    'fractional start' => [Substring::make(), ['start' => '1.5'], null],
-    'non-scalar start' => [Substring::make(), ['start' => []], null],
-    'index exceeds Java integer' => [Substring::make(), ['start' => '2147483648'], null],
+    'invalid mask form' => [MaskField::make(), ['replacement' => ''], null, 'replacement'],
+    'non-string mask form' => [MaskField::make(), ['replacement' => 123], null, 'replacement'],
+    'cleared start' => [Substring::make(), ['start' => null], null, 'start'],
+    'negative start' => [Substring::make(), ['start' => '-1'], null, 'start'],
+    'fractional start' => [Substring::make(), ['start' => '1.5'], null, 'start'],
+    'non-scalar start' => [Substring::make(), ['start' => []], null, 'start'],
+    'index exceeds Java integer' => [Substring::make(), ['start' => '2147483648'], null, 'start'],
 ]);
 
 it('keeps settings forms independent when a transformation is reused', function () {
