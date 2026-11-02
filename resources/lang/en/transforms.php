@@ -6,7 +6,7 @@ return [
     'uuid_field' => 'Field name',
     'slug_input' => 'Source field',
     'slug_separators' => 'Additional separators',
-    'uuid_sources' => 'Source primary-key fields',
+    'uuid_sources' => 'Source fields',
     'label' => 'Transform',
     'add' => 'Add transform',
     'json' => 'Serialize to JSON',

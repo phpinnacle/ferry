@@ -126,7 +126,7 @@ it('uses the current primary key after a preceding UUID transform', function () 
     expect($sourceProperties['tenant_id']->keywords()['title'])->toBe('Tenant');
     expect($sourceProperties['row_id']->keywords()['title'])->toBe('Идентификатор');
     $properties = $builder->getChildSchema($items[1])->getComponentByStatePath('fields')->getJsonSchema()->properties();
-    expect(array_keys($properties))->toBe(['uuid']);
+    expect(array_keys($properties))->toBe(['uuid', 'tenant_id', 'row_id']);
     expect($form->getState()['transforms'][1])->toBe([
         'type' => 'insert_uuid',
         'data' => ['output' => 'id', 'fields' => ["$['uuid']"]],
@@ -134,17 +134,20 @@ it('uses the current primary key after a preceding UUID transform', function () 
     expect($builder->getInputSchema()->annotation('x-ferry-primary'))->toBe(['id']);
 });
 
-it('omits the UUID transform when the input schema has no primary key', function () {
+it('offers the UUID transform when the input schema has no primary key', function (array $annotations) {
     $builder = RecordTransforms::make('transforms')->inputSchema(Schema::fromArray([
         'type' => 'object',
         'properties' => ['name' => ['type' => 'string']],
+        ...$annotations,
     ]));
     FilamentSchema::make(SchemaHost::make())->components([$builder])->fill();
 
     expect(array_map(fn ($block) => $block->getName(), $builder->getBlockPickerBlocks()))
-        ->not
         ->toContain('insert_uuid');
-});
+})->with([
+    'missing annotation' => [[]],
+    'empty key' => [['x-ferry-primary' => []]],
+]);
 
 it('offers every registered record transform as a native tab and persists custom settings', function () {
     Queue::fake();

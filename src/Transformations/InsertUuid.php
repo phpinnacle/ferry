@@ -84,17 +84,11 @@ final class InsertUuid implements Transform
         return RecordTransformBlock::make($this->getKey())
             ->label($this->blockLabel(...))
             ->icon(Heroicon::FingerPrint)
-            ->addable(
-                fn (RecordTransformBlock $component) => (
-                    ($component->getInputSchema()->annotation('x-ferry-primary') ?? []) !== []
-                ),
-            )
             ->parameters(function (Schema $input) {
                 /** @var list<string> $primaryKey */
                 $primaryKey = $input->annotation('x-ferry-primary') ?? [];
                 $properties = [];
-                foreach ($primaryKey as $source) {
-                    $property = $input->resolveReferences()->effectiveProperties()[$source];
+                foreach ($input->resolveReferences()->effectiveProperties() as $source => $property) {
                     /** @var string|null $translation */
                     $translation = $property->annotation('x-ferry-trans');
                     /** @var string $label */
@@ -122,12 +116,7 @@ final class InsertUuid implements Transform
                         ->multiple()
                         ->jsonSchema(Schema::object($properties))
                         ->default($paths)
-                        ->dehydrateStateUsing(fn (?array $state) => array_values(array_filter(
-                            $paths,
-                            fn (string $path) => in_array($path, $state ?? [], true),
-                        )))
                         ->required()
-                        ->rule('size:' . count($primaryKey))
                         ->live(),
                 ];
             });

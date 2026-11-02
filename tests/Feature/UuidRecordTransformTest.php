@@ -137,7 +137,7 @@ it('creates and persists one UUID key through the tabbed record builder for both
     $recordTransforms = $form->getComponentByStatePath('transforms');
     $original = $recordTransforms->getRawState();
     $invalid = $original;
-    $invalid[array_key_first($invalid)]['data']['fields'] = ["$['row_id']"];
+    $invalid[array_key_first($invalid)]['data']['fields'] = [];
     $recordTransforms->state($invalid);
     expect($form->getState(...))->toThrow(ValidationException::class);
     $recordTransforms->state($original);
@@ -173,15 +173,15 @@ it('creates and persists one UUID key through the tabbed record builder for both
         ->getComponentByStatePath('transforms')
         ->getChildSchema(array_key_first($edit->getComponentByStatePath('transforms')->getRawState()))
         ->getComponentByStatePath('fields');
-    expect($savedPicker->getState())->toBe(["$['tenant_id']", "$['row_id']"]);
+    expect($savedPicker->getState())->toBe(["$['row_id']", "$['tenant_id']"]);
     expect($edit->getComponentByStatePath('mapping')->getSources()[0]['id'])->toBe('record_id');
 
     $source = app(SourceFactory::class);
     $capture = $source->source($this->upstream, config('phpinnacle-ferry.origins.kafka.source'));
-    expect($capture['message.key.columns'])->toBe('public._reference0:tenant_id,row_id');
+    expect($capture['message.key.columns'])->toBe('public._reference0:row_id,tenant_id');
     expect($capture['column.include.list'])
         ->toBe(
-            'public._reference0.tenant_id,public._reference0.row_id,public._reference0.name',
+            'public._reference0.row_id,public._reference0.tenant_id,public._reference0.name',
         );
     expect($capture['transforms'])->toBe('unwrap');
     $sink = new SinkConfigFactory(app(TransformFactory::class))->make(
@@ -196,7 +196,7 @@ it('creates and persists one UUID key through the tabbed record builder for both
         ->toMatchArray([
             'transforms' => 'replica_0,' . $generator . ',rename_keys,rename_values',
             'transforms.' . $generator . '.type' => 'org.phpinnacle.toblerone.InsertUuid$Key',
-            'transforms.' . $generator . '.fields' => 'tenant_id,row_id',
+            'transforms.' . $generator . '.fields' => 'row_id,tenant_id',
             'transforms.' . $generator . '.output' => 'record_id',
             'transforms.rename_keys.include' => 'record_id',
             'transforms.rename_keys.renames' => 'record_id:id',
@@ -216,6 +216,58 @@ it('creates and persists one UUID key through the tabbed record builder for both
         ]);
     }
 })->with([DestinationType::Dynamic, DestinationType::Static]);
+
+it('saves a UUID from an ordinary field independently of the source primary key', function (
+    DestinationType $type,
+    array $primaryKey,
+) {
+    $this->object->update([
+        'primary_key' => $primaryKey,
+        'schema' => Schema::fromArray([
+            ...$this->object->schema->toArray(),
+            'x-ferry-primary' => $primaryKey,
+        ]),
+    ]);
+    $page = Livewire::test(\PHPinnacle\Ferry\Tests\Fixtures\ReplicaForm::class, ['state' => [
+        'upstream_id' => $this->upstream->id,
+        'source' => 'object-0',
+        'type' => $type->value,
+        'destination' => $type === DestinationType::Static ? 'keyed' : null,
+    ]]);
+    $page->callAction($this->action, arguments: ['block' => 'insert_uuid'])->assertHasNoErrors();
+    $item = array_key_first($page->get('data.transforms'));
+    $page
+        ->set('data.transforms.' . $item . '.data.fields', ["$['name']"])
+        ->set('data.mapping', [
+            ['kind' => 'source', 'source' => 'id', 'target' => 'id', 'options' => []],
+            ['kind' => 'source', 'source' => 'name', 'target' => 'name', 'options' => []],
+        ])
+        ->call('validateForm')
+        ->assertHasNoErrors();
+
+    $form = $page->instance()->form;
+    $replica = $form->getRecord();
+    $replica->update($form->getState());
+    $replica->refresh();
+    expect($replica->transforms[0]->data)->toBe(['output' => 'id', 'fields' => ["$['name']"]]);
+    expect(app(SourceFactory::class)->source($this->upstream, config('phpinnacle-ferry.origins.kafka.source')))
+        ->toMatchArray(['message.key.columns' => 'public._reference0:name']);
+    $sink = app(SinkConfigFactory::class)->make(
+        app(DestinationFactory::class)->resolve($replica),
+        $replica,
+        $this->object,
+        'test-topic',
+        config('phpinnacle-ferry.origins.kafka'),
+    );
+    expect($sink)->toMatchArray([
+        'transforms.replica_0_key.fields' => 'name',
+        'pk.mode' => 'record_key',
+        'pk.fields' => 'id',
+    ]);
+})->with([DestinationType::Dynamic, DestinationType::Static])->with([
+    'without a primary key' => [[]],
+    'with an unrelated primary key' => [['tenant_id', 'row_id']],
+]);
 
 it('preserves destination constants when adding a UUID key', function () {
     $replica = TestCase::makeReplica([
@@ -263,7 +315,7 @@ it('preserves destination constants when adding a UUID key', function () {
     expect(collect($replica->fresh()->mapping)->firstWhere('target', 'tenant')->static)->toBe(4);
 });
 
-it('validates UUID field names and all physical key parts in its native tab', function (array $data, array $errors) {
+it('validates UUID field names and selected sources in its native tab', function (array $data, array $errors) {
     $page = Livewire::test(\PHPinnacle\Ferry\Tests\Fixtures\ReplicaForm::class, ['state' => [
         'upstream_id' => $this->upstream->id,
         'source' => 'object-0',
@@ -286,12 +338,12 @@ it('validates UUID field names and all physical key parts in its native tab', fu
         ['fields' => ["$['tenant_id']", "$['row_id']"], 'output' => 'name'],
         ['data.transforms.uuid.data.output' => 'not_in'],
     ],
-    'missing part' => [
-        ['fields' => ["$['row_id']"], 'output' => 'record_id'],
-        ['data.transforms.uuid.data.fields' => 'size'],
+    'empty selection' => [
+        ['fields' => [], 'output' => 'record_id'],
+        ['data.transforms.uuid.data.fields' => 'required'],
     ],
-    'ordinary field' => [
-        ['fields' => ["$['name']", "$['row_id']"], 'output' => 'record_id'],
+    'unknown field' => [
+        ['fields' => ["$['missing']", "$['row_id']"], 'output' => 'record_id'],
         ['data.transforms.uuid.data.fields.0' => \PHPinnacle\Eidos\Validation\ValidPath::class],
     ],
     'duplicate sources' => [
