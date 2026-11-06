@@ -21,6 +21,8 @@ class ReplicaSchemaResolver
         array $settings,
         TransformScope $scope = TransformScope::Field,
     ): ?Schema {
+        $input = $input->resolveReferences();
+
         foreach ($settings as $setting) {
             $transform = $this->transforms->get($setting->type);
 
@@ -36,6 +38,8 @@ class ReplicaSchemaResolver
             if ($input === null) {
                 return null;
             }
+
+            $input = $input->resolveReferences();
         }
 
         return $input;
@@ -121,7 +125,10 @@ class ReplicaSchemaResolver
         foreach ($replica->transforms as $index => $setting) {
             /** @var Schema $next */
             $next = $this->resultSchema($schema, [$setting], TransformScope::Record);
-            $outputs[$index] = array_keys(array_diff_key($next->properties(), $schema->properties()));
+            $outputs[$index] = array_keys(array_diff_key(
+                $next->effectiveProperties(),
+                $schema->resolveReferences()->effectiveProperties(),
+            ));
             $schema = $next;
         }
 

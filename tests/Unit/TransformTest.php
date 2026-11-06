@@ -412,7 +412,7 @@ it('passes the complete preceding output schema to callbacks in an ordered chain
     );
     $input = Schema::fromArray(['type' => 'string', 'format' => 'email']);
 
-    expect(app(ReplicaSchemaResolver::class)->resultSchema($input, []))->toBe($input);
+    expect(app(ReplicaSchemaResolver::class)->resultSchema($input, [])?->equals($input))->toBeTrue();
     expect(
         app(ReplicaSchemaResolver::class)
             ->resultSchema($input, [

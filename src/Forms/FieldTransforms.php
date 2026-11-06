@@ -117,7 +117,7 @@ class FieldTransforms extends InlineBuilder
     {
         $settings = [];
         $invalid = null;
-        $schema = $this->evaluate($this->inputSchema);
+        $schema = $this->evaluate($this->inputSchema)->resolveReferences();
 
         foreach (array_slice($this->getItems(), 0, $beforeIndex) as $index => $item) {
             $setting = new TransformSetting($item['type'], $this->getItemData($index, ['input' => $schema]));

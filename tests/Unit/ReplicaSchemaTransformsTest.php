@@ -4,6 +4,7 @@ use Illuminate\Validation\ValidationException;
 use PHPinnacle\Eidos\Forms\SchemaCompatibility;
 use PHPinnacle\Ferry\Data\FieldMapping;
 use PHPinnacle\Ferry\Data\TransformSetting;
+use PHPinnacle\Ferry\Destinations\StaticDestination;
 use PHPinnacle\Ferry\Enums\FieldKind;
 use PHPinnacle\Ferry\Rules\ReplicaSchema;
 use PHPinnacle\Ferry\Services\ReplicaSchemaResolver;
@@ -79,4 +80,33 @@ it('round-trips source and static mappings without synthetic transforms', functi
         ->toBe(['display' => ['mode' => 'compact']])
         ->and(FieldMapping::fromArray(json_decode(json_encode($constant), true)))
         ->toEqual($constant);
+});
+
+it('rejects missing required destination fields declared through a root reference', function () {
+    $destination = new StaticDestination(
+        key: 'referenced',
+        label: 'Referenced destination',
+        table: 'referenced',
+        primaryKey: ['id'],
+        schema: Schema::fromArray([
+            '$defs' => [
+                'record' => [
+                    'type' => 'object',
+                    'properties' => ['id' => ['type' => 'string'], 'name' => ['type' => 'string', 'title' => 'Name']],
+                    'required' => ['id', 'name'],
+                ],
+            ],
+            '$ref' => '#/$defs/record',
+        ]),
+    );
+
+    expect(fn () => app(ReplicaSchema::class)->assertValid(
+        [new FieldMapping('id', 'id')],
+        $destination,
+        ['id'],
+        Schema::object(['id' => Schema::string()]),
+    ))
+        ->toThrow(ValidationException::class, __('phpinnacle-ferry::resources.replica.errors.required_destination_field_missing', [
+            'field' => 'Name',
+        ]));
 });

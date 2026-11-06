@@ -187,8 +187,9 @@ readonly class ReplicaSchema
     /** @param list<FieldMapping> $mappings */
     private static function assertRequiredFieldsMapped(Schema $schema, array $mappings): void
     {
+        $schema = $schema->resolveReferences();
         $mapped = array_map(static fn (FieldMapping $mapping) => $mapping->target, $mappings);
-        $fields = $schema->resolveReferences()->effectiveProperties();
+        $fields = $schema->effectiveProperties();
 
         foreach ($schema->effectiveRequired() as $column) {
             if (!in_array($column, $mapped, true)) {

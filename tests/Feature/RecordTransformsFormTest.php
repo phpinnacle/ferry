@@ -28,9 +28,14 @@ uses(TestCase::class);
 
 it('keeps input schemas and parameter state independent between record builders', function () {
     $first = Schema::fromArray([
-        'type' => 'object',
-        'properties' => ['first_key' => ['type' => 'string']],
-        'x-ferry-primary' => ['first_key'],
+        '$defs' => [
+            'record' => [
+                'type' => 'object',
+                'properties' => ['first_key' => ['type' => 'string']],
+                'x-ferry-primary' => ['first_key'],
+            ],
+        ],
+        '$ref' => '#/$defs/record',
     ]);
     $second = Schema::fromArray([
         'type' => 'object',
@@ -44,8 +49,8 @@ it('keeps input schemas and parameter state independent between record builders'
             RecordTransforms::make('second')->inputSchema($second),
         ]);
     $form->fill();
-    expect($form->getComponent('first')->getInputSchema())->toBe($first);
-    expect($form->getComponent('second')->getInputSchema())->toBe($second);
+    expect(array_keys($form->getComponent('first')->getInputSchema()->effectiveProperties()))->toBe(['first_key']);
+    expect(array_keys($form->getComponent('second')->getInputSchema()->effectiveProperties()))->toBe(['second_key']);
 
     foreach (['first', 'second'] as $name) {
         $action = $form->getComponentByStatePath($name)->getAction('add')(['block' => 'insert_uuid']);

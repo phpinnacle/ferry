@@ -41,7 +41,7 @@ class RecordTransforms extends TabbedBuilder
         }
 
         return app(ReplicaSchemaResolver::class)->previewRecordSchema(
-            $this->inputSchema,
+            $this->inputSchema->resolveReferences(),
             array_map(TransformSetting::fromArray(...), $items),
         );
     }

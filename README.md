@@ -809,7 +809,7 @@ Ferry uses Eidos's `PHPinnacle\Eidos\Forms\FieldMapping` and `FieldBinding` fiel
 
 Mapping/binding translation overrides belong under `phpinnacle-eidos::schema-forms.*`. Publish assets with `php artisan filament:assets`, scan Eidos views in the application theme, and build the theme.
 
-The replica form supplies source and destination schemas, transformation settings, and effective output schemas. The editor and saving use JSON Schema compatibility directly. Eidos treats application annotations as opaque metadata; Ferry interprets converter and numeric annotations at the source connector and SQL boundaries.
+The replica form supplies source and destination schemas, transformation settings, and effective output schemas. The editor and saving use JSON Schema compatibility directly. Local references are resolved before transformation checks; record field ordering, key dependencies and required destination mappings use composition-aware schema projections. Eidos treats application annotations as opaque metadata; Ferry interprets converter and numeric annotations at the source connector and SQL boundaries.
 
 ## Testing
 

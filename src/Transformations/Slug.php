@@ -69,9 +69,11 @@ final class Slug implements Transform
             return null;
         }
 
-        /** @var array{properties: array<string, array<string, mixed>>, ...} $schema */
         $schema = $input->keywords();
-        $properties = $schema['properties'];
+        $properties = array_map(
+            fn (Schema $property) => $property->toArray(),
+            $input->resolveReferences()->effectiveProperties(),
+        );
         $sourceOffset = array_search($segments[0], array_keys($properties), strict: true) + 1;
         $schema['properties'] =
             array_slice($properties, 0, $sourceOffset, preserve_keys: true)

@@ -183,3 +183,29 @@ it('previews only the valid prefix of an incomplete record chain', function () {
     ))->toBeNull();
     expect(app(ReplicaSchemaResolver::class)->previewRecordSchema($schema, []))->toBe($schema);
 });
+
+it('keeps referenced record fields and key dependencies when generating a slug', function () {
+    $schema = Schema::fromArray([
+        '$defs' => [
+            'record' => [
+                'type' => 'object',
+                'properties' => ['name' => ['type' => 'string'], 'tail' => ['type' => 'integer']],
+                'required' => ['name'],
+                'x-ferry-primary' => ['name'],
+            ],
+        ],
+        '$ref' => '#/$defs/record',
+    ]);
+    $replica = new Replica([
+        'schema' => $schema,
+        'transforms' => [new TransformSetting('slug', ['input' => "$['name']", 'output' => 'slug'])],
+    ]);
+    $resolver = app(ReplicaSchemaResolver::class);
+
+    $output = $resolver->transformedSchema($replica);
+
+    expect(array_keys($output->effectiveProperties()))->toBe(['name', 'slug', 'tail']);
+    expect($output->effectiveRequired())->toBe(['name', 'slug']);
+    expect($resolver->primaryKeySources(new Replica(['schema' => $schema])))->toBe(['name']);
+    expect($resolver->keyPlan($replica, ['slug'])['sources'])->toBe(['name']);
+});
