@@ -443,6 +443,7 @@ it('requests snapshots for newly captured columns using the last applied configu
     $connector->applied_config = ['column.include.list' => $previousColumns];
     $origin->update($connector);
     expect(count($signals->published))->toBe($tables === [] ? 0 : 1);
+
     if ($tables !== []) {
         $signal = $signals->published[0];
         expect($signal['topic'])
@@ -485,6 +486,7 @@ it('resumes processing and restarts failed tasks when needed', function (bool $f
                     ['PUT', '/connectors/' . $connector->name . '/resume'],
                 ] : [['PUT', '/connectors/' . $connector->name . '/resume']],
         );
+
     if ($failed) {
         expect($http->requests[0]->getUri()->getQuery())->toBe('includeTasks=true&onlyFailed=true');
     }

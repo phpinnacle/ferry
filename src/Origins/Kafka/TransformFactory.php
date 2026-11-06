@@ -41,6 +41,7 @@ class TransformFactory
             ...$replica->constantColumns(),
             ...array_keys($fixedValues),
         ], true);
+
         foreach ($replica->mapping as $mapping) {
             if ($mapping->source !== null) {
                 $reserved[$mapping->source] = true;
@@ -82,6 +83,7 @@ class TransformFactory
                 'static.field' => $source,
                 'static.value' => $value,
             ];
+
             // Destination-owned values take precedence over mapped values.
             foreach ($columns as $column => $target) {
                 if ($column !== $source && $target === $field) {
@@ -104,6 +106,7 @@ class TransformFactory
             'include' => implode(',', array_keys($columns)),
             'renames' => self::renames($columns),
         ];
+
         if ($columns === []) {
             /** @var Schema $schema */
             $schema = $this->schemas->resultSchema(
@@ -129,6 +132,7 @@ class TransformFactory
     {
         $pipeline = [];
         $keyPlan = $this->schemas->keyPlan($replica, $keySources);
+
         foreach ($replica->transforms as $index => $setting) {
             $transform = $this->transforms->get($setting->type);
             $pipeline['replica_' . $index] = $transform->connector(TransformTarget::Value, $setting->data);
@@ -158,6 +162,7 @@ class TransformFactory
     private static function renames(array $columns): string
     {
         $renames = [];
+
         foreach ($columns as $source => $destination) {
             $renames[] = sprintf('%s:%s', $source, $destination);
         }
@@ -172,6 +177,7 @@ class TransformFactory
     public static function configuration(array $pipeline): array
     {
         $config = ['transforms' => implode(',', array_keys($pipeline))];
+
         foreach ($pipeline as $name => $properties) {
             foreach ($properties as $property => $value) {
                 $config[sprintf('transforms.%s.%s', $name, $property)] = $value;
@@ -207,6 +213,7 @@ class TransformFactory
             is_float($mapping->static) => 'float64',
             default => null,
         };
+
         if ($cast !== null) {
             $transforms[$name . '_cast'] = [
                 'type' => 'org.apache.kafka.connect.transforms.Cast$Value',

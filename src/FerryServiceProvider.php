@@ -57,6 +57,7 @@ class FerryServiceProvider extends PackageServiceProvider
             $registry = new TransformRegistry;
             /** @var list<class-string<Transform>> $transforms */
             $transforms = Config::array('phpinnacle-ferry.kafka.transforms');
+
             foreach ($transforms as $transform) {
                 $registry->register($app->get($transform));
             }

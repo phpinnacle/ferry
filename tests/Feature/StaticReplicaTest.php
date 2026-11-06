@@ -334,6 +334,7 @@ it('validates destination column names with every source key mapped', function (
 
     $mapping = $form->getComponentByStatePath('mapping');
     $rows = $mapping->getRawState();
+
     foreach ($rows as &$row) {
         if ($row['target'] === $column) {
             $row['target'] = 'valid_column';
@@ -520,6 +521,7 @@ it('creates an unmapped pending replica from only its identifying fields', funct
     expect($replica->mapping)->toBe([]);
     expect($replica->connector_id)->toBeNull();
     expect($replica->type)->toBe($type);
+
     if ($type === DestinationType::Dynamic) {
         expect(DatabaseSchema::hasTable($replica->destination))->toBeFalse();
     } else {
@@ -554,6 +556,7 @@ it('preserves replica identity and schema when submitted edit data attempts to r
         FormSchema::make(SchemaHost::make())->statePath('data')->record($replica)->operation('edit'),
     );
     $form->fill($replica->toArray());
+
     foreach (['code', 'upstream_id', 'source', 'destination'] as $field) {
         expect($form->getComponent($field)->isDisabled())->toBeTrue();
     }

@@ -38,6 +38,7 @@ function ferry_drain_connectors(): void
 {
     $queue = Queue::getFacadeRoot()->queue->connection();
     $job = $queue->pop(config('phpinnacle-ferry.queue'));
+
     while ($job !== null) {
         $job->fire();
         $job->delete();
@@ -182,11 +183,13 @@ it('starts new replicas, resumes paused replicas and retries failed connectors',
     ?ConnectorStatus $connectorStatus,
 ) {
     $replica = TestCase::makeReplica();
+
     if ($deployed) {
         ferry_drain_connectors();
     }
 
     $replica->refresh()->forceFill(['status' => $status])->saveQuietly();
+
     if ($connectorStatus !== null) {
         $replica->connector->recordStatus($connectorStatus);
     }

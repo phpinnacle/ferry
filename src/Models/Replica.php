@@ -167,6 +167,7 @@ class Replica extends Model
     {
         $sources = array_flip($this->columnMap());
         $keys = [];
+
         foreach ($targets as $target) {
             $keys[$sources[$target]] = $target;
         }

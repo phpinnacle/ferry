@@ -51,10 +51,13 @@ final class StringMap implements Transform
         $schema = ['type' => in_array('null', $input->types(), true) ? ['string', 'null'] : 'string'];
         /** @var list<string|null>|null $values */
         $values = $input->enumValues();
+
         if ($values !== null) {
             $schema['enum'] = [];
+
             foreach ($values as $value) {
                 $output = $value === null ? null : $params['mapping'][$value] ?? $value;
+
                 if (!in_array($output, $schema['enum'], true)) {
                     $schema['enum'][] = $output;
                 }
@@ -64,6 +67,7 @@ final class StringMap implements Transform
                 mb_strlen(...),
                 array_filter($schema['enum'], static fn (?string $value) => $value !== null),
             );
+
             if ($lengths !== []) {
                 $schema['minLength'] = min($lengths);
                 $schema['maxLength'] = max($lengths);
@@ -119,6 +123,7 @@ final class StringMap implements Transform
             'type' => 'org.phpinnacle.toblerone.StringMapTransform$' . ucfirst($target->value),
             'field' => $params['field'],
         ];
+
         foreach ($params['mapping'] as $source => $replacement) {
             $config['mapping.' . $source] = $replacement;
         }

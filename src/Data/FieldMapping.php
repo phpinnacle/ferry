@@ -89,6 +89,7 @@ final readonly class FieldMapping implements JsonSerializable
     public function canMapTo(Schema $output, Schema $target): bool
     {
         $compatibility = SchemaCompatibility::make();
+
         if ($this->kind === FieldKind::Static && $this->transforms() === []) {
             // Native static forms validate formats on values; raw values have no declared format.
             $compatibility = $compatibility->formats(false);

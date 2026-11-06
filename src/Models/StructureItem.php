@@ -127,8 +127,10 @@ class StructureItem extends Model
     public function mappableFields(bool $withKey = true): array
     {
         $fields = [];
+
         foreach ($this->properties() as $source => $field) {
             $source = (string) $source;
+
             if (
                 in_array($source, $this->primary_key, true)
                 && !$withKey
@@ -141,6 +143,7 @@ class StructureItem extends Model
             $title = $field->annotation('title') ?? $source;
             /** @var string|null $translation */
             $translation = $field->annotation('x-ferry-trans');
+
             if ($translation !== null) {
                 $title = Lang::get($translation);
             }
@@ -158,6 +161,7 @@ class StructureItem extends Model
     private function properties(): array
     {
         $schema = $this->schema;
+
         if ($this->cachedSchema !== $schema) {
             $this->cachedSchema = $schema;
             $this->cachedProperties = $schema->resolveReferences()->effectiveProperties();

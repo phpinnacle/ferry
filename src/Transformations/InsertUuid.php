@@ -88,6 +88,7 @@ final class InsertUuid implements Transform
                 /** @var list<string> $primaryKey */
                 $primaryKey = $input->annotation('x-ferry-primary') ?? [];
                 $properties = [];
+
                 foreach ($input->resolveReferences()->effectiveProperties() as $source => $property) {
                     /** @var string|null $translation */
                     $translation = $property->annotation('x-ferry-trans');

@@ -123,8 +123,10 @@ final class Filter implements Transform
         $brackets = [];
         $filters = 0;
         $condition = '';
+
         foreach ($matches as $match) {
             $fragment = $match[0];
+
             if ($fragment === '[') {
                 $brackets[] = false;
             } elseif (str_starts_with($fragment, '[')) {

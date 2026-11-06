@@ -24,6 +24,7 @@ class FetchStructureChunkJob extends StructureJob
         }
 
         $key = $structure->upstream->adapter;
+
         if ($key === null) {
             return;
         }

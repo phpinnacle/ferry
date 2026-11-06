@@ -80,6 +80,7 @@ it('labels record tabs with their selected source fields and puts the output nam
         ]);
 
     $labels = [];
+
     foreach ($builder->getItems() as $key => $item) {
         $block = $item->getParentComponent();
         $labels[] = $block->getLabel($item->getRawState(), (string) $key);

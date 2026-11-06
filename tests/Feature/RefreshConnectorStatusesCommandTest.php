@@ -28,6 +28,7 @@ it('refreshes all saved connectors from Artisan and continues after a status req
         ->shouldReceive('status')
         ->andReturnUsing(function (Connector $connector) use ($failed, &$checked) {
             $checked[] = $connector->id;
+
             if ($connector->is($failed)) {
                 throw new RuntimeException('Connect unavailable');
             }
@@ -50,8 +51,10 @@ it('refreshes all saved connectors from Artisan and continues after a status req
         ->toEqualCanonicalizing($connectors->modelKeys())
         ->and(Connector::query()->count())
         ->toBe(3);
+
     foreach ($connectors as $connector) {
         $connector->refresh();
+
         if ($connector->is($failed)) {
             expect($connector->status)
                 ->toBe(ConnectorStatus::Running)

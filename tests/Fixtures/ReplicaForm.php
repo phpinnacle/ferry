@@ -28,6 +28,7 @@ class ReplicaForm extends Component implements HasActions, HasSchemas
     public function mount(array $state, bool $creating = false, ?Replica $record = null): void
     {
         $this->creating = $creating;
+
         if (!$creating) {
             $this->record = $record ?? TestCase::makeReplica([...$state, 'mapping' => [], 'transforms' => []]);
         }

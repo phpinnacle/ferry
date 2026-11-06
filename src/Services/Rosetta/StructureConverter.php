@@ -23,6 +23,7 @@ class StructureConverter
     public function item(MetadataDefinition $definition): StructureItem
     {
         $properties = [];
+
         foreach ($definition->system as $name => $field) {
             $translation = 'phpinnacle-ferry::resources.replica.system_fields.' . $name;
             $properties[$name] = [
@@ -44,6 +45,7 @@ class StructureConverter
                 $name === '_keyfield', $name === '_recordertref', str_ends_with($name, '_rtref') => 'integer',
                 default => null,
             };
+
             if ($converter !== null) {
                 if ($converter === 'integer') {
                     unset($properties[$name]['minLength'], $properties[$name]['maxLength']);
@@ -103,8 +105,10 @@ class StructureConverter
             },
             default => [],
         };
+
         if ($field instanceof StringField && $field->length !== null && $field->length > 0) {
             $schema['maxLength'] = $field->length;
+
             if ($field->fixed) {
                 $schema['minLength'] = $field->length;
             }
@@ -125,6 +129,7 @@ class StructureConverter
 
             if ($field->precision !== null && $field->precision > 0 && $field->scale !== null) {
                 $limit = 10 ** ($field->precision - $field->scale);
+
                 if (!$field->unsigned) {
                     $schema['exclusiveMinimum'] = -$limit;
                 }
@@ -145,6 +150,7 @@ class StructureConverter
             default => $property->name,
         };
         $field = $property->field;
+
         if (!$field instanceof UnionField) {
             return [
                 $property->name . ($field instanceof ReferenceField ? 'rref' : '') => [
@@ -156,12 +162,14 @@ class StructureConverter
         }
 
         $variants = [];
+
         foreach ($this->variants($field) as $variant) {
             $variants[$variant->type()->value] = $variant;
         }
 
         // Represent one- and four-byte discriminator codes as fixed-length hexadecimal strings.
         $columns = ['type' => new StringField(2, true)];
+
         foreach ([
             'l' => FieldType::Boolean,
             'n' => FieldType::Number,
@@ -169,6 +177,7 @@ class StructureConverter
             's' => FieldType::String,
         ] as $suffix => $type) {
             $variant = $variants[$type->value] ?? null;
+
             if ($suffix === 't') {
                 $variant ??= $variants[FieldType::Date->value] ?? $variants[FieldType::Time->value] ?? null;
             }
@@ -179,6 +188,7 @@ class StructureConverter
         }
 
         $targets = $field->targets();
+
         if (count($targets) > 1) {
             $columns['rtref'] = new StringField(8, true);
         }
@@ -190,6 +200,7 @@ class StructureConverter
         }
 
         $sources = [];
+
         foreach ($columns as $suffix => $column) {
             $sources[$property->name . '_' . $suffix] = [
                 ...$this->field($column)->keywords(),

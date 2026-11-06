@@ -90,6 +90,7 @@ class SourceFactory
                 $columns[$qualifiedColumn] = true;
                 /** @var string|null $converter */
                 $converter = $object->field($column)?->annotation('x-ferry-converter');
+
                 if ($converter !== null) {
                     $converterColumns[$converter][$qualifiedColumn] = true;
                 }
@@ -198,8 +199,10 @@ class SourceFactory
         }
 
         $config = ['converters' => implode(',', array_keys($classes))];
+
         foreach ($classes as $name => $class) {
             $config[$name . '.type'] = $class;
+
             if (array_key_exists($name, $columns)) {
                 $config[$name . '.columns'] = implode(',', array_keys($columns[$name]));
             }

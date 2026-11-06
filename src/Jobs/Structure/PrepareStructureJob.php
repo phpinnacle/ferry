@@ -15,6 +15,7 @@ class PrepareStructureJob extends StructureJob
         }
 
         $key = $structure->upstream->adapter;
+
         if ($key === null) {
             return;
         }

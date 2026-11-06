@@ -64,6 +64,7 @@ final class Slug implements Transform
         }
 
         $source = $input->resolveReferences()->effectiveProperties()[$segments[0]] ?? null;
+
         if ($source?->singleType() !== 'string') {
             return null;
         }
@@ -81,6 +82,7 @@ final class Slug implements Transform
                 ],
             ]
             + array_slice($properties, $sourceOffset, preserve_keys: true);
+
         if (in_array($segments[0], $input->effectiveRequired(), true)) {
             $schema['required'] = [...$input->effectiveRequired(), $params['output']];
         }
@@ -107,6 +109,7 @@ final class Slug implements Transform
             ->icon(Heroicon::Link)
             ->parameters(function (Schema $input) {
                 $properties = [];
+
                 foreach ($input->resolveReferences()->effectiveProperties() as $name => $property) {
                     if ($property->singleType() === 'string') {
                         /** @var string|null $translation */

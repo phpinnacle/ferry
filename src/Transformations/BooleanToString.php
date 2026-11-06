@@ -49,8 +49,10 @@ final class BooleanToString implements Transform
         /** @var list<bool|null> $values */
         $values = $input->enumValues() ?? ($nullable ? [true, false, null] : [true, false]);
         $enum = [];
+
         foreach ($values as $value) {
             $output = $value === null ? null : $params[$value ? 'true' : 'false'];
+
             if (!in_array($output, $enum, true)) {
                 $enum[] = $output;
             }
@@ -61,6 +63,7 @@ final class BooleanToString implements Transform
             'enum' => $enum,
         ];
         $lengths = array_map(mb_strlen(...), array_filter($enum, static fn (?string $value) => $value !== null));
+
         if ($lengths !== []) {
             $schema['minLength'] = min($lengths);
             $schema['maxLength'] = max($lengths);

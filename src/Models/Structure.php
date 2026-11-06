@@ -274,13 +274,16 @@ class Structure extends Model
         return $this->getConnection()->transaction(function () use ($objects, $offset) {
             $this->upstream()->lockForUpdate()->first();
             $current = self::run($this->upstream_id, $this->run_id)->lockForUpdate()->first();
+
             if ($current === null) {
                 return false;
             }
 
             $externalIds = [];
+
             foreach ($objects as $object) {
                 $externalIds[] = $object->external_id;
+
                 foreach ($object->children as $child) {
                     $externalIds[] = $child->external_id;
                 }
@@ -294,14 +297,17 @@ class Structure extends Model
                 ->whereIn('external_id', $externalIds)
                 ->pluck('id', 'external_id')
                 ->all();
+
             foreach ($externalIds as $externalId) {
                 $ids[$externalId] ??= new StructureItem()->newUniqueId();
             }
 
             $roots = [];
             $children = [];
+
             foreach ($objects as $position => $object) {
                 $roots[] = $current->itemRow($object, $ids[$object->external_id], $offset + $position);
+
                 foreach ($object->children as $position => $child) {
                     $children[] = $current->itemRow(
                         $child,

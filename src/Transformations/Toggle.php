@@ -41,6 +41,7 @@ final class Toggle implements Transform
         $schema = ['type' => in_array('null', $input->types(), true) ? ['boolean', 'null'] : 'boolean'];
         /** @var list<bool|null>|null $values */
         $values = $input->enumValues();
+
         if ($values !== null) {
             $schema['enum'] = array_map(static fn (?bool $value) => $value === null ? null : !$value, $values);
         }

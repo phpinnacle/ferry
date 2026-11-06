@@ -231,6 +231,7 @@ it('restores the original schema payload and looks up the active version assigne
         ->toBe($schema)
         ->and($restored->references)
         ->toBe($references);
+
     foreach ([$path . '/versions', $path] as $url) {
         Http::assertSent(
             fn (Request $request) => (

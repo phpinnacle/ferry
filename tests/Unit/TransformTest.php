@@ -203,6 +203,7 @@ it('keeps the Kafka null replacement default implicit and persists disabling it'
             SchemaHost::transformSchema(Cast::make(), Schema::fromArray(['type' => 'boolean'])),
         );
     $params = ['type' => 'string'];
+
     if ($setting !== null) {
         $params['replace_null_with_default'] = $setting;
     }
@@ -211,6 +212,7 @@ it('keeps the Kafka null replacement default implicit and persists disabling it'
 
     expect($schema->getComponent('replace_null_with_default')->getState())->toBe($setting ?? 'true');
     $expected = ['type' => 'string'];
+
     if ($setting === 'false') {
         $expected['replace_null_with_default'] = 'false';
     }

@@ -459,6 +459,7 @@ it('refreshes transform inputs when a source schema changes without renaming fie
         ],
         'allOf' => [['$ref' => '#/$defs/fields']],
     ]);
+
     if ($mapping instanceof FieldMapping) {
         $mapping->jsonSchema(source: $source);
     } else {
@@ -573,6 +574,7 @@ it('updates only static cards and the changed transform editor while preserving 
     app(TransformRegistry::class)->register(Trim::make());
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
     $properties = [];
+
     for ($index = 0; $index < 3; $index++) {
         $properties['_fld' . $index] = ['type' => 'string', 'maxLength' => 100, 'title' => 'Field ' . $index];
     }
@@ -757,6 +759,7 @@ it('defaults to the first available upstream and object with a dynamic destinati
         'source' => $first->external_id,
         '_destination' => 'dynamic',
     ]);
+
     foreach (['upstream_id', 'source'] as $name) {
         expect($form->getComponent($name)->canSelectPlaceholder())->toBeFalse();
     }
@@ -779,6 +782,7 @@ it('selects the first object without adding mapping state when changing upstream
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
     TestCase::makeItem($upstream);
     $next = TestCase::makeUpstream(['code' => 'next'], ['status' => StructureStatus::Ready, 'generation' => 1]);
+
     if ($hasObjects) {
         TestCase::makeItem($next, [
             'external_id' => 'next-object',
@@ -935,6 +939,7 @@ it('validates the static mapping against the declared destination fields', funct
             ->getStatePath();
     expect($schema->getState(...))->toThrow(function (ValidationException $exception) use ($path, $message) {
         expect($exception->errors())->toHaveKey($path);
+
         if ($message === null) {
             expect($exception->validator->failed()[$path])->toHaveKey('Required');
         } else {
@@ -1037,6 +1042,7 @@ it('loads at most twenty sources and searches beyond the initial options without
     $selects,
 ) {
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
+
     for ($index = 0; $index < 35; $index++) {
         TestCase::makeItem($upstream, [
             'external_id' => 'source-' . $index,
@@ -1344,6 +1350,7 @@ it('shows each composite column as a separate source card and saves only its sel
     ]);
     $mapping = $form->getComponentByStatePath('mapping');
     $sources = array_column($mapping->getSources(), null, 'id');
+
     foreach (['_fld17_type', '_fld17_rtref', '_fld17_rrref'] as $source) {
         expect($sources[$source]['description'])->toBe('Customer or supplier who owns the record.');
     }
@@ -1551,6 +1558,7 @@ it('copies the selected source schema at creation and uses the saved snapshot on
     $current = $snapshot;
     $current['properties']['second_field']['maxLength'] = 80;
     $second->update(['schema' => Schema::fromArray($current)]);
+
     foreach (['en', 'ru'] as $locale) {
         app()->setLocale($locale);
         $edit = ReplicaForm::configure(

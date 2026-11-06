@@ -31,6 +31,7 @@ class UpstreamObserver
     public function updated(Upstream $upstream): void
     {
         $credentialsChanged = $upstream->credentialsChanged();
+
         if ($credentialsChanged || $upstream->wasChanged('adapter')) {
             $upstream->structure->restart();
         }

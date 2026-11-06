@@ -111,6 +111,7 @@ it('shows connector error callouts only for failed connectors with a saved error
 
     expect($callout)->toBeInstanceOf(Callout::class);
     expect($callout->isVisible())->toBe($visible);
+
     if ($visible) {
         expect($callout->getDescription())->toBe($error);
         expect($callout->toHtml())->toContain(e($error))->not->toContain('<script>');

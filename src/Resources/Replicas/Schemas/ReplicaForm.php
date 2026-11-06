@@ -228,15 +228,18 @@ class ReplicaForm
         $sourceSchema = function () use ($transforms, $object, &$preview) {
             $state = $transforms->getRawState();
             $locale = app()->getLocale();
+
             if ($preview !== null && $preview['state'] === $state && $preview['locale'] === $locale) {
                 return $preview['schema'];
             }
 
             $input = $transforms->getInputSchema();
             $sourceSchema = $input->keywords();
+
             foreach ($input->resolveReferences()->effectiveProperties() as $name => $property) {
                 /** @var string|null $translation */
                 $translation = $property->annotation('x-ferry-trans');
+
                 if ($translation !== null) {
                     $sourceSchema['properties'][$name] = [...$property->keywords(), 'title' => __($translation)];
                 }
@@ -270,6 +273,7 @@ class ReplicaForm
             &$cachedSourceProperties,
         ) {
             $schema = $component->getSourceSchema();
+
             if ($schema !== $cachedSourceSchema) {
                 $cachedSourceProperties = $schema->resolveReferences()->effectiveProperties();
                 $cachedSourceSchema = $schema;
@@ -422,6 +426,7 @@ class ReplicaForm
                 );
                 $schema = $component->getSourceSchema();
                 $properties = [];
+
                 foreach ($schema->resolveReferences()->effectiveProperties() as $source => $property) {
                     $properties[$source] = $schemas
                         ->resultSchema(

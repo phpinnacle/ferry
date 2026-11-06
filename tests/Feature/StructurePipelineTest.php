@@ -60,6 +60,7 @@ $makeAdapter = function (int $estimated, string $key = 'rosetta') {
             $this->offsets[] = $offset;
             $objects = [];
             $last = min($offset + $limit, $this->estimated);
+
             for ($position = $offset; $position < $last; $position++) {
                 $objects[] = new StructureItem([
                     'external_id' => sprintf('object-%d', $position),
@@ -638,6 +639,7 @@ it('invalidates the old run and context when the adapter changes', function (?st
         ->toBe(0)
         ->and($structure->publishedItems()->sole()->id)
         ->toBe($published->id);
+
     if ($key === null) {
         expect($structure->run_id)->toBeNull();
     }

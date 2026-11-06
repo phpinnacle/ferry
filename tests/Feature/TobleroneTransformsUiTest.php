@@ -38,6 +38,7 @@ it('keeps independent trim toggles when adding, editing and reopening empty stri
             ],
         ],
     ]);
+
     foreach (['name' => [], 'note' => ['trim' => true]] as $source => $params) {
         $mapping = $page->instance()->form->getComponentByStatePath('mapping');
         $path = 'mapping.' . $mapping->getSourceRowIndex($source) . '.options.transforms';
@@ -51,6 +52,7 @@ it('keeps independent trim toggles when adding, editing and reopening empty stri
     $replica->update($page->instance()->form->getState());
     $reopened = Livewire::test(ReplicaForm::class, ['record' => $replica->fresh(), 'state' => []]);
     $mapping = $reopened->instance()->form->getComponentByStatePath('mapping');
+
     foreach (['name' => false, 'note' => true] as $source => $trim) {
         $path = 'mapping.' . $mapping->getSourceRowIndex($source) . '.options.transforms';
         $editor = $reopened->instance()->form->getComponentByStatePath($path);
@@ -90,6 +92,7 @@ it('saves independent money and radix settings and JSON output after Livewire up
             ],
         ],
     ]);
+
     foreach (['amount' => ['RUB', 16], 'balance' => ['KWD', 36]] as $source => [$currency, $radix]) {
         $mapping = $page->instance()->form->getComponentByStatePath('mapping');
         $path = 'mapping.' . $mapping->getSourceRowIndex($source) . '.options.transforms';

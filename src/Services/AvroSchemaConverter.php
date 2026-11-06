@@ -25,6 +25,7 @@ class AvroSchemaConverter
     {
         if (is_array($definition) && array_is_list($definition)) {
             $branches = [];
+
             foreach ($definition as $branch) {
                 $branches[] = $this->node($branch, $types, $namespace, $active);
             }

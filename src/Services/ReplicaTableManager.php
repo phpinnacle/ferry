@@ -59,6 +59,7 @@ class ReplicaTableManager
         $originalPrimaryKey = new DynamicDestination($original, $this->schemas)->getPrimaryKey();
         $renames = [];
         $addedColumns = [];
+
         foreach ($changes['columns'] as $change) {
             if ($change['from'] === null) {
                 $addedColumns[] = $change['mapping']->target;
@@ -73,11 +74,13 @@ class ReplicaTableManager
         );
         $rebuildPrimaryKey =
             $primaryKey !== $renamedPrimaryKey || array_intersect($originalPrimaryKey, $changes['drop']) !== [];
+
         if (!$rebuildPrimaryKey && $changes === ['drop' => [], 'columns' => [], 'alter' => []]) {
             return;
         }
 
         $alter = array_column($changes['alter'], null, 'target');
+
         foreach ($replica->mapping as $mapping) {
             if (
                 $mapping->target !== null
@@ -153,6 +156,7 @@ class ReplicaTableManager
         $original = $replica->getOriginal('mapping');
         $originalSchema = $this->schemas->originalSchema($replica);
         $previous = [];
+
         foreach ($original as $mapping) {
             if ($mapping->target !== null) {
                 $previous[$mapping->identity()] = $mapping;
@@ -160,6 +164,7 @@ class ReplicaTableManager
         }
 
         $next = [];
+
         foreach ($replica->mapping as $mapping) {
             if ($mapping->target !== null) {
                 $next[$mapping->identity()] = $mapping;
@@ -175,6 +180,7 @@ class ReplicaTableManager
             $mapping,
             $nextSchema,
         ), $next);
+
         foreach ($previous as $identity => $mapping) {
             if (
                 !array_key_exists($identity, $next)

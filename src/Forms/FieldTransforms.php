@@ -50,11 +50,13 @@ class FieldTransforms extends InlineBuilder
     public function getAvailableBlocks(): array
     {
         $blocks = parent::getAvailableBlocks();
+
         if ($blocks === []) {
             return [];
         }
 
         $schema = $this->getInputSchema();
+
         if ($schema === null) {
             return [];
         }
@@ -86,11 +88,14 @@ class FieldTransforms extends InlineBuilder
         $settings = [];
         $invalid = null;
         $schema = $this->evaluate($this->inputSchema);
+
         foreach (array_slice($this->getItems(), 0, $beforeIndex) as $index => $item) {
             $setting = new TransformSetting($item['type'], $this->getItemData($index, ['input' => $schema]));
             $settings[] = $setting;
+
             if ($schema !== null) {
                 $schema = $schemas->resultSchema($schema, [$setting]);
+
                 if ($schema === null) {
                     $invalid = $setting;
                 }
@@ -147,6 +152,7 @@ class FieldTransforms extends InlineBuilder
         Closure $fail,
     ): void {
         $invalid = $this->resolveSettings(app(ReplicaSchemaResolver::class))['invalid'];
+
         if ($invalid !== null) {
             $fail('phpinnacle-ferry::validation.transform_input_type')->translate([
                 'transform' => $transforms->get($invalid->type)->block()->getLabel(),

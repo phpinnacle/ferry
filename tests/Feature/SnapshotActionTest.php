@@ -27,6 +27,7 @@ beforeEach(function () {
 
 it('publishes a manual reread request and reports publication or failure', function (bool $replicaOwner, bool $fails) {
     $replica = TestCase::makeReplica([], ['status' => ReplicaStatus::Active]);
+
     foreach ([$replica->upstream->connector, $replica->connector] as $connector) {
         $connector->markApplied();
         $connector->recordStatus(ConnectorStatus::Running);
@@ -35,6 +36,7 @@ it('publishes a manual reread request and reports publication or failure', funct
     $owner = $replicaOwner ? $replica : $replica->upstream;
     $owner->refresh();
     $origin = app(OriginFactory::class)->for($owner);
+
     if ($fails) {
         $origin = Mockery::mock($origin)->makePartial();
         $origin->shouldReceive('snapshot')->once()->andThrow(new RuntimeException('Kafka unavailable'));
@@ -56,6 +58,7 @@ it('publishes a manual reread request and reports publication or failure', funct
             )
             ->status($fails ? 'danger' : 'success'),
     );
+
     if (!$fails) {
         expect($origin->operations)->toBe([['snapshot', $owner->code]]);
     }
@@ -66,6 +69,7 @@ it('publishes a manual reread request and reports publication or failure', funct
 it('requires ready connectors for manual rereads', function (bool $replicaOwner, string $unavailable) {
     $replica = TestCase::makeReplica([], ['status' => ReplicaStatus::Active]);
     $upstream = $replica->upstream;
+
     foreach ([$upstream->connector, $replica->connector] as $connector) {
         $connector->markApplied();
         $connector->recordStatus(ConnectorStatus::Running);
@@ -81,6 +85,7 @@ it('requires ready connectors for manual rereads', function (bool $replicaOwner,
     $available = !$replicaOwner && in_array($unavailable, ['sink failed', 'replica paused'], true);
 
     expect(RequestSnapshotAction::make()->record($owner)->isVisible())->toBe($available);
+
     if (!$available) {
         expect(fn () => app(ConnectorManager::class)->snapshot($owner))->toThrow(ValidationException::class);
     }
@@ -89,6 +94,7 @@ it('requires ready connectors for manual rereads', function (bool $replicaOwner,
 
 it('authorizes rereads through the owner update policy', function (bool $replicaOwner) {
     $replica = TestCase::makeReplica([], ['status' => ReplicaStatus::Active]);
+
     foreach ([$replica->upstream->connector, $replica->connector] as $connector) {
         $connector->markApplied();
         $connector->recordStatus(ConnectorStatus::Running);

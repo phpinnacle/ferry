@@ -31,6 +31,7 @@ class RecordTransforms extends TabbedBuilder
         $items = [];
         /** @var array<string, TransformData> $state */
         $state = $this->getRawState() ?? [];
+
         foreach ($state as $key => $item) {
             if ((string) $key === $before) {
                 break;

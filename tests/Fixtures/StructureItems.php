@@ -15,6 +15,7 @@ class StructureItems
     public static function make(array $attributes = []): StructureItem
     {
         $properties = [];
+
         foreach ($attributes['fields'] ?? [] as $name => $field) {
             $properties[$name] = [
                 ...$field->toArray(),

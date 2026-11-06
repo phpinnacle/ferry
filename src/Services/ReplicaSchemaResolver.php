@@ -23,6 +23,7 @@ class ReplicaSchemaResolver
     ): ?Schema {
         foreach ($settings as $setting) {
             $transform = $this->transforms->get($setting->type);
+
             if (
                 $transform->getScope() !== $scope
                 || !$transform->accepts($input)
@@ -31,6 +32,7 @@ class ReplicaSchemaResolver
             }
 
             $input = $transform->output($input, $setting->data);
+
             if ($input === null) {
                 return null;
             }
@@ -44,6 +46,7 @@ class ReplicaSchemaResolver
     {
         foreach ($settings as $setting) {
             $next = $this->resultSchema($schema, [$setting], TransformScope::Record);
+
             if ($next === null) {
                 break;
             }
@@ -114,6 +117,7 @@ class ReplicaSchemaResolver
 
         $schema = $replica->schema;
         $outputs = [];
+
         foreach ($replica->transforms as $index => $setting) {
             /** @var Schema $next */
             $next = $this->resultSchema($schema, [$setting], TransformScope::Record);
@@ -122,6 +126,7 @@ class ReplicaSchemaResolver
         }
 
         $transforms = [];
+
         foreach (array_reverse($replica->transforms, preserve_keys: true) as $index => $setting) {
             if (array_intersect($sources, $outputs[$index]) === []) {
                 continue;
@@ -129,6 +134,7 @@ class ReplicaSchemaResolver
 
             $inputs = $this->transforms->get($setting->type)->sourceFields($setting->data);
             $physical = [];
+
             foreach ($sources as $source) {
                 array_push($physical, ...in_array($source, $outputs[$index], true) ? $inputs : [$source]);
             }

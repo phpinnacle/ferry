@@ -27,6 +27,7 @@ final class MappingState
         $sources += array_fill_keys($available, []);
         $rows = [];
         $used = [];
+
         foreach ($targets as $target => $mapped) {
             foreach (array_is_list($mapped) ? $mapped : [$mapped] as $entry) {
                 if ($entry['kind'] === 'value') {
@@ -58,8 +59,10 @@ final class MappingState
     {
         $available = $available === [] ? array_keys($bindings + $sources) : $available;
         $rows = [];
+
         foreach ($available as $source) {
             $value = $bindings[$source] ?? null;
+
             if (is_array($value) && array_key_exists('value', $value)) {
                 continue;
             }

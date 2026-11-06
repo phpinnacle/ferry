@@ -473,6 +473,7 @@ it('creates decimal columns from the effective output schema', function (?array 
         'database.connections.schema-preview' => ['driver' => 'pgsql', 'database' => 'preview'],
     ]);
     $replica = new Replica;
+
     if ($result !== null) {
         app(TransformRegistry::class)->register(new FakeTransform('decimal', output: fn () => Schema::fromArray(
             $result,

@@ -110,6 +110,7 @@ it('creates and persists one UUID key through the tabbed record builder for both
     expect($form->getState(...))->toThrow(ValidationException::class);
     expect(array_column($mapping->getSources(), 'required', 'id'))
         ->toMatchArray(['record_id' => true, 'tenant_id' => true, 'row_id' => true]);
+
     if ($type === DestinationType::Static) {
         expect($mapping->getConnectionModes())
             ->toHaveKey('record_id.id', MappingMode::Whole)
@@ -201,6 +202,7 @@ it('creates and persists one UUID key through the tabbed record builder for both
             'delete.enabled' => 'true',
         ])
         ->not->toHaveKey('transforms.' . $generator . '.predicate');
+
     if ($type === DestinationType::Dynamic) {
         $table = $replica->getConnection()->getSchemaBuilder();
         expect($table->getColumnListing($replica->destination))->toBe(['name', 'tenant', 'id']);

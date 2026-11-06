@@ -31,6 +31,7 @@ readonly class ReplicaSchema
         }
 
         $used = [];
+
         foreach ($columns as $column) {
             if (!is_string($column) || $column === '') {
                 $fail('phpinnacle-ferry::validation.replica_schema.column_required')->translate();
@@ -72,6 +73,7 @@ readonly class ReplicaSchema
         }
 
         $missing = array_diff($primaryKey, $sources);
+
         if ($missing !== []) {
             $fail('phpinnacle-ferry::validation.replica_schema.primary_key_required')->translate([
                 'columns' => implode(', ', $missing),
@@ -96,6 +98,7 @@ readonly class ReplicaSchema
         }
 
         $sources = [];
+
         foreach ($mappings as $mapping) {
             if ($mapping->source !== null && $mapping->target !== null) {
                 $sources[] = $mapping->source;
@@ -115,6 +118,7 @@ readonly class ReplicaSchema
                 array_filter($mappings, fn (FieldMapping $mapping) => $mapping->source !== null),
                 'target',
             );
+
             foreach ($destination->getPrimaryKey() as $target) {
                 if (!in_array($target, $mapped, true)) {
                     throw ValidationException::withMessages([
@@ -128,12 +132,14 @@ readonly class ReplicaSchema
 
         $destinationSchema = $destination?->getSchema() ?? Schema::fromArray([]);
         $fields = $destinationSchema->resolveReferences()->effectiveProperties();
+
         foreach ($mappings as $mapping) {
             if ($mapping->target === null) {
                 continue;
             }
 
             $output = $this->schemas->mappingSchema($mapping, $sourceSchema);
+
             if ($output === null || ReplicaTableManager::columnType($output) === null) {
                 throw ValidationException::withMessages([
                     'data.mapping' => __('phpinnacle-ferry::resources.replica.errors.unsupported_field_type', [
