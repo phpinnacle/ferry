@@ -7,6 +7,31 @@ use Tests\TestCase;
 
 uses(TestCase::class);
 
+it('removes field metadata without changing immutable defaults or boolean definitions', function () {
+    $schema = Schema::object([
+        'value' => Schema::fromArray([
+            'type' => 'string',
+            'title' => 'Value',
+            'description' => 'Description',
+            'x-ferry-trans' => 'unused',
+            'default' => (object) ['nested' => (object) ['value' => 'original']],
+        ]),
+        'free' => Schema::fromArray(true),
+        'blocked' => Schema::fromArray(false),
+    ]);
+    $item = new StructureItem(['schema' => $schema]);
+    $field = $item->field('value');
+    $field->default()->nested->value = 'changed';
+
+    expect($field->hasKeyword('title'))->toBeFalse();
+    expect($field->hasKeyword('description'))->toBeFalse();
+    expect($field->hasKeyword('x-ferry-trans'))->toBeFalse();
+    expect($field->default()->nested->value)->toBe('original');
+    expect($schema->properties()['value']->title())->toBe('Value');
+    expect($item->field('free')->allowsAny())->toBeTrue();
+    expect($item->field('blocked')->deniesAny())->toBeTrue();
+});
+
 it('falls back from the title to the label and then to the physical name', function (
     string $title,
     string $label,

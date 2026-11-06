@@ -130,7 +130,7 @@ readonly class ReplicaSchema
             }
         }
 
-        $destinationSchema = $destination?->getSchema() ?? Schema::fromArray([]);
+        $destinationSchema = $destination?->getSchema() ?? Schema::empty();
         $fields = $destinationSchema->resolveReferences()->effectiveProperties();
 
         foreach ($mappings as $mapping) {

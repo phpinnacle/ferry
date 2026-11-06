@@ -109,18 +109,7 @@ class StructureItem extends Model
     {
         $field = $this->properties()[$source] ?? null;
 
-        if ($field === null) {
-            return null;
-        }
-
-        /** @var array<string, mixed> $definition */
-        $definition = array_diff_key($field->keywords(), [
-            'title' => true,
-            'description' => true,
-            'x-ferry-trans' => true,
-        ]);
-
-        return Schema::fromArray($definition);
+        return $field?->builder()->without('title', 'description', 'x-ferry-trans')->build();
     }
 
     /** @return array<string, Keywords&array{title: string}> */
@@ -148,10 +137,10 @@ class StructureItem extends Model
                 $title = Lang::get($translation);
             }
 
-            $definition = $field->keywords();
-            unset($definition['x-ferry-trans']);
-            $definition['title'] = $title;
-            $fields[$source] = $definition;
+            $fields[$source] = [
+                ...$field->builder()->without('x-ferry-trans')->build()->keywords(),
+                'title' => $title,
+            ];
         }
 
         return $fields;

@@ -385,7 +385,7 @@ class ReplicaForm
         ?string $destinationKey,
     ): FieldMapping {
         $mapping = FieldMapping::make('mapping');
-        $targetSchema = $destination?->getSchema() ?? Schema::fromArray([]);
+        $targetSchema = $destination?->getSchema() ?? Schema::empty();
         $targetSchema = Schema::fromArray([
             ...$targetSchema->keywords(),
             'required' => array_values(array_unique([
