@@ -157,6 +157,12 @@ class StructureItem extends Model
         return $fields;
     }
 
+    /** @return BelongsTo<StructureItem, $this> */
+    public function parent(): BelongsTo
+    {
+        return $this->belongsTo(StructureItem::class, 'parent_id');
+    }
+
     /** @return array<string, Schema> */
     private function properties(): array
     {
@@ -168,11 +174,5 @@ class StructureItem extends Model
         }
 
         return $this->cachedProperties;
-    }
-
-    /** @return BelongsTo<StructureItem, $this> */
-    public function parent(): BelongsTo
-    {
-        return $this->belongsTo(StructureItem::class, 'parent_id');
     }
 }

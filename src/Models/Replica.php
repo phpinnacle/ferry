@@ -74,19 +74,6 @@ class Replica extends Model
         'transforms',
     ];
 
-    protected static function booted(): void
-    {
-        static::creating(function (self $replica) {
-            if (!array_key_exists('schema', $replica->getAttributes())) {
-                $replica->schema = $replica->sourceObject()->schema;
-            }
-
-            if ($replica->type === DestinationType::Dynamic) {
-                $replica->destination = Config::string('phpinnacle-ferry.replica.table_prefix') . $replica->code;
-            }
-        });
-    }
-
     /** @param array{touch?: bool|null} $options */
     public function save(array $options = []): bool
     {
@@ -189,5 +176,18 @@ class Replica extends Model
         }
 
         return $columns;
+    }
+
+    protected static function booted(): void
+    {
+        static::creating(function (self $replica) {
+            if (!array_key_exists('schema', $replica->getAttributes())) {
+                $replica->schema = $replica->sourceObject()->schema;
+            }
+
+            if ($replica->type === DestinationType::Dynamic) {
+                $replica->destination = Config::string('phpinnacle-ferry.replica.table_prefix') . $replica->code;
+            }
+        });
     }
 }

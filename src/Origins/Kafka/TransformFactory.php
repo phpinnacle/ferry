@@ -22,6 +22,28 @@ class TransformFactory
     ) {}
 
     /**
+     * @param array<string, array<string, string>> $pipeline
+     * @return array<string, string>
+     */
+    public static function configuration(array $pipeline): array
+    {
+        $config = ['transforms' => implode(',', array_keys($pipeline))];
+
+        foreach ($pipeline as $name => $properties) {
+            foreach ($properties as $property => $value) {
+                $config[sprintf('transforms.%s.%s', $name, $property)] = $value;
+            }
+
+            if (($properties['predicate'] ?? null) === 'tombstone') {
+                $config['predicates'] = 'tombstone';
+                $config['predicates.tombstone.type'] = 'org.apache.kafka.connect.transforms.predicates.RecordIsTombstone';
+            }
+        }
+
+        return $config;
+    }
+
+    /**
      * @param array<string, string> $keyMap
      * @param array<string, string> $fixedValues
      * @param array<string, array<string, string>> $transforms
@@ -168,28 +190,6 @@ class TransformFactory
         }
 
         return implode(',', $renames);
-    }
-
-    /**
-     * @param array<string, array<string, string>> $pipeline
-     * @return array<string, string>
-     */
-    public static function configuration(array $pipeline): array
-    {
-        $config = ['transforms' => implode(',', array_keys($pipeline))];
-
-        foreach ($pipeline as $name => $properties) {
-            foreach ($properties as $property => $value) {
-                $config[sprintf('transforms.%s.%s', $name, $property)] = $value;
-            }
-
-            if (($properties['predicate'] ?? null) === 'tombstone') {
-                $config['predicates'] = 'tombstone';
-                $config['predicates.tombstone.type'] = 'org.apache.kafka.connect.transforms.predicates.RecordIsTombstone';
-            }
-        }
-
-        return $config;
     }
 
     /** @return array<string, array<string, string>> */

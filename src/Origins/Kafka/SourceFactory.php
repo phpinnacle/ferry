@@ -187,6 +187,18 @@ class SourceFactory
         return $list === '' ? [] : explode(',', $list);
     }
 
+    private function identifier(string $prefix, Upstream $upstream): string
+    {
+        $code = preg_replace('/[^a-z0-9]+/', '_', mb_strtolower($upstream->code)) ?? '';
+
+        return mb_substr(sprintf('%s_%s', $prefix, trim($code, '_')), 0, self::IDENTIFIER_LENGTH);
+    }
+
+    private function topicPrefix(Upstream $upstream): string
+    {
+        return sprintf('ferry.%s', $upstream->code);
+    }
+
     /**
      * @param array<string, string> $classes
      * @param array<string, array<string, true>> $columns
@@ -209,17 +221,5 @@ class SourceFactory
         }
 
         return $config;
-    }
-
-    private function identifier(string $prefix, Upstream $upstream): string
-    {
-        $code = preg_replace('/[^a-z0-9]+/', '_', mb_strtolower($upstream->code)) ?? '';
-
-        return mb_substr(sprintf('%s_%s', $prefix, trim($code, '_')), 0, self::IDENTIFIER_LENGTH);
-    }
-
-    private function topicPrefix(Upstream $upstream): string
-    {
-        return sprintf('ferry.%s', $upstream->code);
     }
 }

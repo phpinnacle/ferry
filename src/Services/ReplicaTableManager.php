@@ -18,6 +18,23 @@ class ReplicaTableManager
         private readonly ReplicaSchemaResolver $schemas,
     ) {}
 
+    /** @return 'boolean'|'bigInteger'|'decimal'|'date'|'time'|'dateTime'|'string'|null */
+    public static function columnType(?Schema $schema): ?string
+    {
+        return match ($schema?->singleType()) {
+            'boolean' => 'boolean',
+            'integer' => 'bigInteger',
+            'number' => 'decimal',
+            'string' => match (true) {
+                $schema->effectiveFormat() === 'date' => 'date',
+                $schema->effectiveFormat() === 'time' => 'time',
+                $schema->effectiveFormat() === 'date-time' => 'dateTime',
+                default => 'string',
+            },
+            default => null,
+        };
+    }
+
     public function create(Replica $replica): void
     {
         $primaryKey = new DynamicDestination($replica, $this->schemas)->getPrimaryKey();
@@ -221,23 +238,6 @@ class ReplicaTableManager
         }
 
         return $changes;
-    }
-
-    /** @return 'boolean'|'bigInteger'|'decimal'|'date'|'time'|'dateTime'|'string'|null */
-    public static function columnType(?Schema $schema): ?string
-    {
-        return match ($schema?->singleType()) {
-            'boolean' => 'boolean',
-            'integer' => 'bigInteger',
-            'number' => 'decimal',
-            'string' => match (true) {
-                $schema->effectiveFormat() === 'date' => 'date',
-                $schema->effectiveFormat() === 'time' => 'time',
-                $schema->effectiveFormat() === 'date-time' => 'dateTime',
-                default => 'string',
-            },
-            default => null,
-        };
     }
 
     private function column(Blueprint $table, FieldMapping $mapping, ?Schema $field): ColumnDefinition

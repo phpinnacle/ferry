@@ -67,18 +67,6 @@ final class InsertUuid implements Transform
         return Schema::fromArray($schema);
     }
 
-    /** @param array{fields?: list<string>|null}|null $state */
-    private function blockLabel(?array $state): string
-    {
-        if (blank($state['fields'] ?? null)) {
-            return __('phpinnacle-ferry::transforms.insert_uuid');
-        }
-
-        return __('phpinnacle-ferry::transforms.uuid_heading', [
-            'field' => implode(', ', $this->sourceFields($state)),
-        ]);
-    }
-
     public function block(): RecordTransformBlock
     {
         return RecordTransformBlock::make($this->getKey())
@@ -132,5 +120,17 @@ final class InsertUuid implements Transform
             'fields' => implode(',', $this->sourceFields($params)),
             'output' => $params['output'],
         ];
+    }
+
+    /** @param array{fields?: list<string>|null}|null $state */
+    private function blockLabel(?array $state): string
+    {
+        if (blank($state['fields'] ?? null)) {
+            return __('phpinnacle-ferry::transforms.insert_uuid');
+        }
+
+        return __('phpinnacle-ferry::transforms.uuid_heading', [
+            'field' => implode(', ', $this->sourceFields($state)),
+        ]);
     }
 }

@@ -90,18 +90,6 @@ final class Slug implements Transform
         return Schema::fromArray($schema);
     }
 
-    /** @param array{input?: string|null}|null $state */
-    private function blockLabel(?array $state): string
-    {
-        if (blank($state['input'] ?? null)) {
-            return __('phpinnacle-ferry::transforms.slug');
-        }
-
-        return __('phpinnacle-ferry::transforms.slug_heading', [
-            'field' => implode(', ', $this->sourceFields($state)),
-        ]);
-    }
-
     public function block(): RecordTransformBlock
     {
         return RecordTransformBlock::make($this->getKey())
@@ -152,5 +140,17 @@ final class Slug implements Transform
             'output' => $params['output'],
             'separators' => $params['separators'] ?? '',
         ];
+    }
+
+    /** @param array{input?: string|null}|null $state */
+    private function blockLabel(?array $state): string
+    {
+        if (blank($state['input'] ?? null)) {
+            return __('phpinnacle-ferry::transforms.slug');
+        }
+
+        return __('phpinnacle-ferry::transforms.slug_heading', [
+            'field' => implode(', ', $this->sourceFields($state)),
+        ]);
     }
 }

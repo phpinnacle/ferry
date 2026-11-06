@@ -118,6 +118,28 @@ class ViewSchemaRegistrySubject extends Page
         });
     }
 
+    /** @return list<Action|ActionGroup> */
+    protected function getHeaderActions(): array
+    {
+        return [
+            ActionGroup::make($this->versionActions())
+                ->label(__('phpinnacle-ferry::schema-registry.version'))
+                ->badge($this->selectedVersion(...))
+                ->icon('phosphor-stack')
+                ->button()
+                ->color('gray')
+                ->visible(fn () => $this->versions() !== []),
+            Action::make('refresh')
+                ->label(__('phpinnacle-ferry::schema-registry.refresh'))
+                ->icon('phosphor-arrow-clockwise')
+                ->color('gray')
+                ->action('$refresh'),
+            $this->restoreVersionAction(),
+            $this->deleteVersionAction(false),
+            $this->deleteVersionAction(true),
+        ];
+    }
+
     /** @return list<int> */
     private function versions(): array
     {
@@ -141,28 +163,6 @@ class ViewSchemaRegistrySubject extends Page
         rsort($versions);
 
         return $this->cachedVersions = $versions;
-    }
-
-    /** @return list<Action|ActionGroup> */
-    protected function getHeaderActions(): array
-    {
-        return [
-            ActionGroup::make($this->versionActions())
-                ->label(__('phpinnacle-ferry::schema-registry.version'))
-                ->badge($this->selectedVersion(...))
-                ->icon('phosphor-stack')
-                ->button()
-                ->color('gray')
-                ->visible(fn () => $this->versions() !== []),
-            Action::make('refresh')
-                ->label(__('phpinnacle-ferry::schema-registry.refresh'))
-                ->icon('phosphor-arrow-clockwise')
-                ->color('gray')
-                ->action('$refresh'),
-            $this->restoreVersionAction(),
-            $this->deleteVersionAction(false),
-            $this->deleteVersionAction(true),
-        ];
     }
 
     /** @return list<Action> */

@@ -82,29 +82,6 @@ class FieldTransforms extends InlineBuilder
         );
     }
 
-    /** @return array{settings: list<TransformSetting>, schema: Schema|null, invalid: TransformSetting|null} */
-    private function resolveSettings(ReplicaSchemaResolver $schemas, ?int $beforeIndex = null): array
-    {
-        $settings = [];
-        $invalid = null;
-        $schema = $this->evaluate($this->inputSchema);
-
-        foreach (array_slice($this->getItems(), 0, $beforeIndex) as $index => $item) {
-            $setting = new TransformSetting($item['type'], $this->getItemData($index, ['input' => $schema]));
-            $settings[] = $setting;
-
-            if ($schema !== null) {
-                $schema = $schemas->resultSchema($schema, [$setting]);
-
-                if ($schema === null) {
-                    $invalid = $setting;
-                }
-            }
-        }
-
-        return ['settings' => $settings, 'schema' => $schema, 'invalid' => $invalid];
-    }
-
     public function getEditorActionName(): string
     {
         return 'fieldTransforms';
@@ -133,6 +110,29 @@ class FieldTransforms extends InlineBuilder
                 $fail,
             ),
         ]);
+    }
+
+    /** @return array{settings: list<TransformSetting>, schema: Schema|null, invalid: TransformSetting|null} */
+    private function resolveSettings(ReplicaSchemaResolver $schemas, ?int $beforeIndex = null): array
+    {
+        $settings = [];
+        $invalid = null;
+        $schema = $this->evaluate($this->inputSchema);
+
+        foreach (array_slice($this->getItems(), 0, $beforeIndex) as $index => $item) {
+            $setting = new TransformSetting($item['type'], $this->getItemData($index, ['input' => $schema]));
+            $settings[] = $setting;
+
+            if ($schema !== null) {
+                $schema = $schemas->resultSchema($schema, [$setting]);
+
+                if ($schema === null) {
+                    $invalid = $setting;
+                }
+            }
+        }
+
+        return ['settings' => $settings, 'schema' => $schema, 'invalid' => $invalid];
     }
 
     /** @param list<TransformData> $items */

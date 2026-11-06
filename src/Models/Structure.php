@@ -50,6 +50,16 @@ class Structure extends Model
         'context' => 'array',
     ];
 
+    /** @return Builder<self> */
+    public static function run(string $upstreamId, ?string $runId): Builder
+    {
+        return self::query()
+            ->whereKey($upstreamId)
+            ->whereHas('upstream', fn (Builder $query) => $query->whereNotNull('adapter'))
+            ->where('status', StructureStatus::Preparing)
+            ->where('run_id', $runId);
+    }
+
     /** @return BelongsTo<Upstream, $this> */
     public function upstream(): BelongsTo
     {
@@ -84,16 +94,6 @@ class Structure extends Model
     public function draftRevision(): int
     {
         return $this->generation + 1;
-    }
-
-    /** @return Builder<self> */
-    public static function run(string $upstreamId, ?string $runId): Builder
-    {
-        return self::query()
-            ->whereKey($upstreamId)
-            ->whereHas('upstream', fn (Builder $query) => $query->whereNotNull('adapter'))
-            ->where('status', StructureStatus::Preparing)
-            ->where('run_id', $runId);
     }
 
     public function fail(): bool
@@ -195,47 +195,6 @@ class Structure extends Model
             ->delete();
     }
 
-    private function beginStructureRun(): void
-    {
-        $this->status = $this->upstream->adapter === null ? StructureStatus::Pending : StructureStatus::Preparing;
-        $this->run_id = $this->status === StructureStatus::Preparing ? $this->newUniqueId() : null;
-        $this->processed = 0;
-        $this->estimated = 0;
-        $this->context = null;
-    }
-
-    private function discardDraftItems(): void
-    {
-        $this
-            ->items()
-            ->where('revision', '>', $this->generation)
-            ->delete();
-    }
-
-    private function structureIsStale(int $staleAfter): bool
-    {
-        return $this->updated_at->lte(CarbonImmutable::now()->subSeconds($staleAfter));
-    }
-
-    /**
-     *
-     * @param  array<string, mixed>  $attributes
-     */
-    private function updateCurrentRun(array $attributes): bool
-    {
-        $currentRun = self::run($this->upstream_id, $this->run_id);
-
-        $this->forceFill($attributes);
-
-        $updated = $currentRun->update(
-            array_intersect_key($this->getAttributes(), $attributes),
-        );
-
-        $this->refresh();
-
-        return $updated === 1;
-    }
-
     public function restart(): void
     {
         $this->getConnection()->transaction(function () {
@@ -259,13 +218,6 @@ class Structure extends Model
     public function readPlan(): ?StructurePlan
     {
         return $this->context === null ? null : new StructurePlan($this->estimated, $this->context);
-    }
-
-    protected static function booted(): void
-    {
-        static::creating(function (self $structure) {
-            $structure->beginStructureRun();
-        });
     }
 
     /** @param list<StructureItem> $objects */
@@ -340,6 +292,47 @@ class Structure extends Model
         });
     }
 
+    private function beginStructureRun(): void
+    {
+        $this->status = $this->upstream->adapter === null ? StructureStatus::Pending : StructureStatus::Preparing;
+        $this->run_id = $this->status === StructureStatus::Preparing ? $this->newUniqueId() : null;
+        $this->processed = 0;
+        $this->estimated = 0;
+        $this->context = null;
+    }
+
+    private function discardDraftItems(): void
+    {
+        $this
+            ->items()
+            ->where('revision', '>', $this->generation)
+            ->delete();
+    }
+
+    private function structureIsStale(int $staleAfter): bool
+    {
+        return $this->updated_at->lte(CarbonImmutable::now()->subSeconds($staleAfter));
+    }
+
+    /**
+     *
+     * @param  array<string, mixed>  $attributes
+     */
+    private function updateCurrentRun(array $attributes): bool
+    {
+        $currentRun = self::run($this->upstream_id, $this->run_id);
+
+        $this->forceFill($attributes);
+
+        $updated = $currentRun->update(
+            array_intersect_key($this->getAttributes(), $attributes),
+        );
+
+        $this->refresh();
+
+        return $updated === 1;
+    }
+
     /** @return array<string, mixed> */
     private function itemRow(StructureItem $object, string $id, int $position, ?string $parentId = null): array
     {
@@ -351,5 +344,12 @@ class Structure extends Model
             'position' => $position,
             'revision' => $this->draftRevision(),
         ];
+    }
+
+    protected static function booted(): void
+    {
+        static::creating(function (self $structure) {
+            $structure->beginStructureRun();
+        });
     }
 }
