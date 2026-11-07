@@ -321,14 +321,13 @@ it('selects and renames only source key fields mapped to the static primary key'
         label: 'Explicit keys',
         table: 'explicit_keys',
         primaryKey: $primaryKey,
-        schema: SchemaBuilder::make(Schema::object([
-            'id' => SchemaBuilder::make()->type('string')->format('uuid')->build(),
-            'source_id' => SchemaBuilder::make()
-                ->type('string')
+        schema: SchemaBuilder::object([
+            'id' => SchemaBuilder::string()->format('uuid')->build(),
+            'source_id' => SchemaBuilder::string()
                 ->format('uuid')
                 ->build(),
-            '_owner' => SchemaBuilder::make()->type('string')->format('uuid')->build(),
-        ]))
+            '_owner' => SchemaBuilder::string()->format('uuid')->build(),
+        ])
             ->required($primaryKey)
             ->build(),
     );
@@ -426,7 +425,7 @@ it('empties key-only sink values after record transforms without discarding the 
         'Key only',
         'key_only',
         ['external_id'],
-        SchemaBuilder::make(Schema::object(['external_id' => Schema::fromArray(TestCase::keySchema()->toArray())]))
+        SchemaBuilder::object(['external_id' => Schema::fromArray(TestCase::keySchema()->toArray())])
             ->required(['external_id'])
             ->build(),
     );

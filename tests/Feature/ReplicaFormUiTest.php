@@ -53,10 +53,10 @@ it('allows compatible field transforms on source keys for both destination types
         'Keyed',
         'keyed',
         ['id'],
-        SchemaBuilder::make(Schema::object([
+        SchemaBuilder::object([
             'id' => Schema::string(),
             'name' => Schema::string(),
-        ]))
+        ])
             ->required(['id'])
             ->build(),
     );
@@ -109,11 +109,11 @@ it('connects compatible static fields regardless of source primary-key membershi
         label: 'Keyed',
         table: 'keyed',
         primaryKey: ['id', 'tenant'],
-        schema: SchemaBuilder::make(Schema::object([
+        schema: SchemaBuilder::object([
             'id' => Schema::string(),
             'tenant' => Schema::string(),
             'name' => Schema::string(),
-        ]))
+        ])
             ->required(['id', 'tenant'])
             ->build(),
     );
@@ -192,7 +192,7 @@ it('derives static keys from destination mappings without requiring a complete s
         'Keyed',
         'keyed',
         ['id'],
-        SchemaBuilder::make(Schema::object(['id' => Schema::string(), 'name' => Schema::string()]))
+        SchemaBuilder::object(['id' => Schema::string(), 'name' => Schema::string()])
             ->required(['id'])
             ->build(),
     ));
@@ -230,7 +230,7 @@ it('marks source keys required in both editors without replacing other required 
         'Keyed',
         'keyed',
         ['id'],
-        SchemaBuilder::make(Schema::object(['id' => Schema::string()]))
+        SchemaBuilder::object(['id' => Schema::string()])
             ->required(['id'])
             ->build(),
     ));
@@ -348,14 +348,13 @@ it('accepts UUID transform outputs for reference destinations', function () {
         label: 'Owners',
         table: 'owners',
         primaryKey: ['id'],
-        schema: SchemaBuilder::make(Schema::object([
+        schema: SchemaBuilder::object([
             'id' => Schema::string(),
-            'owner' => SchemaBuilder::make()
-                ->type('string')
+            'owner' => SchemaBuilder::string()
                 ->format('uuid')
                 ->title('Owner')
                 ->build(),
-        ]))
+        ])
             ->required(['id', 'owner'])
             ->build(),
     ));
@@ -1295,14 +1294,13 @@ it('shows each composite column as a separate source card and saves only its sel
         label: 'Owners',
         table: 'owners',
         primaryKey: ['id'],
-        schema: SchemaBuilder::make(Schema::object([
+        schema: SchemaBuilder::object([
             'id' => Schema::string(),
-            'owner' => SchemaBuilder::make()
-                ->type('string')
+            'owner' => SchemaBuilder::string()
                 ->format('uuid')
                 ->title('Owner')
                 ->build(),
-        ]))
+        ])
             ->required(['id', 'owner'])
             ->build(),
     ));
@@ -1382,16 +1380,15 @@ it('shows each composite column as a separate source card and saves only its sel
 })->with([DestinationType::Dynamic->value, 'owners']);
 
 it('uses destination JSON Schema titles, constraints and required mappings in the editor', function () {
-    $schema = SchemaBuilder::make(Schema::object([
-        'id' => SchemaBuilder::make()->type('string')->format('uuid')->title('Identifier')->build(),
-        'name' => SchemaBuilder::make()
-            ->type('string')
+    $schema = SchemaBuilder::object([
+        'id' => SchemaBuilder::string()->format('uuid')->title('Identifier')->build(),
+        'name' => SchemaBuilder::string()
             ->title('Customer name')
             ->description('Official name')
             ->max(100)
             ->build(),
-        'is_active' => SchemaBuilder::make()->type('boolean')->title('Active')->build(),
-    ]))
+        'is_active' => SchemaBuilder::boolean()->title('Active')->build(),
+    ])
         ->required(['id', 'name'])
         ->build();
     app(DestinationFactory::class)->register(new StaticDestination(
@@ -1434,13 +1431,13 @@ it('omits empty optional forms and validates static values against destination b
         label: 'Bounded',
         table: 'bounded',
         primaryKey: ['id'],
-        schema: SchemaBuilder::make(Schema::object([
+        schema: SchemaBuilder::object([
             'id' => Schema::string(),
-            'name' => SchemaBuilder::make()->type('string')->max(3)->build(),
-            'description' => SchemaBuilder::make()->type('string')->nullable()->build(),
+            'name' => SchemaBuilder::string()->max(3)->build(),
+            'description' => SchemaBuilder::string()->nullable()->build(),
             'active' => Schema::boolean(),
             'quantity' => Schema::integer(),
-        ]))
+        ])
             ->required(['id', 'name'])
             ->build(),
     ));
@@ -1482,15 +1479,14 @@ it('maps UUID references into bounded strings while respecting target length and
         label: 'References',
         table: 'references',
         primaryKey: ['external_id'],
-        schema: SchemaBuilder::make(Schema::object([
-            'external_id' => SchemaBuilder::make()->type('string')->max(255)->build(),
-            'exact_id' => SchemaBuilder::make()->type('string')->max(36)->nullable()->build(),
-            'uuid_id' => SchemaBuilder::make()
-                ->type('string')
+        schema: SchemaBuilder::object([
+            'external_id' => SchemaBuilder::string()->max(255)->build(),
+            'exact_id' => SchemaBuilder::string()->max(36)->nullable()->build(),
+            'uuid_id' => SchemaBuilder::string()
                 ->format('uuid')
                 ->nullable()
                 ->build(),
-        ]))
+        ])
             ->required(['external_id'])
             ->build(),
     );

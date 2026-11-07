@@ -24,10 +24,10 @@ it('uses JSON Schema compatibility when saving static replicas', function (
         'Totals',
         'totals',
         ['id'],
-        SchemaBuilder::make(Schema::object([
+        SchemaBuilder::object([
             'id' => Schema::string(),
             'amount' => SchemaBuilder::make(Schema::fromArray($target))->title('Amount')->build(),
-        ]))
+        ])
             ->required(['id', 'amount'])
             ->build(),
     );
@@ -69,10 +69,10 @@ it('compares native static values with destination enums and lengths', function 
         'Labels',
         'labels',
         ['id'],
-        SchemaBuilder::make(Schema::object([
+        SchemaBuilder::object([
             'id' => Schema::string(),
             'label' => Schema::fromArray($target),
-        ]))
+        ])
             ->required(['id'])
             ->build(),
     );
@@ -109,7 +109,7 @@ it('resolves label and schema callbacks in the current request locale', function
         table: 'localized',
         primaryKey: ['name'],
         schema: fn () => Schema::object([
-            'name' => SchemaBuilder::make()->type('string')->title(app()->getLocale())->build(),
+            'name' => SchemaBuilder::string()->title(app()->getLocale())->build(),
         ]),
     );
     app()->setLocale('ru');

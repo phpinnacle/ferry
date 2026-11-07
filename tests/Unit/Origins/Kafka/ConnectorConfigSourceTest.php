@@ -266,11 +266,11 @@ it('leaves pending static replicas without a selected key or captured columns', 
         label: 'Names',
         table: 'names',
         primaryKey: ['tenant_id', 'record_id'],
-        schema: SchemaBuilder::make(Schema::object([
+        schema: SchemaBuilder::object([
             'tenant_id' => Schema::integer(),
             'record_id' => Schema::string(),
             'name' => Schema::string(),
-        ]))
+        ])
             ->required(['tenant_id', 'record_id'])
             ->build(),
     ));

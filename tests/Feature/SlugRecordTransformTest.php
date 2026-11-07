@@ -26,10 +26,10 @@ it('adds and persists a slug through the tabbed builder in both editors', functi
         'Slugs',
         'slugs',
         ['id'],
-        SchemaBuilder::make(Schema::object([
-            'id' => SchemaBuilder::make()->type('string')->format('uuid')->build(),
+        SchemaBuilder::object([
+            'id' => SchemaBuilder::string()->format('uuid')->build(),
             'slug' => Schema::union(['string', 'null']),
-        ]))
+        ])
             ->required(['id', 'slug'])
             ->build(),
     ));

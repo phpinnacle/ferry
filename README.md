@@ -278,21 +278,17 @@ FerryPlugin::make()->destinations(new StaticDestination(
     label: 'Customers',
     table: 'customers',
     primaryKey: ['id'],
-    schema: SchemaBuilder::make()
-        ->type('object')
-        ->properties([
-            'id' => SchemaBuilder::make()
-                ->type('string')
-                ->format('uuid')
-                ->title('ID')
-                ->build(),
-            'name' => SchemaBuilder::make()->type('string')->title('Name')->build(),
-            'manager_id' => SchemaBuilder::make()
-                ->type('string')
-                ->format('uuid')
-                ->title('Manager')
-                ->build(),
-        ])
+    schema: SchemaBuilder::object([
+        'id' => SchemaBuilder::string()
+            ->format('uuid')
+            ->title('ID')
+            ->build(),
+        'name' => SchemaBuilder::string()->title('Name')->build(),
+        'manager_id' => SchemaBuilder::string()
+            ->format('uuid')
+            ->title('Manager')
+            ->build(),
+    ])
         ->required(['id', 'name'])
         ->build(),
     connection: 'sales',

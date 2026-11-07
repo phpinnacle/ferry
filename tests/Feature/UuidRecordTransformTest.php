@@ -36,11 +36,11 @@ beforeEach(function () {
         'Keyed',
         'keyed',
         ['id'],
-        SchemaBuilder::make(Schema::object([
-            'id' => SchemaBuilder::make()->type('string')->format('uuid')->build(),
+        SchemaBuilder::object([
+            'id' => SchemaBuilder::string()->format('uuid')->build(),
             'tenant' => Schema::integer(),
             'name' => Schema::string(),
-        ]))
+        ])
             ->required(['id', 'name'])
             ->build(),
     ));

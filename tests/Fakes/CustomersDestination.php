@@ -3,7 +3,6 @@
 namespace PHPinnacle\Ferry\Tests\Fakes;
 
 use PHPinnacle\Ferry\Destinations\StaticDestination;
-use PHPinnacle\Jason\Schema;
 use PHPinnacle\Jason\SchemaBuilder;
 
 function customers_destination(?string $connectionName = null): StaticDestination
@@ -13,16 +12,15 @@ function customers_destination(?string $connectionName = null): StaticDestinatio
         label: 'Customers',
         table: 'customers',
         primaryKey: ['customer_id'],
-        schema: SchemaBuilder::make(Schema::object([
-            'customer_id' => SchemaBuilder::make()
-                ->type('string')
+        schema: SchemaBuilder::object([
+            'customer_id' => SchemaBuilder::string()
                 ->format('uuid')
                 ->title('Customer ID')
                 ->build(),
-            'name' => SchemaBuilder::make()->type('string')->title('Name')->build(),
-            'tax_number' => SchemaBuilder::make()->type('string')->title('Tax Number')->build(),
-            'is_active' => SchemaBuilder::make()->type('boolean')->title('Is Active')->build(),
-        ]))
+            'name' => SchemaBuilder::string()->title('Name')->build(),
+            'tax_number' => SchemaBuilder::string()->title('Tax Number')->build(),
+            'is_active' => SchemaBuilder::boolean()->title('Is Active')->build(),
+        ])
             ->required(['customer_id', 'name', 'tax_number'])
             ->build(),
         connection: $connectionName,
