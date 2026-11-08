@@ -92,7 +92,6 @@ class UpstreamForm
                     ->schema([
                         RecordTransforms::make('transforms')
                             ->hiddenLabel()
-                            // shortcut: Upstream rows vary by table; field-aware forms need table schemas.
                             ->inputSchema(JsonSchema::object()),
                     ]),
                 Section::make(__('phpinnacle-ferry::resources.upstream.sections.structure'))

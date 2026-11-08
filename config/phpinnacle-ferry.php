@@ -3,6 +3,11 @@
 return [
     'connection' => null,
     'queue' => null,
+    'events' => [
+        'bootstrap_servers' => env('FERRY_KAFKA_BOOTSTRAP_SERVERS'),
+        'group_id' => env('FERRY_KAFKA_EVENTS_GROUP_ID', 'ferry-eloquent'),
+        'shutdown_timeout' => 60, // Seconds to wait for each consumer before forcing shutdown.
+    ],
     'scheduler' => [
         'refresh' => 1, // Seconds; non-positive values disable status refresh.
     ],
@@ -12,13 +17,6 @@ return [
     //        'default' => 'App\\Models\\Tenant::DEFAULT'
     //    ],
     'kafka' => [
-        'events' => [
-            'bootstrap_servers' => env('FERRY_KAFKA_BOOTSTRAP_SERVERS'),
-            'group_id' => env('FERRY_KAFKA_EVENTS_GROUP_ID', 'ferry-eloquent'),
-            'topics' => [
-                // 'application.public.orders' => \App\Models\Order::class,
-            ],
-        ],
         'transforms' => [
             \PHPinnacle\Ferry\Transformations\DebeziumTimestamps::class,
             \PHPinnacle\Ferry\Transformations\Unwrap::class,

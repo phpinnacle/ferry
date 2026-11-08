@@ -64,7 +64,7 @@ class SourceFactory
             'slot.name' => $this->identifier('ferry_slot', $upstream),
             'publication.name' => $this->identifier('ferry_pub', $upstream),
             'publication.autocreate.mode' => 'filtered',
-            'topic.prefix' => $this->topicPrefix($upstream),
+            'topic.prefix' => $upstream->topicPrefix(),
             'binary.handling.mode' => 'hex',
             'include.unknown.datatypes' => 'true',
             'read.only' => 'true',
@@ -98,7 +98,7 @@ class SourceFactory
 
     public function topic(Upstream $upstream, StructureItem $object): string
     {
-        return sprintf('%s.%s', $this->topicPrefix($upstream), $this->table($upstream, $object));
+        return $upstream->topicName($this->table($upstream, $object));
     }
 
     /**
@@ -142,11 +142,6 @@ class SourceFactory
         $code = preg_replace('/[^a-z0-9]+/', '_', mb_strtolower($upstream->code)) ?? '';
 
         return mb_substr(sprintf('%s_%s', $prefix, trim($code, '_')), 0, self::IDENTIFIER_LENGTH);
-    }
-
-    private function topicPrefix(Upstream $upstream): string
-    {
-        return sprintf('ferry.%s', $upstream->code);
     }
 
     /**

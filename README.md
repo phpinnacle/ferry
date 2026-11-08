@@ -183,7 +183,7 @@ The preparation action in both the table and edit form requires the upstream's `
 ```php
 use PHPinnacle\Ferry\Models\Upstream;
 
-$upstream = Upstream::availableForReplication()->firstOrFail();
+$upstream = Upstream::available()->firstOrFail();
 
 foreach ($upstream->structure->publishedItems()->get() as $object) {
     $object->schema;     // PHPinnacle\Jason\Schema
@@ -696,32 +696,34 @@ FerryPlugin::make()->models(Order::class);
 
 Create an upstream with the **Eloquent** adapter, select a PostgreSQL application connection, and select registered models using that connection. The connection stays read-only when editing; the model selection can change. The adapter captures the models' physical tables, including schema and table prefixes, and every column. It omits Rosetta's custom converters and uses schemaless JSON even when Schema Registry is configured. Its empty structure does not provide replica mappings.
 
-Configure `phpinnacle-ferry.kafka.events` separately from the panel registration. Topic names must match the source connector; with upstream code `orders` and table `public.orders`, the generated topic is `ferry.orders.public.orders`:
+Configure `phpinnacle-ferry.events` for the event consumers. Topics are derived from each upstream's selected models and use the source connector's naming: upstream code `orders` and table `public.orders` produce `ferry.orders.public.orders`. Multiple models using the same physical table each receive its events:
 
 ```php
-// kafka.events in config/phpinnacle-ferry.php
+// Top-level events in config/phpinnacle-ferry.php
 'events' => [
     'bootstrap_servers' => env('FERRY_KAFKA_BOOTSTRAP_SERVERS'),
     'group_id' => env('FERRY_KAFKA_EVENTS_GROUP_ID', 'ferry-eloquent'),
-    'topics' => [
-        'ferry.orders.public.orders' => \App\Models\Order::class,
-    ],
+    'shutdown_timeout' => 60,
 ],
 ```
 
-Run the consumer as a separate long-running process:
+Run the supervisor as a separate long-running process:
 
 ```bash
 php artisan ferry:consume
 ```
 
-The consumer requires the original schemaless Debezium JSON envelope with raw database attributes. Leave source unwrap disabled. Avro, JSON schema/payload wrappers and logical-type decoding are unsupported; ensure streamed attribute representations match the model's casts. An empty `topics` map exits successfully without connecting to Kafka.
+It starts one consumer subprocess per active Eloquent upstream, using the configured group ID suffixed with `.<upstream ID>`. With no active Eloquent upstreams it exits successfully without connecting to Kafka. Run `php artisan ferry:consume --upstream=ID` to consume one active Eloquent upstream directly. Each consumer requires an applied source connector. Upstreams, model selections, topic subscriptions and consumer settings are read at startup; restart the supervisor after changing them.
+
+The consumer requires the original schemaless Debezium JSON envelope with raw database attributes. Leave source unwrap and topic routing disabled. Avro, JSON schema/payload wrappers and logical-type decoding are unsupported; ensure streamed attribute representations match the model's casts.
 
 `Services\EloquentEventPublisher::publish($modelClass, $payload)` reconstructs a model from the row images without fetching or saving database rows. Creates (`c`) dispatch `created`, then `saved`; updates (`u`) dispatch `updated`, then `saved`; deletes (`d`) dispatch `deleted`. Snapshot reads (`r`) and Kafka tombstones dispatch no events. Custom `$dispatchesEvents` mappings are honored. Models expose casts, original attributes and update changes to listeners; successful create/update processing synchronizes originals after `saved`.
 
 Provide complete database attributes in both `before` and `after` for updates, in `after` for creates, and in `before` for deletes. The publisher restores original attributes from `before`, current attributes from `after`, and calls `syncChanges()` for updates. Incomplete row images can produce incorrect `getOriginal()` and `wasChanged()` results. Configure [PostgreSQL replica identity](#replica-identity) to supply the required old values.
 
-Offsets are committed synchronously after processing each message. Decoding or listener failures stop the consumer before committing that message; restarting can deliver events again. Listeners must tolerate duplicate delivery. The consumer reads from the earliest available offset when its group has no saved offset, and closes on SIGINT or SIGTERM.
+Offsets are committed synchronously after all models for a message have been processed. Decoding or listener failures stop the consumer before committing that message; restarting can deliver events again. Listeners must tolerate duplicate delivery. The consumer reads from the earliest available offset when its group has no saved offset, and closes on SIGINT or SIGTERM. The supervisor forwards those signals to its consumers; an unexpected consumer exit fails the supervisor and stops the remaining consumers.
+
+The supervisor waits up to `phpinnacle-ferry.events.shutdown_timeout` seconds for each consumer to finish before forcing shutdown. The default is `60` seconds.
 
 ## Configuration
 

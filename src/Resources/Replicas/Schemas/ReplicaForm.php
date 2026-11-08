@@ -462,7 +462,7 @@ class ReplicaForm
     private static function upstreamOptions(): array
     {
         /** @var array<string, string> */
-        return Upstream::availableForReplication()
+        return Upstream::available()
             ->orderBy('name')
             ->pluck('name', 'id')
             ->all();

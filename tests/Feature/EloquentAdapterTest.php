@@ -13,6 +13,8 @@ use PHPinnacle\Ferry\Jobs\Structure\PrepareStructureJob;
 use PHPinnacle\Ferry\Models\Upstream;
 use PHPinnacle\Ferry\Resources\Upstreams\Schemas\UpstreamForm;
 use PHPinnacle\Ferry\Services\ConnectorManager;
+use PHPinnacle\Ferry\Services\EloquentAdapter;
+use PHPinnacle\Ferry\Services\EloquentModels;
 use PHPinnacle\Ferry\Services\OriginFactory;
 use PHPinnacle\Ferry\Tests\Fixtures\SchemaHost;
 use PHPinnacle\Ferry\Tests\TestCase;
@@ -34,6 +36,13 @@ class OtherConnectionOrder extends CapturedOrder
 }
 
 class UnregisteredOrder extends CapturedOrder {}
+
+class CapturedOrderSummary extends CapturedOrder {}
+
+class CapturedCustomer extends CapturedOrder
+{
+    protected $table = 'customers';
+}
 
 beforeEach(function () {
     config([
@@ -124,6 +133,24 @@ it('creates and starts capture without replicas and includes every column withou
         ])
         ->not->toHaveKeys(['column.include.list', 'converters', 'message.key.columns']);
     expect(app(ConnectorManager::class)->canSnapshot($upstream))->toBeTrue();
+});
+
+it('groups models sharing a physical table and captures each table once', function () {
+    $upstream = new Upstream([
+        'config' => [
+            'connection' => 'capture-models',
+            'models' => [CapturedOrder::class, CapturedOrderSummary::class, CapturedCustomer::class],
+        ],
+    ]);
+
+    $tables = EloquentModels::byTable($upstream->config['models']);
+    $capture = app(EloquentAdapter::class)->capture($upstream);
+
+    expect($tables)->toBe([
+        'sales.app_orders' => [CapturedOrder::class, CapturedOrderSummary::class],
+        'public.app_customers' => [CapturedCustomer::class],
+    ]);
+    expect($capture->tables)->toBe(['sales\\.app_orders', 'public\\.app_customers']);
 });
 
 it('hydrates saved model settings and preserves the connection while editing', function () {

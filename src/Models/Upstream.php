@@ -66,11 +66,55 @@ class Upstream extends Model implements HasLabel
     ];
 
     /** @return Builder<static> */
-    public static function availableForReplication(): Builder
+    public static function available(): Builder
     {
         return static::query()
             ->where('is_active', true)
             ->whereRelation('structure', 'status', StructureStatus::Ready);
+    }
+
+    /** @return Builder<static> */
+    public static function activeForAdapter(string $adapter): Builder
+    {
+        return static::query()->where('is_active', true)->where('adapter', $adapter);
+    }
+
+    public function topicPrefix(): string
+    {
+        return sprintf('ferry.%s', $this->code);
+    }
+
+    public function topicName(string $table): string
+    {
+        return sprintf('%s.%s', $this->topicPrefix(), $table);
+    }
+
+    public function getLabel(): string
+    {
+        return $this->name;
+    }
+
+    public function isInUse(): bool
+    {
+        return $this->replicas()->exists();
+    }
+
+    public function toggleActive(): void
+    {
+        $this->is_active = !$this->is_active;
+        $this->save();
+    }
+
+    /** @return HasMany<Replica, $this> */
+    public function replicas(): HasMany
+    {
+        return $this->hasMany(Replica::class, 'upstream_id');
+    }
+
+    /** @return HasOne<Structure, $this> */
+    public function structure(): HasOne
+    {
+        return $this->hasOne(Structure::class, 'upstream_id');
     }
 
     /** @param array{touch?: bool|null} $options */
@@ -92,33 +136,5 @@ class Upstream extends Model implements HasLabel
 
             return parent::delete();
         });
-    }
-
-    public function getLabel(): string
-    {
-        return $this->name;
-    }
-
-    public function isInUse(): bool
-    {
-        return $this->replicas()->exists();
-    }
-
-    /** @return HasMany<Replica, $this> */
-    public function replicas(): HasMany
-    {
-        return $this->hasMany(Replica::class, 'upstream_id');
-    }
-
-    public function toggleActive(): void
-    {
-        $this->is_active = !$this->is_active;
-        $this->save();
-    }
-
-    /** @return HasOne<Structure, $this> */
-    public function structure(): HasOne
-    {
-        return $this->hasOne(Structure::class, 'upstream_id');
     }
 }

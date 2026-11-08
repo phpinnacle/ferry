@@ -71,22 +71,17 @@ class EloquentAdapter implements Adapter
 
     public function capture(Upstream $upstream): CapturePlan
     {
-        $tables = [];
-
         /** @var array{connection: string, models: list<class-string<Model>>} $config */
         $config = $upstream->config;
-
-        foreach ($config['models'] as $class) {
-            $model = new $class;
-            $connection = $model->getConnection();
-            [$schema, $table] = $connection->getSchemaBuilder()->parseSchemaAndTable($model->getTable(), true);
-            $tables[] = preg_quote($schema . '.' . $connection->getTablePrefix() . $table, '/');
-        }
+        $tables = array_map(
+            fn (string $table) => preg_quote($table, '/'),
+            array_keys(EloquentModels::byTable($config['models'])),
+        );
 
         /** @var array{driver: string, ...} $connection */
         $connection = DB::connection($config['connection'])->getConfig();
 
-        return new CapturePlan($connection, array_values(array_unique($tables)), converters: [
+        return new CapturePlan($connection, $tables, converters: [
             'key.converter' => 'org.apache.kafka.connect.json.JsonConverter',
             'key.converter.schemas.enable' => 'false',
             'value.converter' => 'org.apache.kafka.connect.json.JsonConverter',
@@ -96,7 +91,6 @@ class EloquentAdapter implements Adapter
 
     public function prepare(Upstream $upstream): StructurePlan
     {
-        // shortcut: This sketch captures tables only; publish physical schemas when adding replica support.
         return new StructurePlan(0);
     }
 
