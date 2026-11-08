@@ -10,6 +10,7 @@ use PHPinnacle\Ferry\Origins\Kafka\SourceFactory;
 use PHPinnacle\Ferry\Origins\Kafka\TransformFactory;
 use PHPinnacle\Ferry\Services\DestinationFactory;
 use PHPinnacle\Ferry\Services\ReplicaSchemaResolver;
+use PHPinnacle\Ferry\Services\RosettaAdapter;
 use PHPinnacle\Ferry\Services\TransformRegistry;
 use PHPinnacle\Ferry\Tests\Fakes\Transform as FakeTransform;
 use PHPinnacle\Ferry\Tests\TestCase;
@@ -110,6 +111,7 @@ it('captures an unbound field filter without writing it or capturing unused fiel
     $builder = app(SourceFactory::class);
     $source = $builder->source(
         $upstream,
+        app(RosettaAdapter::class)->capture($upstream),
         config('phpinnacle-ferry.origins.kafka.source'),
     );
     $config = new SinkConfigFactory($factory)->make(
@@ -156,6 +158,7 @@ it('keeps building the shared source when a replica refers to a transform that i
     app()->instance(TransformRegistry::class, new TransformRegistry);
     expect(app(SourceFactory::class)->source(
         $upstream,
+        app(RosettaAdapter::class)->capture($upstream),
         config('phpinnacle-ferry.origins.kafka.source'),
     ))
         ->toMatchArray(['column.include.list' => 'public._reference0._idrref,public._reference0.name']);
@@ -279,6 +282,7 @@ it('scopes and transforms independently selected reference components using thei
     $source = app(SourceFactory::class);
     $config = $source->source(
         $upstream,
+        app(RosettaAdapter::class)->capture($upstream),
         config('phpinnacle-ferry.origins.kafka.source'),
     );
     $sink = new SinkConfigFactory(app(TransformFactory::class))->make(

@@ -16,10 +16,6 @@ class PrepareStructureJob extends StructureJob
 
         $key = $structure->upstream->adapter;
 
-        if ($key === null) {
-            return;
-        }
-
         if ($structure->readPlan() === null) {
             $plan = $adapters->getOrFail($key)->prepare($structure->upstream);
 

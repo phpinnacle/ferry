@@ -11,7 +11,6 @@ use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
-use PHPinnacle\Ferry\Enums\Driver;
 use PHPinnacle\Ferry\Enums\StructureStatus;
 use PHPinnacle\Ferry\Models\Concerns\HasConnector;
 use PHPinnacle\Ferry\Observers\UpstreamObserver;
@@ -22,8 +21,7 @@ use PHPinnacle\Ferry\Observers\UpstreamObserver;
  * @property string $name
  * @property string $code
  * @property string $origin
- * @property string|null $adapter
- * @property Driver $driver
+ * @property string $adapter
  * @property array<string, mixed> $config
  * @property bool $is_active
  * @property CarbonImmutable $created_at
@@ -39,17 +37,13 @@ class Upstream extends Model implements HasLabel
     use HasUuids;
     use SoftDeletes;
 
-    private const array CREDENTIAL_ATTRIBUTES = ['driver', 'config'];
-
     protected $table = 'upstreams';
 
     protected $attributes = [
         'is_active' => true,
-        'adapter' => null,
     ];
 
     protected $casts = [
-        'driver' => Driver::class,
         'config' => 'encrypted:array',
         'is_active' => 'bool',
     ];
@@ -61,7 +55,6 @@ class Upstream extends Model implements HasLabel
         'code',
         'origin',
         'adapter',
-        'driver',
         'config',
         'is_active',
     ];
@@ -93,19 +86,6 @@ class Upstream extends Model implements HasLabel
 
             return parent::delete();
         });
-    }
-
-    public function credentialsChanged(): bool
-    {
-        return $this->wasChanged(self::CREDENTIAL_ATTRIBUTES);
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    public function credentials(): array
-    {
-        return [...$this->config, 'driver' => $this->driver->value];
     }
 
     public function getLabel(): string

@@ -17,7 +17,6 @@ use PHPinnacle\Ferry\Models\Upstream;
 use PHPinnacle\Ferry\Resources\Actions\RefreshConnectorStatusesAction;
 use PHPinnacle\Ferry\Resources\Actions\RequestSnapshotAction;
 use PHPinnacle\Ferry\Resources\Upstreams\Actions\PrepareStructureAction;
-use PHPinnacle\Ferry\Resources\Upstreams\Actions\TestUpstreamAction;
 use PHPinnacle\Ferry\Resources\Upstreams\UpstreamResource;
 
 class UpstreamTable
@@ -38,8 +37,8 @@ class UpstreamTable
                     ->label(__('phpinnacle-ferry::resources.upstream.fields.code'))
                     ->searchable()
                     ->sortable(),
-                TextColumn::make('driver')
-                    ->label(__('phpinnacle-ferry::resources.upstream.fields.driver'))
+                TextColumn::make('adapter')
+                    ->label(__('phpinnacle-ferry::resources.upstream.fields.adapter'))
                     ->badge()
                     ->sortable(),
                 TextColumn::make('structure.status')
@@ -69,7 +68,6 @@ class UpstreamTable
             ])
             ->recordActions([
                 RequestSnapshotAction::make()->iconButton(),
-                TestUpstreamAction::table(),
                 PrepareStructureAction::table(),
                 EditAction::make()
                     ->label(__('phpinnacle-ferry::resources.upstream.actions.update'))

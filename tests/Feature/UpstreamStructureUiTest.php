@@ -87,10 +87,3 @@ it('warns instead of queueing a second preparation', function () {
 
     Queue::assertPushed(PrepareStructureJob::class, 1);
 });
-
-it('hides the preparation action without a selected adapter', function () {
-    $upstream = TestCase::makeUpstream(['adapter' => null]);
-
-    expect(PrepareStructureAction::table()->record($upstream)->isVisible())->toBeFalse();
-    Queue::assertNotPushed(PrepareStructureJob::class);
-});

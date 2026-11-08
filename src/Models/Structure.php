@@ -55,7 +55,6 @@ class Structure extends Model
     {
         return self::query()
             ->whereKey($upstreamId)
-            ->whereHas('upstream', fn (Builder $query) => $query->whereNotNull('adapter'))
             ->where('status', StructureStatus::Preparing)
             ->where('run_id', $runId);
     }
@@ -80,10 +79,7 @@ class Structure extends Model
 
     public function canPrepare(int $staleAfter): bool
     {
-        return (
-            $this->upstream->adapter !== null
-            && ($this->status !== StructureStatus::Preparing || $this->structureIsStale($staleAfter))
-        );
+        return $this->status !== StructureStatus::Preparing || $this->structureIsStale($staleAfter);
     }
 
     public function wasPublished(): bool
@@ -294,8 +290,8 @@ class Structure extends Model
 
     private function beginStructureRun(): void
     {
-        $this->status = $this->upstream->adapter === null ? StructureStatus::Pending : StructureStatus::Preparing;
-        $this->run_id = $this->status === StructureStatus::Preparing ? $this->newUniqueId() : null;
+        $this->status = StructureStatus::Preparing;
+        $this->run_id = $this->newUniqueId();
         $this->processed = 0;
         $this->estimated = 0;
         $this->context = null;

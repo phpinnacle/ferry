@@ -41,8 +41,7 @@ return new class extends Migration {
             $table->string('name');
             $table->string('code')->unique();
             $table->string('origin');
-            $table->string('adapter')->nullable();
-            $table->string('driver');
+            $table->string('adapter');
             $table->text('config');
             $table->boolean('is_active')->default(true);
             $table->timestamps();

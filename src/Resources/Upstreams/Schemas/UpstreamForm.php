@@ -13,7 +13,6 @@ use Filament\Schemas\Schema;
 use PHPinnacle\Common\Concerns\FormSlug;
 use PHPinnacle\Common\Forms\ActiveSelect;
 use PHPinnacle\Ferry\Enums\ConnectorStatus;
-use PHPinnacle\Ferry\Enums\Driver;
 use PHPinnacle\Ferry\Models\Upstream;
 use PHPinnacle\Ferry\Resources\Upstreams\Actions\PrepareStructureAction;
 use PHPinnacle\Ferry\Services\OriginFactory;
@@ -30,7 +29,11 @@ class UpstreamForm
                     $component->getChildSchemas()['default']->fill($record->config);
                 }
             })
-            ->schema(fn (Get $get) => $get->enum('driver', Driver::class, isNullable: true)?->schema() ?? []);
+            ->schema(function (Get $get, StructureAdapterRegistry $adapters, ?Upstream $record) {
+                $key = $record->adapter ?? $get->string('adapter', isNullable: true);
+
+                return $key === null ? [] : $adapters->getOrFail($key)->form();
+            });
 
         return $schema
             ->columns(1)
@@ -47,28 +50,33 @@ class UpstreamForm
                     )
                     ->extraAttributes(['role' => 'alert']),
                 Section::make(__('phpinnacle-ferry::resources.upstream.sections.general'))
-                    ->columns(3)
+                    ->columns(6)
                     ->schema([
                         TextInput::make('name')
+                            ->columnSpan(['lg' => 3])
                             ->label(__('phpinnacle-ferry::resources.upstream.fields.name'))
                             ->maxLength(255)
                             ->required()
                             ->live(onBlur: true)
                             ->afterStateUpdated(FormSlug::make('code')),
                         TextInput::make('code')
+                            ->columnSpan(['lg' => 2])
                             ->label(__('phpinnacle-ferry::resources.upstream.fields.code'))
                             ->maxLength(255)
                             ->scopedUnique(ignoreRecord: true)
                             ->required(),
                         ActiveSelect::make(),
                         Select::make('origin')
+                            ->columnSpan(['lg' => 3])
                             ->label(__('phpinnacle-ferry::resources.upstream.fields.origin'))
                             ->options(fn (OriginFactory $origins) => $origins->options())
                             ->required()
                             ->disabledOn('edit'),
-                        Select::make('driver')
-                            ->label(__('phpinnacle-ferry::resources.upstream.fields.driver'))
-                            ->options(Driver::class)
+                        Select::make('adapter')
+                            ->columnSpan(['lg' => 3])
+                            ->label(__('phpinnacle-ferry::resources.upstream.fields.adapter'))
+                            ->placeholder(__('phpinnacle-ferry::resources.upstream.placeholders.adapter'))
+                            ->options(fn (StructureAdapterRegistry $adapters) => $adapters->options())
                             ->required()
                             ->disabledOn('edit')
                             ->live()
@@ -76,11 +84,6 @@ class UpstreamForm
                                 $config->clearCachedChildSchemas();
                                 $config->getChildSchemas()['default']->fill();
                             }),
-                        Select::make('adapter')
-                            ->label(__('phpinnacle-ferry::resources.upstream.fields.adapter'))
-                            ->placeholder(__('phpinnacle-ferry::resources.upstream.placeholders.adapter'))
-                            ->options(fn (StructureAdapterRegistry $adapters) => $adapters->options())
-                            ->disabledOn('edit'),
                     ]),
                 $config,
                 Section::make(__('phpinnacle-ferry::resources.upstream.sections.structure'))

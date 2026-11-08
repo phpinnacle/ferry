@@ -5,8 +5,8 @@ namespace PHPinnacle\Ferry\Origins;
 use Illuminate\Validation\ValidationException;
 use LogicException;
 use PHPinnacle\Ferry\Contracts\Origin;
+use PHPinnacle\Ferry\Data\CapturePlan;
 use PHPinnacle\Ferry\Enums\ConnectorStatus;
-use PHPinnacle\Ferry\Enums\Driver as DatabaseDriver;
 use PHPinnacle\Ferry\Models\Connector;
 use PHPinnacle\Ferry\Models\Replica;
 use PHPinnacle\Ferry\Models\StructureItem;
@@ -15,6 +15,7 @@ use PHPinnacle\Ferry\Origins\Kafka\KafkaConnectFactory;
 use PHPinnacle\Ferry\Origins\Kafka\SinkConfigFactory;
 use PHPinnacle\Ferry\Origins\Kafka\SourceFactory;
 use PHPinnacle\Ferry\Services\DestinationFactory;
+use PHPinnacle\Ferry\Services\StructureAdapterRegistry;
 use PHPinnacle\Franz\Exception\ApiException;
 use PHPinnacle\Franz\Request\ConnectorConfigRequest;
 
@@ -42,6 +43,7 @@ class KafkaOrigin implements Origin
         private readonly SourceFactory $sources,
         private readonly DestinationFactory $destinations,
         private readonly SinkConfigFactory $sinks,
+        private readonly StructureAdapterRegistry $adapters,
     ) {}
 
     public function name(): string
@@ -52,10 +54,11 @@ class KafkaOrigin implements Origin
     public function make(Upstream|Replica $source): Connector
     {
         $upstream = $source instanceof Upstream ? $source : $source->upstream;
-        $this->assertPgsqlDriver($upstream);
+        $capture = $this->adapters->getOrFail($upstream->adapter)->capture($upstream);
+        $this->assertPgsqlDriver($capture);
 
         if ($source instanceof Upstream) {
-            $config = $this->sources->source($source, $this->config['source']);
+            $config = $this->sources->source($source, $capture, $this->config['source']);
         } else {
             $object = $this->sourceObject($source);
             $config = $this->sinks->make(
@@ -196,11 +199,13 @@ class KafkaOrigin implements Origin
             ->updateConfig(new ConnectorConfigRequest($config));
     }
 
-    private function assertPgsqlDriver(Upstream $upstream): void
+    private function assertPgsqlDriver(CapturePlan $capture): void
     {
-        if ($upstream->driver !== DatabaseDriver::Pgsql) {
+        $driver = $capture->config['driver'];
+
+        if ($driver !== 'pgsql') {
             throw new LogicException(__('phpinnacle-ferry::resources.upstream.errors.unsupported_driver', [
-                'driver' => $upstream->driver->getLabel(),
+                'driver' => $driver,
             ]));
         }
     }

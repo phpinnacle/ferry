@@ -17,15 +17,15 @@ class UpstreamFactory
     ) {}
 
     /**
-     * @param  array<string, mixed>  $credentials
+     * @param  array<string, mixed>  $config
      */
-    public function make(array $credentials): DatabaseConnection
+    public function make(array $config): DatabaseConnection
     {
         /** @var array<int, mixed> $options */
-        $options = $credentials['options'] ?? [];
+        $options = $config['options'] ?? [];
 
         return $this->factory->make([
-            ...$credentials,
+            ...$config,
             'options' => $options + [PDO::ATTR_TIMEOUT => Config::integer('phpinnacle-ferry.timeout')],
         ]);
     }

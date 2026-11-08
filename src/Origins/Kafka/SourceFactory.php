@@ -2,24 +2,16 @@
 
 namespace PHPinnacle\Ferry\Origins\Kafka;
 
+use PHPinnacle\Ferry\Data\CapturePlan;
 use PHPinnacle\Ferry\Models\Replica;
 use PHPinnacle\Ferry\Models\StructureItem;
 use PHPinnacle\Ferry\Models\Upstream;
-use PHPinnacle\Ferry\Services\DestinationFactory;
-use PHPinnacle\Ferry\Services\ReplicaSchemaResolver;
-use PHPinnacle\Ferry\Services\TransformRegistry;
 
 class SourceFactory
 {
     private const string DEFAULT_SCHEMA = 'public';
 
     private const int IDENTIFIER_LENGTH = 63;
-
-    public function __construct(
-        private readonly TransformRegistry $transforms,
-        private readonly DestinationFactory $destinations,
-        private readonly ReplicaSchemaResolver $schemas,
-    ) {}
 
     /**
      * @param array{
@@ -32,92 +24,29 @@ class SourceFactory
      *
      * @return array<string, string>
      */
-    public function source(Upstream $upstream, array $config): array
+    public function source(Upstream $upstream, CapturePlan $capture, array $config): array
     {
-        $replicas = $upstream->replicas()->get();
-        $tables = [];
-        $columns = [];
-        $keys = [];
-        $converterColumns = [];
+        $scope = $capture->isEmpty()
+            ? ['table.include.list' => '(?!)']
+            : [
+                'table.include.list' => implode(',', $capture->tables),
+                ...($capture->columns !== null ? ['column.include.list' => implode(',', $capture->columns)] : []),
+                ...($capture->keys !== [] ? ['message.key.columns' => implode(';', $capture->keys)] : []),
+            ];
 
-        $objects = $upstream
-            ->structure
-            ->publishedItems()
-            ->whereIn('external_id', $replicas->pluck('source')->all())
-            ->get()
-            ->keyBy('external_id');
-
-        foreach ($replicas as $replica) {
-            $object = $objects->get($replica->source);
-
-            if (!$object instanceof StructureItem) {
-                continue;
-            }
-
-            $table = $this->table($upstream, $object);
-
-            $tables[$table] = true;
-
-            $keyMap = $replica->mapping === []
-                ? []
-                : $replica->primaryKeyMap($this->destinations->resolve($replica)->getPrimaryKey());
-            $sourceColumns = $this->schemas->keyPlan($replica, array_keys($keyMap))['sources'];
-
-            if ($sourceColumns !== []) {
-                $keys[$table] = sprintf('%s:%s', $table, implode(',', $sourceColumns));
-            }
-
-            foreach ($replica->mapping as $mapping) {
-                if ($mapping->source !== null && $mapping->isUsed()) {
-                    if ($object->field($mapping->source) !== null) {
-                        $sourceColumns[] = $mapping->source;
-                    }
-                }
-            }
-
-            foreach ($replica->transforms as $setting) {
-                foreach ($this->transforms
-                    ->get($setting->type)
-                    ->sourceFields($setting->data) as $column) {
-                    if ($object->field($column) !== null) {
-                        $sourceColumns[] = $column;
-                    }
-                }
-            }
-
-            foreach (array_unique($sourceColumns) as $column) {
-                $qualifiedColumn = sprintf('%s.%s', $table, $column);
-                $columns[$qualifiedColumn] = true;
-                /** @var string|null $converter */
-                $converter = $object->field($column)?->annotation('x-ferry-converter');
-
-                if ($converter !== null) {
-                    $converterColumns[$converter][$qualifiedColumn] = true;
-                }
-            }
-        }
-
-        $scope = $tables !== []
-            ? [
-                'table.include.list' => implode(',', array_keys($tables)),
-                'column.include.list' => implode(',', array_keys($columns)),
-                ...($keys !== [] ? ['message.key.columns' => implode(';', $keys)] : []),
-            ]
-            : ['table.include.list' => '(?!)'];
-
-        /** @var array{host: string, port: int, username: string, password: string, database: string} $credentials */
-        $credentials = $upstream->config;
+        /** @var array{host: string, port: int, username: string, password: string, database: string} $connection */
+        $connection = $capture->config;
 
         $signal = $config['signal'];
 
         return [
             'connector.class' => 'io.debezium.connector.postgresql.PostgresConnector',
             'tasks.max' => '1',
-            'database.hostname' => $credentials['host'],
-            'database.port' => (string) $credentials['port'],
-            'database.user' => $credentials['username'],
-            'database.password' => $credentials['password'],
-            'database.dbname' => $credentials['database'],
+            'database.hostname' => $connection['host'],
+            'database.port' => (string) $connection['port'],
+            'database.user' => $connection['username'],
+            'database.password' => $connection['password'],
+            'database.dbname' => $connection['database'],
             'plugin.name' => 'pgoutput',
             'slot.name' => $this->identifier('ferry_slot', $upstream),
             'publication.name' => $this->identifier('ferry_pub', $upstream),
@@ -131,7 +60,11 @@ class SourceFactory
             'signal.kafka.bootstrap.servers' => $signal['bootstrap_servers'],
             'signal.kafka.groupId' => $signal['group_id'],
             ...$scope,
-            ...self::converters($config['converters'], $converterColumns),
+            ...(
+                $capture->converterColumns === null
+                    ? []
+                    : self::converters($config['converters'], $capture->converterColumns)
+            ),
             ...TransformFactory::configuration($config['transforms']),
             ...$config['options'],
         ];
@@ -163,7 +96,11 @@ class SourceFactory
      */
     public function newlyScopedTables(array $previousConfig, array $config): array
     {
-        $tables = [];
+        $tables = array_fill_keys(array_diff(
+            explode(',', $config['table.include.list'] ?? ''),
+            explode(',', $previousConfig['table.include.list'] ?? ''),
+        ), true);
+        unset($tables[''], $tables['(?!)']);
 
         foreach (array_diff($this->columns($config), $this->columns($previousConfig)) as $column) {
             $parts = explode('.', $column);

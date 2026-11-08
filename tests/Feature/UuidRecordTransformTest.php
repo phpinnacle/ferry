@@ -17,6 +17,7 @@ use PHPinnacle\Ferry\Origins\Kafka\TransformFactory;
 use PHPinnacle\Ferry\Resources\Replicas\Schemas\ReplicaForm;
 use PHPinnacle\Ferry\Services\DestinationFactory;
 use PHPinnacle\Ferry\Services\ReplicaSchemaResolver;
+use PHPinnacle\Ferry\Services\RosettaAdapter;
 use PHPinnacle\Ferry\Tests\Fixtures\SchemaHost;
 use PHPinnacle\Ferry\Tests\TestCase;
 use PHPinnacle\Jason\Schema;
@@ -171,7 +172,11 @@ it('creates and persists one UUID key through the tabbed record builder for both
     expect($edit->getComponentByStatePath('mapping')->getSources()[0]['id'])->toBe('record_id');
 
     $source = app(SourceFactory::class);
-    $capture = $source->source($this->upstream, config('phpinnacle-ferry.origins.kafka.source'));
+    $capture = $source->source(
+        $this->upstream,
+        app(RosettaAdapter::class)->capture($this->upstream),
+        config('phpinnacle-ferry.origins.kafka.source'),
+    );
     expect($capture['message.key.columns'])->toBe('public._reference0:row_id,tenant_id');
     expect($capture['column.include.list'])
         ->toBe(
@@ -245,7 +250,11 @@ it('saves a UUID from an ordinary field independently of the source primary key'
     $replica->update($form->getState());
     $replica->refresh();
     expect($replica->transforms[0]->data)->toBe(['output' => 'id', 'fields' => ["$['name']"]]);
-    expect(app(SourceFactory::class)->source($this->upstream, config('phpinnacle-ferry.origins.kafka.source')))
+    expect(app(SourceFactory::class)->source(
+        $this->upstream,
+        app(RosettaAdapter::class)->capture($this->upstream),
+        config('phpinnacle-ferry.origins.kafka.source'),
+    ))
         ->toMatchArray(['message.key.columns' => 'public._reference0:name']);
     $sink = app(SinkConfigFactory::class)->make(
         app(DestinationFactory::class)->resolve($replica),

@@ -7,6 +7,7 @@ use Illuminate\Container\Container;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Http;
 use PHPinnacle\Ferry\Contracts\Transform;
+use PHPinnacle\Ferry\Services\EloquentAdapter;
 use PHPinnacle\Ferry\Services\OriginFactory;
 use PHPinnacle\Ferry\Services\RosettaAdapter;
 use PHPinnacle\Ferry\Services\StructureAdapterRegistry;
@@ -67,7 +68,10 @@ class FerryServiceProvider extends PackageServiceProvider
 
         $this->app->singleton(StructureAdapterRegistry::class, function (Container $app) {
             $registry = new StructureAdapterRegistry;
-            $registry->register($app->make(RosettaAdapter::class));
+            $registry->register(
+                $app->make(RosettaAdapter::class),
+                $app->make(EloquentAdapter::class),
+            );
 
             return $registry;
         });

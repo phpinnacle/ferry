@@ -20,6 +20,7 @@ class ConnectorManager
     public function __construct(
         private readonly OriginFactory $origins,
         private readonly ReplicaTableManager $tables,
+        private readonly StructureAdapterRegistry $adapters,
     ) {}
 
     public function save(Replica $replica): void
@@ -46,7 +47,10 @@ class ConnectorManager
 
     public function refresh(Upstream $upstream): void
     {
-        if ($upstream->connector !== null) {
+        if (
+            $upstream->connector !== null
+            || !$this->adapters->getOrFail($upstream->adapter)->capture($upstream)->isEmpty()
+        ) {
             $this->store($upstream, $this->origins->for($upstream)->make($upstream));
         }
     }
@@ -98,7 +102,11 @@ class ConnectorManager
         return (
             $upstream->connector?->status === ConnectorStatus::Running
             && $upstream->connector->applied_config !== null
-            && ($owner instanceof Replica ? $owner->isRunning() : $upstream->replicas()->exists())
+            && (
+                $owner instanceof Replica
+                    ? $owner->isRunning()
+                    : !$this->adapters->getOrFail($upstream->adapter)->capture($upstream)->isEmpty()
+            )
         );
     }
 
@@ -201,7 +209,7 @@ class ConnectorManager
                 }
 
                 if ($source !== null) {
-                    $this->run($source, $upstream->replicas()->exists());
+                    $this->run($source, !$this->adapters->getOrFail($upstream->adapter)->capture($upstream)->isEmpty());
                 }
             });
     }

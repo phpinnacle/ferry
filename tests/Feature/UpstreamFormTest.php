@@ -6,7 +6,6 @@ use Filament\Schemas\Schema;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Validation\ValidationException;
 use PHPinnacle\Ferry\Data\UpstreamTestResult;
-use PHPinnacle\Ferry\Enums\Driver;
 use PHPinnacle\Ferry\Enums\SSLMode;
 use PHPinnacle\Ferry\Enums\StructureStatus;
 use PHPinnacle\Ferry\Models\Upstream;
@@ -41,8 +40,8 @@ function ferry_upstream_form(?Upstream $record = null): Schema
     $schema->fill([
         'name' => 'Form upstream',
         'code' => 'form-upstream',
-        'driver' => 'pgsql',
         'config' => [
+            'driver' => 'pgsql',
             'host' => 'localhost',
             'port' => 5432,
             'database' => 'source',
@@ -51,7 +50,7 @@ function ferry_upstream_form(?Upstream $record = null): Schema
         ],
         'is_active' => true,
         'origin' => $record?->origin,
-        'adapter' => $record?->adapter,
+        'adapter' => $record->adapter ?? 'rosetta',
     ]);
 
     return $schema;
@@ -102,12 +101,11 @@ it('keeps the saved driver and origin while updating connection settings', funct
     $upstream = TestCase::makeUpstream(['origin' => 'analytics']);
     $schema = ferry_upstream_form($upstream);
     $origin = $schema->getComponentByStatePath('origin');
-    $driver = $schema->getComponentByStatePath('driver');
+    $driver = $schema->getComponentByStatePath('config.driver');
 
     expect($origin->isDisabled())->toBeTrue()->and($driver->isDisabled())->toBeTrue();
 
     $origin->state('kafka');
-    $driver->state('sqlsrv');
     $schema->getComponentByStatePath('config.host')->state('replica.example');
     $state = $schema->getState();
     expect($state)->not->toHaveKey('origin')->not->toHaveKey('driver');
@@ -115,15 +113,15 @@ it('keeps the saved driver and origin while updating connection settings', funct
 
     expect($upstream->fresh()->origin)
         ->toBe('analytics')
-        ->and($upstream->fresh()->driver)
-        ->toBe(Driver::Pgsql)
+        ->and($upstream->fresh()->config['driver'])
+        ->toBe('pgsql')
         ->and($upstream->fresh()->config['host'])
         ->toBe('replica.example');
 });
 
 it('uses the selected driver fields and defaults when changing drivers', function () {
     $schema = ferry_upstream_form();
-    $driver = $schema->getComponentByStatePath('driver');
+    $driver = $schema->getComponentByStatePath('config.driver');
 
     expect($schema->getComponentByStatePath('config.schema'))->not->toBeNull();
     $driver->state('sqlsrv')->callAfterStateUpdated();
@@ -137,7 +135,7 @@ it('uses the selected driver fields and defaults when changing drivers', functio
         ->and($schema->getComponentByStatePath('config.sslmode'))
         ->toBeNull();
 
-    $schema->getComponentByStatePath('driver')->state('pgsql')->callAfterStateUpdated();
+    $schema->getComponentByStatePath('config.driver')->state('pgsql')->callAfterStateUpdated();
 
     expect($schema->getComponentByStatePath('config.port')->getState())
         ->toBe(5432)
@@ -163,7 +161,7 @@ it('saves PostgreSQL SSL modes as native connection values', function (?string $
 
     $upstream = Upstream::create($schema->getState())->fresh();
 
-    expect($upstream->config['sslmode'])->toBe($mode)->and($upstream->credentials()['sslmode'])->toBe($mode);
+    expect($upstream->config['sslmode'])->toBe($mode);
 })->with(['driver default' => [null], 'explicit SSL mode' => ['verify-full']]);
 
 it('rejects invalid PostgreSQL SSL modes', function (mixed $mode) {
@@ -238,31 +236,27 @@ it('validates connection settings before testing an upstream', function () {
         );
 });
 
-it('offers the registered adapter and persists its optional key', function (?string $key) {
+it('offers registered adapters and persists the selected key', function () {
     $schema = ferry_upstream_form();
     $schema->getComponentByStatePath('origin')->state('kafka');
     $field = $schema->getComponentByStatePath('adapter');
     expect($field->getOptions())
-        ->toBe(['rosetta' => '1C Rosetta'])
+        ->toBe(['rosetta' => '1C Rosetta', 'eloquent' => 'Eloquent'])
         ->and($field->getDefaultState())
         ->toBeNull()
         ->and($field->isDisabled())
         ->toBeFalse();
-    $field->state($key);
+    $field->state('rosetta');
 
     $upstream = Upstream::create($schema->getState())->fresh();
 
     expect($upstream->adapter)
-        ->toBe($key)
+        ->toBe('rosetta')
         ->and($upstream->structure->status)
-        ->toBe(
-            $key === null
-                ? StructureStatus::Pending
-                : StructureStatus::Preparing,
-        );
-})->with([null, 'rosetta']);
+        ->toBe(StructureStatus::Preparing);
+});
 
-it('rejects unregistered adapter selections', function (mixed $selection) {
+it('rejects missing or unregistered adapter selections', function (mixed $selection) {
     $schema = ferry_upstream_form();
     $schema->getComponentByStatePath('origin')->state('kafka');
     $schema->getLivewire()->data['adapter'] = $selection;
@@ -271,17 +265,17 @@ it('rejects unregistered adapter selections', function (mixed $selection) {
         ->toThrow(
             fn (ValidationException $exception) => expect($exception->errors())->toHaveKey('data.adapter'),
         );
-})->with(['unknown' => ['missing'], 'number' => [42]]);
+})->with(['missing' => [null], 'unknown' => ['missing'], 'number' => [42]]);
 
-it('keeps the saved adapter when edit state attempts to select or clear it', function (?string $key) {
-    $upstream = TestCase::makeUpstream(['adapter' => $key === null ? 'rosetta' : null]);
+it('keeps the saved adapter and its fields when edit state attempts to select another adapter', function () {
+    $upstream = TestCase::makeUpstream();
     $schema = ferry_upstream_form($upstream);
     $field = $schema->getComponentByStatePath('adapter');
     expect($field->isDisabled())->toBeTrue();
-    $field->state($key);
+    $field->state('eloquent');
     $state = $schema->getState();
     expect($state)->not->toHaveKey('adapter');
     $upstream->update($state);
 
-    expect($upstream->fresh()->adapter)->toBe($key === null ? 'rosetta' : null);
-})->with([null, 'rosetta']);
+    expect($upstream->fresh()->adapter)->toBe('rosetta');
+});

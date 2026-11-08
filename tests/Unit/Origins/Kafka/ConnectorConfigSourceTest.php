@@ -8,6 +8,7 @@ use PHPinnacle\Ferry\Enums\ReplicaStatus;
 use PHPinnacle\Ferry\Enums\StructureStatus;
 use PHPinnacle\Ferry\Origins\Kafka\SourceFactory;
 use PHPinnacle\Ferry\Services\DestinationFactory;
+use PHPinnacle\Ferry\Services\RosettaAdapter;
 use PHPinnacle\Ferry\Tests\TestCase;
 use PHPinnacle\Jason\Schema;
 use PHPinnacle\Jason\SchemaBuilder;
@@ -39,6 +40,7 @@ it('builds a debezium postgres connector config scoped to the tracked replicas',
     $builder = app(SourceFactory::class);
     $config = $builder->source(
         $upstream,
+        app(RosettaAdapter::class)->capture($upstream),
         config('phpinnacle-ferry.origins.kafka.source'),
     );
 
@@ -123,7 +125,11 @@ it('groups captured column annotations across replicas without inferring convert
         ],
     ], ['status' => ReplicaStatus::Pause]);
 
-    $config = app(SourceFactory::class)->source($upstream, config('phpinnacle-ferry.origins.kafka.source'));
+    $config = app(SourceFactory::class)->source(
+        $upstream,
+        app(RosettaAdapter::class)->capture($upstream),
+        config('phpinnacle-ferry.origins.kafka.source'),
+    );
 
     expect($config['uuid.columns'])
         ->toBe('warehouse.records.record_id,warehouse.records.filter_id')
@@ -153,7 +159,11 @@ it('builds source transforms from the origin configuration in order', function (
     ]);
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
 
-    $config = app(SourceFactory::class)->source($upstream, config('phpinnacle-ferry.origins.kafka.source'));
+    $config = app(SourceFactory::class)->source(
+        $upstream,
+        app(RosettaAdapter::class)->capture($upstream),
+        config('phpinnacle-ferry.origins.kafka.source'),
+    );
 
     expect($config)
         ->toMatchArray([
@@ -171,7 +181,11 @@ it('disables source transforms when the origin transform map is empty', function
     config(['phpinnacle-ferry.origins.kafka.source.transforms' => []]);
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
 
-    $config = app(SourceFactory::class)->source($upstream, config('phpinnacle-ferry.origins.kafka.source'));
+    $config = app(SourceFactory::class)->source(
+        $upstream,
+        app(RosettaAdapter::class)->capture($upstream),
+        config('phpinnacle-ferry.origins.kafka.source'),
+    );
 
     expect($config)
         ->toMatchArray(['transforms' => ''])
@@ -182,14 +196,22 @@ it('registers the configured converter classes even without per-column selection
     config(['phpinnacle-ferry.origins.kafka.source.converters' => ['text' => 'example.TextConverter']]);
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
 
-    $config = app(SourceFactory::class)->source($upstream, config('phpinnacle-ferry.origins.kafka.source'));
+    $config = app(SourceFactory::class)->source(
+        $upstream,
+        app(RosettaAdapter::class)->capture($upstream),
+        config('phpinnacle-ferry.origins.kafka.source'),
+    );
 
     expect($config)
         ->toMatchArray(['converters' => 'text', 'text.type' => 'example.TextConverter'])
         ->not->toHaveKeys(['text.columns', 'uuid.type', 'integer.type', 'mchar.type']);
 
     config(['phpinnacle-ferry.origins.kafka.source.converters' => []]);
-    expect(app(SourceFactory::class)->source($upstream, config('phpinnacle-ferry.origins.kafka.source')))
+    expect(app(SourceFactory::class)->source(
+        $upstream,
+        app(RosettaAdapter::class)->capture($upstream),
+        config('phpinnacle-ferry.origins.kafka.source'),
+    ))
         ->not
         ->toHaveKey('converters');
 });
@@ -230,6 +252,7 @@ it('unions tables and columns across the tracked replicas of one upstream', func
     $upstream = $upstream->fresh();
     $config = app(SourceFactory::class)->source(
         $upstream,
+        app(RosettaAdapter::class)->capture($upstream),
         config('phpinnacle-ferry.origins.kafka.source'),
     );
 
@@ -246,6 +269,7 @@ it('never lets an unscoped source connector capture the whole database', functio
 
     $config = app(SourceFactory::class)->source(
         $upstream,
+        app(RosettaAdapter::class)->capture($upstream),
         config('phpinnacle-ferry.origins.kafka.source'),
     );
 
@@ -291,7 +315,11 @@ it('leaves pending static replicas without a selected key or captured columns', 
         'mapping' => [],
     ]);
 
-    $config = app(SourceFactory::class)->source($upstream, config('phpinnacle-ferry.origins.kafka.source'));
+    $config = app(SourceFactory::class)->source(
+        $upstream,
+        app(RosettaAdapter::class)->capture($upstream),
+        config('phpinnacle-ferry.origins.kafka.source'),
+    );
 
     expect($config['table.include.list'])->toBe('public.customers');
     expect($config['column.include.list'])->toBe('');
@@ -333,6 +361,7 @@ it('uses static mapping keys without a primary key from a non-Rosetta adapter', 
     ], ['status' => ReplicaStatus::Active]);
     $config = app(SourceFactory::class)->source(
         $upstream,
+        app(RosettaAdapter::class)->capture($upstream),
         config('phpinnacle-ferry.origins.kafka.source'),
     );
     $pipeline = app(\PHPinnacle\Ferry\Origins\Kafka\TransformFactory::class)->pipeline(

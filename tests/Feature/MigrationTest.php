@@ -15,7 +15,7 @@ uses(TestCase::class);
 
 it('stores adapter-independent structures on a fresh installation and cascades owner deletion', function () {
     Queue::fake();
-    $upstream = TestCase::makeUpstream(['adapter' => null]);
+    $upstream = TestCase::makeUpstream();
     $schema = Schema::fromArray([
         'type' => 'object',
         'properties' => ['tenant_id' => ['type' => 'integer'], 'record_id' => ['type' => 'string']],
@@ -31,9 +31,9 @@ it('stores adapter-independent structures on a fresh installation and cascades o
     TestCase::makeReplica(['upstream_id' => $upstream->id, 'source' => 'records', 'mapping' => []]);
 
     expect($upstream->fresh()->adapter)
-        ->toBeNull()
+        ->toBe('rosetta')
         ->and($upstream->structure->status)
-        ->toBe(StructureStatus::Pending)
+        ->toBe(StructureStatus::Preparing)
         ->and($item->code)
         ->toBeNull()
         ->and($item->kind)

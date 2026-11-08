@@ -7,7 +7,6 @@ use PHPinnacle\Ferry\Models\Upstream;
 use PHPinnacle\Ferry\Services\RosettaAdapter;
 use PHPinnacle\Ferry\Services\StructureAdapterRegistry;
 use PHPinnacle\Ferry\Services\UpstreamFactory;
-use PHPinnacle\Rosetta\MetadataLoader;
 use Tests\TestCase;
 
 uses(TestCase::class);
@@ -18,7 +17,7 @@ it('binds the structure adapter without opening a source connection', function (
     app()->instance(UpstreamFactory::class, $factory);
 
     expect(app(StructureAdapterRegistry::class)->options())
-        ->toBe(['rosetta' => '1C Rosetta'])
+        ->toBe(['rosetta' => '1C Rosetta', 'eloquent' => 'Eloquent'])
         ->and(app(StructureAdapterRegistry::class)->getOrFail('rosetta'))
         ->toBeInstanceOf(RosettaAdapter::class);
 });
@@ -27,7 +26,7 @@ it('prepares serializable context and reads physical primary keys for roots and 
     string $table,
     array $primaryKey,
 ) {
-    $upstream = new Upstream(['driver' => 'pgsql', 'config' => ['database' => 'source']]);
+    $upstream = new Upstream(['config' => ['driver' => 'pgsql', 'database' => 'source']]);
     $pdo = new PDO('sqlite::memory:');
     $pdo->exec('CREATE TABLE Params (filename TEXT, binarydata BLOB)');
     $pdo->exec('CREATE TABLE Config (filename TEXT, binarydata BLOB)');
@@ -48,17 +47,16 @@ it('prepares serializable context and reads physical primary keys for roots and 
             '{,{,,,,,,,,,{,{,{,,object-id},Object,{1,en,Object}}}},,{sections,1,{{,{,,,,,{,{,{,,section-id},Lines,{1,en,Lines}}}}},,{properties,0}}},,{properties,0}}',
         ),
     ]);
-    $source = Mockery::mock(Connection::class);
-    $source->shouldReceive('getPdo')->twice()->andReturn($pdo);
-    $source->shouldReceive('getSchemaBuilder')->once()->andReturn(new SQLiteConnection($pdo)->getSchemaBuilder());
-    $source->shouldReceive('disconnect')->twice();
+    $sources = [new SQLiteConnection($pdo), new SQLiteConnection($pdo)];
     $factory = Mockery::mock(UpstreamFactory::class);
-    $factory->shouldReceive('make')->twice()->with($upstream->credentials())->andReturn($source);
-    $adapter = new RosettaAdapter($factory, app(MetadataLoader::class));
+    $factory->shouldReceive('make')->with($upstream->config)->andReturn(...$sources);
+    $adapter = app()->make(RosettaAdapter::class, ['factory' => $factory]);
 
     $plan = $adapter->prepare($upstream);
     $objects = $adapter->read($upstream, $plan, 0, 1);
 
+    expect($sources[0]->getRawPdo())->toBeNull();
+    expect($sources[1]->getRawPdo())->toBeNull();
     expect($plan)
         ->toEqual(new StructurePlan(1, [
             'storage_map' => ['object-id' => ['Document' => 1], 'section-id' => ['VT' => 2, 'LineNo' => 3]],
@@ -113,8 +111,8 @@ it('disconnects and propagates a failed source read', function (string $operatio
     $source->shouldReceive('disconnect')->once();
     $factory = Mockery::mock(UpstreamFactory::class);
     $factory->shouldReceive('make')->once()->andReturn($source);
-    $adapter = new RosettaAdapter($factory, app(MetadataLoader::class));
-    $upstream = new Upstream(['driver' => 'pgsql', 'config' => []]);
+    $adapter = app()->make(RosettaAdapter::class, ['factory' => $factory]);
+    $upstream = new Upstream(['config' => ['driver' => 'pgsql']]);
 
     expect(fn () => (
         $operation === 'prepare'

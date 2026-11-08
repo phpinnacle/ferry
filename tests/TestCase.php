@@ -76,8 +76,8 @@ abstract class TestCase extends ApplicationTestCase
             'code' => 'test-upstream',
             'origin' => 'kafka',
             'adapter' => 'rosetta',
-            'driver' => 'pgsql',
             'config' => [
+                'driver' => 'pgsql',
                 'host' => 'localhost',
                 'port' => 5432,
                 'database' => 'db',

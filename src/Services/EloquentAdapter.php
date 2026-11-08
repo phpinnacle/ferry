@@ -1,0 +1,120 @@
+<?php
+
+namespace PHPinnacle\Ferry\Services;
+
+use Filament\Forms\Components\Select;
+use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Utilities\Get;
+use Filament\Schemas\Components\Utilities\Set;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\DB;
+use PHPinnacle\Ferry\Contracts\Adapter;
+use PHPinnacle\Ferry\Data\CapturePlan;
+use PHPinnacle\Ferry\Data\StructurePlan;
+use PHPinnacle\Ferry\FerryPlugin;
+use PHPinnacle\Ferry\Models\Upstream;
+
+class EloquentAdapter implements Adapter
+{
+    public function getKey(): string
+    {
+        return 'eloquent';
+    }
+
+    public function getLabel(): string
+    {
+        return 'Eloquent';
+    }
+
+    public function form(): array
+    {
+        return [
+            Section::make(__('phpinnacle-ferry::resources.upstream.sections.connection'))
+                ->columns(3)
+                ->schema([
+                    Select::make('connection')
+                        ->label(__('phpinnacle-ferry::resources.upstream.fields.connection'))
+                        ->options(function () {
+                            /** @var array<string, array{driver: string, ...}> $connections */
+                            $connections = Config::array('database.connections');
+                            $connections = array_keys(array_filter(
+                                $connections,
+                                fn (array $connection) => $connection['driver'] === 'pgsql',
+                            ));
+
+                            return array_combine($connections, $connections);
+                        })
+                        ->required()
+                        ->disabledOn('edit')
+                        ->dehydrated()
+                        ->dehydrateStateUsing(
+                            fn (string $state, ?Upstream $record) => $record?->config['connection'] ?? $state,
+                        )
+                        ->live()
+                        ->afterStateUpdated(fn (Set $set) => $set('models', [])),
+                    Select::make('models')
+                        ->label(__('phpinnacle-ferry::resources.upstream.fields.models'))
+                        ->columnSpan(['lg' => 2])
+                        ->multiple()
+                        ->searchable()
+                        ->options(function (Get $get, ?Upstream $record) {
+                            /** @var array{connection: string, models: list<class-string<Model>>}|null $config */
+                            $config = $record?->config;
+
+                            return $this->models($config['connection'] ?? $get->string('connection', isNullable: true));
+                        })
+                        ->required(),
+                ]),
+        ];
+    }
+
+    public function capture(Upstream $upstream): CapturePlan
+    {
+        $tables = [];
+
+        /** @var array{connection: string, models: list<class-string<Model>>} $config */
+        $config = $upstream->config;
+
+        foreach ($config['models'] as $class) {
+            $model = new $class;
+            $connection = $model->getConnection();
+            [$schema, $table] = $connection->getSchemaBuilder()->parseSchemaAndTable($model->getTable(), true);
+            $tables[] = preg_quote($schema . '.' . $connection->getTablePrefix() . $table, '/');
+        }
+
+        /** @var array{driver: string, ...} $connection */
+        $connection = DB::connection($config['connection'])->getConfig();
+
+        return new CapturePlan($connection, array_values(array_unique($tables)));
+    }
+
+    public function prepare(Upstream $upstream): StructurePlan
+    {
+        // shortcut: This sketch captures tables only; publish physical schemas when adding replica support.
+        return new StructurePlan(0);
+    }
+
+    public function read(Upstream $upstream, StructurePlan $plan, int $offset, int $limit): array
+    {
+        return [];
+    }
+
+    /** @return array<class-string<Model>, string> */
+    private function models(?string $connection): array
+    {
+        if ($connection === null) {
+            return [];
+        }
+
+        $models = [];
+
+        foreach (FerryPlugin::get()->getModels() as $class) {
+            if (new $class()->getConnection()->getName() === $connection) {
+                $models[$class] = $class;
+            }
+        }
+
+        return $models;
+    }
+}

@@ -4,6 +4,7 @@ namespace PHPinnacle\Ferry;
 
 use Filament\Contracts\Plugin;
 use Filament\Panel;
+use Illuminate\Database\Eloquent\Model;
 use PHPinnacle\Ferry\Destinations\StaticDestination;
 use PHPinnacle\Ferry\Services\DestinationFactory;
 
@@ -12,6 +13,9 @@ class FerryPlugin implements Plugin
     public const string ID = 'phpinnacle/ferry';
 
     private bool $hasSchemaRegistry = false;
+
+    /** @var array<array-key, class-string<Model>> */
+    private array $models = [];
 
     public function __construct(
         private readonly DestinationFactory $destinations,
@@ -35,6 +39,20 @@ class FerryPlugin implements Plugin
         $this->destinations->register(...$destinations);
 
         return $this;
+    }
+
+    /** @param class-string<Model> ...$models */
+    public function models(string ...$models): static
+    {
+        $this->models = $models;
+
+        return $this;
+    }
+
+    /** @return array<array-key, class-string<Model>> */
+    public function getModels(): array
+    {
+        return $this->models;
     }
 
     public function getId(): string

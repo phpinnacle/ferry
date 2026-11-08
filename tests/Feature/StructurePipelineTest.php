@@ -4,12 +4,12 @@ use Illuminate\Database\SQLiteConnection;
 use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Queue;
 use PHPinnacle\Ferry\Contracts\Adapter;
+use PHPinnacle\Ferry\Data\CapturePlan;
 use PHPinnacle\Ferry\Data\StructurePlan;
 use PHPinnacle\Ferry\Enums\StructureStatus;
 use PHPinnacle\Ferry\Jobs\Structure\FetchStructureChunkJob;
 use PHPinnacle\Ferry\Jobs\Structure\FinishStructureJob;
 use PHPinnacle\Ferry\Jobs\Structure\PrepareStructureJob;
-use PHPinnacle\Ferry\Models\Structure;
 use PHPinnacle\Ferry\Models\StructureItem;
 use PHPinnacle\Ferry\Models\Upstream;
 use PHPinnacle\Ferry\Services\RosettaAdapter;
@@ -17,7 +17,6 @@ use PHPinnacle\Ferry\Services\StructureAdapterRegistry;
 use PHPinnacle\Ferry\Services\UpstreamFactory;
 use PHPinnacle\Ferry\Tests\TestCase;
 use PHPinnacle\Jason\Schema;
-use PHPinnacle\Rosetta\MetadataLoader;
 
 require_once __DIR__ . '/../TestCase.php';
 
@@ -52,6 +51,16 @@ $makeAdapter = function (int $estimated, string $key = 'rosetta') {
         public function getLabel(): string
         {
             return 'Fixture';
+        }
+
+        public function form(): array
+        {
+            return [];
+        }
+
+        public function capture(Upstream $upstream): CapturePlan
+        {
+            return new CapturePlan($upstream->config, []);
         }
 
         /** @return list<StructureItem> */
@@ -335,7 +344,7 @@ it('refuses to restore a superseded draft read through the Rosetta adapter', fun
     ]);
     $factory = Mockery::mock(UpstreamFactory::class);
     $factory->shouldReceive('make')->andReturnUsing(fn () => new SQLiteConnection($pdo));
-    $adapter = new RosettaAdapter($factory, app(MetadataLoader::class));
+    $adapter = app()->make(RosettaAdapter::class, ['factory' => $factory]);
     $plan = new StructurePlan(1, ['storage_map' => ['stale-object' => ['Reference' => 1]], 'type_map' => []]);
 
     $staleUpstream->structure->importItems($adapter->read($staleUpstream, $plan, 0, 1), 0);
@@ -542,37 +551,6 @@ it('resumes queued preparation from persisted state', function () {
     Queue::assertPushed(PrepareStructureJob::class, 1);
 });
 
-it('leaves structure pending and never reads or queues work without an adapter', function () {
-    Queue::fake();
-    $registry = Mockery::mock(StructureAdapterRegistry::class);
-    $registry->shouldNotReceive('getOrFail');
-    $upstream = TestCase::makeUpstream(['adapter' => null]);
-    $structure = $upstream->structure;
-
-    expect($structure->status)
-        ->toBe(StructureStatus::Pending)
-        ->and($structure->run_id)
-        ->toBeNull()
-        ->and($structure->readPlan())
-        ->toBeNull()
-        ->and($structure->prepare(60))
-        ->toBeFalse();
-
-    new PrepareStructureJob($upstream->id, 'old-run')->handle($registry);
-    new FetchStructureChunkJob($upstream->id, 'old-run', 0)->handle($registry);
-    new FinishStructureJob($upstream->id, 'old-run')->handle();
-    $upstream->update(['config' => [...$upstream->config, 'host' => 'changed']]);
-
-    expect($upstream->fresh()->structure->status)
-        ->toBe(StructureStatus::Pending)
-        ->and($upstream->structure->generation)
-        ->toBe(0)
-        ->and($upstream->structure->run_id)
-        ->toBeNull();
-    Queue::assertNotPushed(PrepareStructureJob::class);
-    Queue::assertNotPushed(FetchStructureChunkJob::class);
-});
-
 it('uses the selected adapter key for preparation and every chunk', function () use ($makeAdapter) {
     $selected = $makeAdapter(2, 'selected');
     $other = $makeAdapter(5, 'other');
@@ -594,10 +572,11 @@ it('uses the selected adapter key for preparation and every chunk', function () 
         ->toBe(2);
 });
 
-it('restarts reading when an adapter is selected for a pending upstream', function () use ($makeAdapter) {
+it('restarts reading when the adapter changes', function () use ($makeAdapter) {
     $adapter = $makeAdapter(1, 'selected');
-    $upstream = TestCase::makeUpstream(['adapter' => null]);
-    expect($upstream->structure->status)->toBe(StructureStatus::Pending);
+    $makeAdapter(0);
+    $upstream = TestCase::makeUpstream()->fresh();
+    expect($upstream->structure->status)->toBe(StructureStatus::Ready);
 
     $upstream->update(['adapter' => 'selected']);
     $upstream->refresh();
@@ -607,10 +586,10 @@ it('restarts reading when an adapter is selected for a pending upstream', functi
         ->and($upstream->structure->status)
         ->toBe(StructureStatus::Ready)
         ->and($upstream->structure->generation)
-        ->toBe(1);
+        ->toBe(2);
 });
 
-it('invalidates the old run and context when the adapter changes', function (?string $key) use ($makeAdapter) {
+it('invalidates the old run and context when the adapter changes', function () use ($makeAdapter) {
     Queue::fake();
     $makeAdapter(1, 'selected');
     $upstream = TestCase::makeUpstream([], ['generation' => 1]);
@@ -620,14 +599,14 @@ it('invalidates the old run and context when the adapter changes', function (?st
     $published = TestCase::makeItem($upstream);
     TestCase::makeItem($upstream, ['revision' => 2]);
 
-    $upstream->update(['adapter' => $key]);
+    $upstream->update(['adapter' => 'selected']);
     new PrepareStructureJob($upstream->id, $runId)->handle(app(StructureAdapterRegistry::class));
     new FetchStructureChunkJob($upstream->id, $runId, 0)->handle(app(StructureAdapterRegistry::class));
     new FinishStructureJob($upstream->id, $runId)->handle();
     $structure = $upstream->fresh()->structure;
 
     expect($structure->status)
-        ->toBe($key === null ? StructureStatus::Pending : StructureStatus::Preparing)
+        ->toBe(StructureStatus::Preparing)
         ->and($structure->run_id)
         ->not
         ->toBe($runId)
@@ -640,23 +619,22 @@ it('invalidates the old run and context when the adapter changes', function (?st
         ->and($structure->publishedItems()->sole()->id)
         ->toBe($published->id);
 
-    if ($key === null) {
-        expect($structure->run_id)->toBeNull();
-    }
-
-    Queue::assertPushed(PrepareStructureJob::class, $key === null ? 1 : 2);
+    Queue::assertPushed(PrepareStructureJob::class, 2);
     Queue::assertNotPushed(FetchStructureChunkJob::class);
-})->with([null, 'selected']);
+});
 
-it('does not save a plan or schedule chunks after the adapter is cleared during preparation', function () {
+it('does not save a plan or schedule chunks after the adapter changes during preparation', function () {
     Queue::fake();
     $adapter = Mockery::mock(Adapter::class);
     $adapter->shouldReceive('getKey')->andReturn('selected');
     $adapter
+        ->shouldReceive('capture')
+        ->andReturnUsing(fn (Upstream $upstream) => new CapturePlan($upstream->config, []));
+    $adapter
         ->shouldReceive('prepare')
         ->once()
         ->andReturnUsing(function (Upstream $upstream) {
-            $upstream->update(['adapter' => null]);
+            $upstream->update(['adapter' => 'rosetta']);
 
             return new StructurePlan(1, ['stale' => 'plan']);
         });
@@ -667,33 +645,8 @@ it('does not save a plan or schedule chunks after the adapter is cleared during 
     new PrepareStructureJob($upstream->id, $upstream->structure->run_id)->handle(app(StructureAdapterRegistry::class));
 
     expect($upstream->fresh()->structure->status)
-        ->toBe(StructureStatus::Pending)
+        ->toBe(StructureStatus::Preparing)
         ->and($upstream->structure->readPlan())
         ->toBeNull();
     Queue::assertNotPushed(FetchStructureChunkJob::class);
 });
-
-it('skips a phase if its adapter is cleared after the run lookup', function (string $phase) {
-    Queue::fake();
-    $upstream = TestCase::makeUpstream();
-    $structure = $upstream->structure;
-    $structure->plan(new StructurePlan(1, ['cursor' => 'old']));
-    $runId = $structure->run_id;
-    $cleared = false;
-    Structure::retrieved(function (Structure $retrieved) use ($upstream, $runId, &$cleared) {
-        if (!$cleared && $retrieved->upstream_id === $upstream->id && $retrieved->run_id === $runId) {
-            $cleared = true;
-            $upstream->update(['adapter' => null]);
-        }
-    });
-    $registry = Mockery::mock(StructureAdapterRegistry::class);
-    $registry->shouldNotReceive('getOrFail');
-    $job = $phase === 'prepare'
-        ? new PrepareStructureJob($upstream->id, $runId)
-        : new FetchStructureChunkJob($upstream->id, $runId, 0);
-
-    $job->handle($registry);
-
-    expect($cleared)->toBeTrue()->and($upstream->fresh()->structure->status)->toBe(StructureStatus::Pending);
-    Queue::assertNotPushed(FetchStructureChunkJob::class);
-})->with(['prepare', 'chunk']);

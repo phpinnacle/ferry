@@ -7,7 +7,6 @@ use PHPinnacle\Ferry\Data\FieldMapping;
 use PHPinnacle\Ferry\Data\TransformSetting;
 use PHPinnacle\Ferry\Enums\ConnectorStatus;
 use PHPinnacle\Ferry\Enums\DestinationType;
-use PHPinnacle\Ferry\Enums\Driver as DatabaseDriver;
 use PHPinnacle\Ferry\Enums\ReplicaStatus;
 use PHPinnacle\Ferry\Enums\StructureStatus;
 use PHPinnacle\Ferry\Models\Replica;
@@ -20,6 +19,7 @@ use PHPinnacle\Ferry\Origins\KafkaOrigin;
 use PHPinnacle\Ferry\Services\DestinationFactory;
 use PHPinnacle\Ferry\Services\OriginFactory;
 use PHPinnacle\Ferry\Services\ReplicaSchemaResolver;
+use PHPinnacle\Ferry\Services\StructureAdapterRegistry;
 use PHPinnacle\Ferry\Tests\TestCase;
 use PHPinnacle\Franz\Client;
 use PHPinnacle\Franz\Exception\ApiException;
@@ -84,6 +84,7 @@ function ferry_kafka_origin(
         app(SourceFactory::class),
         $destinations,
         new SinkConfigFactory($transforms),
+        app(StructureAdapterRegistry::class),
     );
 }
 
@@ -358,10 +359,11 @@ it('extracts source records and preserves deletes for static and dynamic destina
 })->with(['dynamic' => [false], 'static' => [true]]);
 
 it('rejects unsupported source drivers during assembly', function (bool $source) {
-    $upstream = TestCase::makeUpstream(['driver' => DatabaseDriver::Sqlsrv], [
+    $upstream = TestCase::makeUpstream([], [
         'status' => StructureStatus::Ready,
         'generation' => 1,
     ]);
+    $upstream->forceFill(['config' => [...$upstream->config, 'driver' => 'sqlsrv']])->saveQuietly();
     TestCase::makeItem($upstream);
     $replica = TestCase::makeReplica(['upstream_id' => $upstream->id]);
     $http = new RecordingConnectClient;
@@ -440,7 +442,7 @@ it('requests snapshots for newly captured columns using the last applied configu
     $http = new RecordingConnectClient(connector_response());
     $origin = ferry_kafka_origin($http, $signals);
     $connector = $origin->make($replica->upstream);
-    $connector->applied_config = ['column.include.list' => $previousColumns];
+    $connector->applied_config = [...$connector->config, 'column.include.list' => $previousColumns];
     $origin->update($connector);
     expect(count($signals->published))->toBe($tables === [] ? 0 : 1);
 
@@ -471,6 +473,25 @@ it('does not request source snapshots when updating a sink', function () {
     $connector->applied_config = $connector->config;
     $origin->update($connector);
     expect($signals->published)->toBe([]);
+});
+
+it('requests a snapshot when a whole table is added without a column selection', function () {
+    $replica = ferry_replica();
+    $signals = new RecordingSignalProducer;
+    $origin = ferry_kafka_origin(new RecordingConnectClient(connector_response()), $signals);
+    $connector = $origin->make($replica->upstream);
+    $config = $connector->config;
+    unset($config['column.include.list']);
+    $connector->config = $config;
+    $connector->applied_config = [...$config, 'table.include.list' => '(?!)'];
+
+    $origin->update($connector);
+
+    expect($signals->published)->toHaveCount(1);
+    expect(json_decode($signals->published[0]['payload'], true))->toBe([
+        'type' => 'execute-snapshot',
+        'data' => ['data-collections' => ['public._reference0'], 'type' => 'INCREMENTAL'],
+    ]);
 });
 
 it('resumes processing and restarts failed tasks when needed', function (bool $failed) {

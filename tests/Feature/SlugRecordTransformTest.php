@@ -10,6 +10,7 @@ use PHPinnacle\Ferry\Enums\StructureStatus;
 use PHPinnacle\Ferry\Origins\Kafka\SourceFactory;
 use PHPinnacle\Ferry\Services\DestinationFactory;
 use PHPinnacle\Ferry\Services\ReplicaSchemaResolver;
+use PHPinnacle\Ferry\Services\RosettaAdapter;
 use PHPinnacle\Ferry\Tests\TestCase;
 use PHPinnacle\Jason\Schema;
 use PHPinnacle\Jason\SchemaBuilder;
@@ -100,6 +101,7 @@ it('adds and persists a slug through the tabbed builder in both editors', functi
     expect(
         app(SourceFactory::class)->source(
             $upstream,
+            app(RosettaAdapter::class)->capture($upstream),
             config('phpinnacle-ferry.origins.kafka.source'),
         )['column.include.list'],
     )

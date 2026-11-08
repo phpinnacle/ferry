@@ -46,6 +46,8 @@ return [
             'name' => 'Name',
             'code' => 'Code',
             'origin' => 'Origin',
+            'connection' => 'Connection',
+            'models' => 'Models',
             'adapter' => 'Structure Adapter',
             'driver' => 'Driver',
             'host' => 'Host',
@@ -69,6 +71,7 @@ return [
             'edit' => 'Edit Upstream',
         ],
         'sections' => [
+            'connection' => 'Connection Settings',
             'general' => 'General Information',
             'structure' => 'Source Structure',
         ],

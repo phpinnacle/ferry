@@ -14,6 +14,7 @@ class UpstreamObserver
     public function created(Upstream $upstream): void
     {
         $upstream->setRelation('structure', $upstream->structure()->create());
+        $this->connectors->refresh($upstream);
     }
 
     public function deleting(Upstream $upstream): void
@@ -30,13 +31,13 @@ class UpstreamObserver
 
     public function updated(Upstream $upstream): void
     {
-        $credentialsChanged = $upstream->credentialsChanged();
+        $configChanged = $upstream->wasChanged('config');
 
-        if ($credentialsChanged || $upstream->wasChanged('adapter')) {
+        if ($configChanged || $upstream->wasChanged('adapter')) {
             $upstream->structure->restart();
         }
 
-        if ($credentialsChanged) {
+        if ($configChanged) {
             $this->connectors->refresh($upstream);
         }
     }
