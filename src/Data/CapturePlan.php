@@ -10,6 +10,7 @@ final readonly class CapturePlan
      * @param list<string>|null $columns Null captures every column.
      * @param list<string> $keys
      * @param array<string, array<string, true>>|null $converterColumns Null disables source converters.
+     * @param array<string, string> $converters Key/value serialization options overriding source and sink defaults.
      */
     public function __construct(
         public array $config,
@@ -17,6 +18,7 @@ final readonly class CapturePlan
         public ?array $columns = null,
         public array $keys = [],
         public ?array $converterColumns = null,
+        public array $converters = [],
     ) {}
 
     public function isEmpty(): bool

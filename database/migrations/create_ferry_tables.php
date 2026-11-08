@@ -43,6 +43,7 @@ return new class extends Migration {
             $table->string('origin');
             $table->string('adapter');
             $table->text('config');
+            $table->json('transforms')->default('[]');
             $table->boolean('is_active')->default(true);
             $table->timestamps();
             $table->softDeletes();

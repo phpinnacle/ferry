@@ -99,6 +99,7 @@ it('rejects models that are not available for capture', function (string $model)
 
 it('creates and starts capture without replicas and includes every column without Rosetta converters', function () {
     Queue::fake([SynchronizeConnectorsJob::class, PrepareStructureJob::class]);
+    config(['phpinnacle-ferry.schema_registry.base_uri' => 'http://registry.test:8081']);
 
     $upstream = Upstream::create(ferry_eloquent_form()->getState());
     app(ConnectorManager::class)->synchronize($upstream->id);
@@ -116,6 +117,10 @@ it('creates and starts capture without replicas and includes every column withou
             'table.include.list' => 'sales\\.app_orders',
             'database.hostname' => 'source.test',
             'database.dbname' => 'orders',
+            'key.converter' => 'org.apache.kafka.connect.json.JsonConverter',
+            'key.converter.schemas.enable' => 'false',
+            'value.converter' => 'org.apache.kafka.connect.json.JsonConverter',
+            'value.converter.schemas.enable' => 'false',
         ])
         ->not->toHaveKeys(['column.include.list', 'converters', 'message.key.columns']);
     expect(app(ConnectorManager::class)->canSnapshot($upstream))->toBeTrue();

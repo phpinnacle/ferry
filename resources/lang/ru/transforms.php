@@ -1,6 +1,12 @@
 <?php
 
 return [
+    'debezium_timestamps' => 'Заполнить даты Debezium',
+    'debezium_created_field' => 'Поле даты создания',
+    'debezium_updated_field' => 'Поле даты обновления',
+    'debezium_timestamps_help' => 'Используйте в источнике перед распаковкой, пока сохранён Debezium envelope.',
+    'unwrap' => 'Распаковать Debezium envelope',
+    'unwrap_delete_mode' => 'Обработка удалений и tombstone',
     'empty_string_to_null' => 'Пустая строка в null',
     'empty_string_to_null_description' => 'Заменить пустые строки на null. Значения null сохраняются.',
     'empty_string_to_null_trim' => 'Убрать пробелы по краям',

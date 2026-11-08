@@ -1,10 +1,12 @@
 <?php
 
 use Filament\Actions\Action;
+use Filament\Actions\Testing\TestAction;
 use Filament\Notifications\Notification;
 use Filament\Schemas\Schema;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Validation\ValidationException;
+use Livewire\Livewire;
 use PHPinnacle\Ferry\Data\UpstreamTestResult;
 use PHPinnacle\Ferry\Enums\SSLMode;
 use PHPinnacle\Ferry\Enums\StructureStatus;
@@ -16,6 +18,7 @@ use PHPinnacle\Ferry\Tests\TestCase;
 
 require_once __DIR__ . '/../TestCase.php';
 require_once __DIR__ . '/../Fixtures/SchemaHost.php';
+require_once __DIR__ . '/../Fixtures/UpstreamForm.php';
 
 uses(TestCase::class);
 
@@ -279,3 +282,73 @@ it('keeps the saved adapter and its fields when edit state attempts to select an
 
     expect($upstream->fresh()->adapter)->toBe('rosetta');
 });
+
+it('persists initial upstream record transforms without sharing state between forms', function () {
+    $form = ferry_upstream_form();
+    $form->getComponentByStatePath('origin')->state('kafka');
+    $settings = [
+        ['type' => 'debezium_timestamps', 'data' => ['created_field' => 'created_at', 'updated_field' => 'updated_at']],
+        ['type' => 'unwrap', 'data' => ['delete_mode' => 'tombstone']],
+    ];
+    $form->getComponentByStatePath('transforms')->state($settings);
+
+    $upstream = Upstream::create($form->getState());
+
+    expect($upstream->fresh()->toArray()['transforms'])->toBe($settings);
+    expect(ferry_upstream_form()->getComponentByStatePath('transforms')->getState())->toBe([]);
+});
+
+it('adds updates and reorders upstream transforms across Livewire refreshes before saving and reopening', function () {
+    $upstream = TestCase::makeUpstream();
+    $page = Livewire::test(\PHPinnacle\Ferry\Tests\Fixtures\UpstreamForm::class, ['record' => $upstream]);
+    $add = TestAction::make('add')->schemaComponent('transforms', 'form');
+    $page->callAction($add, arguments: ['block' => 'unwrap'])->assertHasNoErrors();
+    $page->callAction($add, arguments: ['block' => 'debezium_timestamps'])->assertHasNoErrors();
+    $items = array_keys($page->get('data.transforms'));
+    $page
+        ->set('data.transforms.' . $items[1] . '.data.created_field', 'captured_at')
+        ->set('data.transforms.' . $items[1] . '.data.updated_field', 'changed_at')
+        ->call('$refresh')
+        ->callAction(
+            TestAction::make('reorder')->schemaComponent('transforms', 'form'),
+            arguments: ['items' => array_reverse($items)],
+        )
+        ->call('save')
+        ->assertHasNoErrors();
+
+    $settings = [
+        [
+            'type' => 'debezium_timestamps',
+            'data' => ['created_field' => 'captured_at', 'updated_field' => 'changed_at'],
+        ],
+        ['type' => 'unwrap', 'data' => ['delete_mode' => 'tombstone']],
+    ];
+    expect($upstream->fresh()->toArray()['transforms'])->toBe($settings);
+    $reopened = Livewire::test(\PHPinnacle\Ferry\Tests\Fixtures\UpstreamForm::class, ['record' => $upstream->fresh()]);
+    expect(array_values($reopened->get('data.transforms')))->toBe($settings);
+});
+
+it('rejects invalid upstream transform parameters before saving', function (array $setting, string $field) {
+    $form = ferry_upstream_form();
+    $form->getComponentByStatePath('origin')->state('kafka');
+    $form->getComponentByStatePath('transforms')->state(['item' => $setting]);
+
+    expect($form->getState(...))
+        ->toThrow(
+            fn (ValidationException $exception) => expect($exception->errors())
+                ->toHaveKey('data.transforms.item.data.' . $field),
+        );
+})->with([
+    'missing timestamp field' => [
+        ['type' => 'debezium_timestamps', 'data' => ['created_field' => null, 'updated_field' => 'updated_at']],
+        'created_field',
+    ],
+    'identical timestamp fields' => [
+        ['type' => 'debezium_timestamps', 'data' => ['created_field' => 'changed_at', 'updated_field' => 'changed_at']],
+        'updated_field',
+    ],
+    'unknown delete mode' => [
+        ['type' => 'unwrap', 'data' => ['delete_mode' => 'invalid']],
+        'delete_mode',
+    ],
+]);

@@ -151,12 +151,27 @@ class RosettaAdapter implements Adapter
             }
         }
 
+        /** @var string|null $schemaRegistry */
+        $schemaRegistry = config('phpinnacle-ferry.schema_registry.base_uri');
+
         return new CapturePlan(
             $config,
             array_keys($tables),
             array_keys($columns),
             array_values($keys),
             $converterColumns,
+            converters: $schemaRegistry
+                ? [
+                    'key.converter' => 'io.confluent.connect.avro.AvroConverter',
+                    'key.converter.schema.registry.url' => $schemaRegistry,
+                    'value.converter' => 'io.confluent.connect.avro.AvroConverter',
+                    'value.converter.schema.registry.url' => $schemaRegistry,
+                ] : [
+                    'key.converter' => 'org.apache.kafka.connect.json.JsonConverter',
+                    'key.converter.schemas.enable' => 'true',
+                    'value.converter' => 'org.apache.kafka.connect.json.JsonConverter',
+                    'value.converter.schemas.enable' => 'true',
+                ],
         );
     }
 

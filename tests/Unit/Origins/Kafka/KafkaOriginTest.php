@@ -187,9 +187,41 @@ it('builds source configuration matching no tables after the last replica is rem
     expect($connector->config['table.include.list'])->toBe('(?!)');
 });
 
-it('applies the named origin transport settings to source and sink connectors', function (array $settings) {
+it('refreshes saved upstream transforms after origin transforms and leaves replica pipelines independent', function () {
+    config([
+        'phpinnacle-ferry.origins.kafka.source.transforms' => [
+            'headers' => ['type' => 'org.apache.kafka.connect.transforms.DropHeaders', 'headers' => 'debug'],
+        ],
+    ]);
+    $replica = ferry_replica();
+    $upstream = $replica->upstream;
+    $before = $replica->connector->config;
+    app()->instance(OriginFactory::class, new OriginFactory(app(), config('phpinnacle-ferry.origins')));
+
+    $upstream->update(['transforms' => [
+        new TransformSetting('debezium_timestamps', ['created_field' => 'created_at', 'updated_field' => 'updated_at']),
+        new TransformSetting('unwrap', ['delete_mode' => 'tombstone']),
+    ]]);
+
+    expect($upstream->fresh()->connector->config)->toMatchArray([
+        'transforms' => 'headers,upstream_0,upstream_1',
+        'transforms.upstream_0.type' => 'org.phpinnacle.toblerone.DebeziumTimestampsTransform',
+        'transforms.upstream_0.created.field' => 'created_at',
+        'transforms.upstream_0.updated.field' => 'updated_at',
+        'transforms.upstream_1.type' => 'io.debezium.transforms.ExtractNewRecordState',
+        'transforms.upstream_1.delete.tombstone.handling.mode' => 'tombstone',
+    ]);
+    expect($replica->fresh()->connector->config)->toBe($before);
+});
+
+it('keeps adapter serialization identical on source and sink despite origin overrides', function (?string $registry) {
+    config(['phpinnacle-ferry.schema_registry.base_uri' => $registry]);
     $replica = ferry_replica();
     $defaults = config('phpinnacle-ferry.origins.kafka');
+    $settings = [
+        'key.converter' => 'custom.KeyConverter',
+        'value.converter' => 'custom.ValueConverter',
+    ];
     $origins = new OriginFactory(app(), [
         'kafka' => $defaults,
         'analytics' => [
@@ -199,25 +231,34 @@ it('applies the named origin transport settings to source and sink connectors', 
         ],
     ]);
 
-    foreach (['kafka' => $defaults['source']['options'], 'analytics' => $settings] as $name => $expected) {
+    $expected = $registry === null
+        ? [
+            'key.converter' => 'org.apache.kafka.connect.json.JsonConverter',
+            'key.converter.schemas.enable' => 'true',
+            'value.converter' => 'org.apache.kafka.connect.json.JsonConverter',
+            'value.converter.schemas.enable' => 'true',
+        ]
+        : [
+            'key.converter' => 'io.confluent.connect.avro.AvroConverter',
+            'key.converter.schema.registry.url' => 'http://registry.test:8081',
+            'value.converter' => 'io.confluent.connect.avro.AvroConverter',
+            'value.converter.schema.registry.url' => 'http://registry.test:8081',
+        ];
+
+    foreach (['kafka', 'analytics'] as $name) {
         $origin = $origins->create($name);
 
         foreach ([$replica->upstream, $replica] as $owner) {
             $config = $origin->make($owner)->config;
             $actual = array_filter($config, fn (string $key) => str_contains($key, '.converter'), ARRAY_FILTER_USE_KEY);
 
-            expect($actual)->toBe($expected);
+            expect($actual)->toEqual($expected);
             expect($config)->not->toHaveKey('options');
         }
     }
 })->with([
-    'custom converters and properties' => [[
-        'key.converter' => 'io.confluent.connect.avro.AvroConverter',
-        'key.converter.schema.registry.url' => 'http://registry.test:8081',
-        'value.converter' => 'io.confluent.connect.avro.AvroConverter',
-        'value.converter.schema.registry.url' => 'http://registry.test:8081',
-    ]],
-    'worker defaults' => [[]],
+    'schemaful JSON' => [null],
+    'Avro' => ['http://registry.test:8081'],
 ]);
 
 it('applies arbitrary origin settings only to their source or sink and overrides generated values', function () {
@@ -283,7 +324,7 @@ it('runs configured sink transforms before the replica pipeline without adding t
         'transforms.rename_keys.renames' => '_idrref:external_id',
     ]);
     expect($origin->make($replica->upstream)->config)
-        ->toMatchArray(['transforms' => 'unwrap'])
+        ->toMatchArray(['transforms' => ''])
         ->not->toHaveKeys(['transforms.normalize.type', 'transforms.headers.type']);
 });
 
@@ -305,7 +346,15 @@ it('uses each named origin target host only for its sink', function () {
     }
 });
 
-it('extracts source records and preserves deletes for static and dynamic destinations', function (bool $static) {
+it('unwraps envelopes at the sink and preserves deletes for both destinations', function (bool $static) {
+    config([
+        'phpinnacle-ferry.origins.kafka.sink.transforms' => [
+            'unwrap' => [
+                'type' => 'io.debezium.transforms.ExtractNewRecordState',
+                'delete.tombstone.handling.mode' => 'tombstone',
+            ],
+        ],
+    ]);
     app(DestinationFactory::class)->register(customers_destination());
     $replica = ferry_replica(
         $static
@@ -334,26 +383,22 @@ it('extracts source records and preserves deletes for static and dynamic destina
     $source = $origin->make($replica->upstream)->config;
     $sink = $origin->make($replica)->config;
 
-    expect($source)->toMatchArray([
-        'transforms' => 'unwrap',
-        'transforms.unwrap.type' => 'io.debezium.transforms.ExtractNewRecordState',
-        'transforms.unwrap.delete.tombstone.handling.mode' => 'tombstone',
-    ]);
+    expect($source)->toMatchArray(['transforms' => ''])->not->toHaveKey('transforms.unwrap.type');
     expect($sink)
         ->toMatchArray([
             'connector.class' => 'io.confluent.connect.jdbc.JdbcSinkConnector',
             'table.name.format' => $static ? 'customers' : $replica->destination,
             'delete.enabled' => 'true',
             'pk.mode' => 'record_key',
+            'transforms.unwrap.type' => 'io.debezium.transforms.ExtractNewRecordState',
+            'transforms.unwrap.delete.tombstone.handling.mode' => 'tombstone',
             'transforms.rename_keys.include' => '_idrref',
             'transforms.rename_keys.renames' => $static ? '_idrref:customer_id' : '_idrref:external_id',
             'transforms' => $static
-                ? 'field_1_0,field_2_0,insert_type,insert_profile_id,rename_keys,rename_values'
-                : 'rename_keys,rename_values',
+                ? 'unwrap,field_1_0,field_2_0,insert_type,insert_profile_id,rename_keys,rename_values'
+                : 'unwrap,rename_keys,rename_values',
         ])
         ->not->toHaveKeys([
-            'transforms.unwrap.type',
-            'transforms.unwrap.delete.tombstone.handling.mode',
             'transforms.drop_tombstones.type',
         ]);
 })->with(['dynamic' => [false], 'static' => [true]]);

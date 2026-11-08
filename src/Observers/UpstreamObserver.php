@@ -37,7 +37,7 @@ class UpstreamObserver
             $upstream->structure->restart();
         }
 
-        if ($configChanged) {
+        if ($configChanged || $upstream->wasChanged('transforms')) {
             $this->connectors->refresh($upstream);
         }
     }

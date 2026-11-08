@@ -12,7 +12,16 @@ return [
     //        'default' => 'App\\Models\\Tenant::DEFAULT'
     //    ],
     'kafka' => [
+        'events' => [
+            'bootstrap_servers' => env('FERRY_KAFKA_BOOTSTRAP_SERVERS'),
+            'group_id' => env('FERRY_KAFKA_EVENTS_GROUP_ID', 'ferry-eloquent'),
+            'topics' => [
+                // 'application.public.orders' => \App\Models\Order::class,
+            ],
+        ],
         'transforms' => [
+            \PHPinnacle\Ferry\Transformations\DebeziumTimestamps::class,
+            \PHPinnacle\Ferry\Transformations\Unwrap::class,
             \PHPinnacle\Ferry\Transformations\Cast::class,
             \PHPinnacle\Ferry\Transformations\Filter::class,
             \PHPinnacle\Ferry\Transformations\InsertUuid::class,
@@ -48,18 +57,8 @@ return [
             'target_host' => null,
             'headers' => [],
             'source' => [
-                'options' => [
-                    // 'key.converter' => 'org.apache.kafka.connect.json.JsonConverter',
-                    // 'key.converter.schemas.enable' => 'true',
-                    // 'value.converter' => 'org.apache.kafka.connect.json.JsonConverter',
-                    // 'value.converter.schemas.enable' => 'true',
-                ],
-                'transforms' => [
-                    'unwrap' => [
-                        'type' => 'io.debezium.transforms.ExtractNewRecordState',
-                        'delete.tombstone.handling.mode' => 'tombstone',
-                    ],
-                ],
+                'options' => [],
+                'transforms' => [],
                 'converters' => [
                     'uuid' => 'org.phpinnacle.toblerone.UuidConverter',
                     'integer' => 'org.phpinnacle.toblerone.IntegerConverter',
@@ -73,12 +72,7 @@ return [
                 ],
             ],
             'sink' => [
-                'options' => [
-                    // 'key.converter' => 'org.apache.kafka.connect.json.JsonConverter',
-                    // 'key.converter.schemas.enable' => 'true',
-                    // 'value.converter' => 'org.apache.kafka.connect.json.JsonConverter',
-                    // 'value.converter.schemas.enable' => 'true',
-                ],
+                'options' => [],
                 'transforms' => [],
             ],
         ],

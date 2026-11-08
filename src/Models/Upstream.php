@@ -11,6 +11,8 @@ use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use PHPinnacle\Ferry\Casts\TransformsCast;
+use PHPinnacle\Ferry\Data\TransformSetting;
 use PHPinnacle\Ferry\Enums\StructureStatus;
 use PHPinnacle\Ferry\Models\Concerns\HasConnector;
 use PHPinnacle\Ferry\Observers\UpstreamObserver;
@@ -23,6 +25,7 @@ use PHPinnacle\Ferry\Observers\UpstreamObserver;
  * @property string $origin
  * @property string $adapter
  * @property array<string, mixed> $config
+ * @property list<TransformSetting> $transforms
  * @property bool $is_active
  * @property CarbonImmutable $created_at
  * @property CarbonImmutable $updated_at
@@ -41,11 +44,13 @@ class Upstream extends Model implements HasLabel
 
     protected $attributes = [
         'is_active' => true,
+        'transforms' => '[]',
     ];
 
     protected $casts = [
         'config' => 'encrypted:array',
         'is_active' => 'bool',
+        'transforms' => TransformsCast::class,
     ];
 
     protected $hidden = ['config'];
@@ -56,6 +61,7 @@ class Upstream extends Model implements HasLabel
         'origin',
         'adapter',
         'config',
+        'transforms',
         'is_active',
     ];
 

@@ -177,21 +177,6 @@ it('builds source transforms from the origin configuration in order', function (
         ->not->toHaveKey('transforms.unwrap.type');
 });
 
-it('disables source transforms when the origin transform map is empty', function () {
-    config(['phpinnacle-ferry.origins.kafka.source.transforms' => []]);
-    $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
-
-    $config = app(SourceFactory::class)->source(
-        $upstream,
-        app(RosettaAdapter::class)->capture($upstream),
-        config('phpinnacle-ferry.origins.kafka.source'),
-    );
-
-    expect($config)
-        ->toMatchArray(['transforms' => ''])
-        ->not->toHaveKeys(['transforms.unwrap.type', 'transforms.unwrap.delete.tombstone.handling.mode']);
-});
-
 it('registers the configured converter classes even without per-column selections', function () {
     config(['phpinnacle-ferry.origins.kafka.source.converters' => ['text' => 'example.TextConverter']]);
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);

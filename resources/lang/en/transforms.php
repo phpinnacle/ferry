@@ -1,6 +1,12 @@
 <?php
 
 return [
+    'debezium_timestamps' => 'Fill Debezium timestamps',
+    'debezium_created_field' => 'Creation timestamp field',
+    'debezium_updated_field' => 'Update timestamp field',
+    'debezium_timestamps_help' => 'Use on the upstream before Unwrap, while the Debezium envelope is intact.',
+    'unwrap' => 'Unwrap Debezium envelope',
+    'unwrap_delete_mode' => 'Delete and tombstone handling',
     'empty_string_to_null' => 'Empty string to null',
     'empty_string_to_null_description' => 'Replace empty strings with null. Existing null values remain null.',
     'empty_string_to_null_trim' => 'Trim whitespace',

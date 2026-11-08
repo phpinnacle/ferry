@@ -86,7 +86,12 @@ class EloquentAdapter implements Adapter
         /** @var array{driver: string, ...} $connection */
         $connection = DB::connection($config['connection'])->getConfig();
 
-        return new CapturePlan($connection, array_values(array_unique($tables)));
+        return new CapturePlan($connection, array_values(array_unique($tables)), converters: [
+            'key.converter' => 'org.apache.kafka.connect.json.JsonConverter',
+            'key.converter.schemas.enable' => 'false',
+            'value.converter' => 'org.apache.kafka.connect.json.JsonConverter',
+            'value.converter.schemas.enable' => 'false',
+        ]);
     }
 
     public function prepare(Upstream $upstream): StructurePlan

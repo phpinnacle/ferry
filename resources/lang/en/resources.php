@@ -72,6 +72,7 @@ return [
         ],
         'sections' => [
             'connection' => 'Connection Settings',
+            'transforms' => 'Global Transformations',
             'general' => 'General Information',
             'structure' => 'Source Structure',
         ],

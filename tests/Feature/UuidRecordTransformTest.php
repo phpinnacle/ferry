@@ -182,7 +182,7 @@ it('creates and persists one UUID key through the tabbed record builder for both
         ->toBe(
             'public._reference0.row_id,public._reference0.tenant_id,public._reference0.name',
         );
-    expect($capture['transforms'])->toBe('unwrap');
+    expect($capture['transforms'])->toBe('');
     $sink = new SinkConfigFactory(app(TransformFactory::class))->make(
         app(DestinationFactory::class)->resolve($replica),
         $replica,

@@ -3,15 +3,21 @@
 namespace PHPinnacle\Ferry\Origins\Kafka;
 
 use PHPinnacle\Ferry\Data\CapturePlan;
+use PHPinnacle\Ferry\Enums\TransformTarget;
 use PHPinnacle\Ferry\Models\Replica;
 use PHPinnacle\Ferry\Models\StructureItem;
 use PHPinnacle\Ferry\Models\Upstream;
+use PHPinnacle\Ferry\Services\TransformRegistry;
 
 class SourceFactory
 {
     private const string DEFAULT_SCHEMA = 'public';
 
     private const int IDENTIFIER_LENGTH = 63;
+
+    public function __construct(
+        private readonly TransformRegistry $transforms,
+    ) {}
 
     /**
      * @param array{
@@ -38,6 +44,13 @@ class SourceFactory
         $connection = $capture->config;
 
         $signal = $config['signal'];
+        $pipeline = $config['transforms'];
+
+        foreach ($upstream->transforms as $index => $setting) {
+            $pipeline['upstream_' . $index] = $this->transforms
+                ->get($setting->type)
+                ->connector(TransformTarget::Value, $setting->data);
+        }
 
         return [
             'connector.class' => 'io.debezium.connector.postgresql.PostgresConnector',
@@ -65,7 +78,7 @@ class SourceFactory
                     ? []
                     : self::converters($config['converters'], $capture->converterColumns)
             ),
-            ...TransformFactory::configuration($config['transforms']),
+            ...TransformFactory::configuration($pipeline),
             ...$config['options'],
         ];
     }

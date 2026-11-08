@@ -92,6 +92,7 @@ class FerryServiceProvider extends PackageServiceProvider
             ->hasConfigFile()
             ->hasTranslations()
             ->hasCommand(Commands\RefreshConnectorStatuses::class)
+            ->hasCommand(Commands\ConsumeChangesCommand::class)
             ->hasInstallCommand(function (InstallCommand $command) {
                 $command
                     ->publishConfigFile()

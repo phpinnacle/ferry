@@ -73,7 +73,7 @@ class KafkaOrigin implements Origin
         return ($source->connector ?? new Connector)->fill([
             'name' => $source->connector->name ?? $this->sources->name($source),
             'origin' => $this->name,
-            'config' => $config,
+            'config' => [...$config, ...$capture->converters],
         ]);
     }
 

@@ -13,10 +13,12 @@ use Filament\Schemas\Schema;
 use PHPinnacle\Common\Concerns\FormSlug;
 use PHPinnacle\Common\Forms\ActiveSelect;
 use PHPinnacle\Ferry\Enums\ConnectorStatus;
+use PHPinnacle\Ferry\Forms\RecordTransforms;
 use PHPinnacle\Ferry\Models\Upstream;
 use PHPinnacle\Ferry\Resources\Upstreams\Actions\PrepareStructureAction;
 use PHPinnacle\Ferry\Services\OriginFactory;
 use PHPinnacle\Ferry\Services\StructureAdapterRegistry;
+use PHPinnacle\Jason\Schema as JsonSchema;
 
 class UpstreamForm
 {
@@ -86,6 +88,13 @@ class UpstreamForm
                             }),
                     ]),
                 $config,
+                Section::make(__('phpinnacle-ferry::resources.upstream.sections.transforms'))
+                    ->schema([
+                        RecordTransforms::make('transforms')
+                            ->hiddenLabel()
+                            // shortcut: Upstream rows vary by table; field-aware forms need table schemas.
+                            ->inputSchema(JsonSchema::object()),
+                    ]),
                 Section::make(__('phpinnacle-ferry::resources.upstream.sections.structure'))
                     ->icon('phosphor-tree-structure')
                     ->columns(4)
