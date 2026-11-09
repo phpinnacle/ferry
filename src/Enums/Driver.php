@@ -47,14 +47,6 @@ enum Driver: string implements HasLabel
                 ->revealable()
                 ->autocomplete(false)
                 ->maxLength(255)
-                ->afterStateHydrated(function (TextInput $component, ?Upstream $record) {
-                    if ($record !== null) {
-                        $component->state(null);
-                    }
-                })
-                ->dehydrateStateUsing(fn (?string $state, ?Upstream $record) => filled($state)
-                    ? $state
-                    : $record?->config['password'])
                 ->required(fn (?Upstream $record) => $record === null),
             ...match ($this) {
                 self::Pgsql => [

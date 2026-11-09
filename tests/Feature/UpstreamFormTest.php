@@ -68,13 +68,33 @@ it('hydrates hidden connection settings directly from its record without exposin
 
     expect($upstream->attributesToArray())->not->toHaveKey('config');
     expect($form->getComponentByStatePath('config.host')->getState())->toBe('localhost');
-    expect($form->getComponentByStatePath('config.password')->getState())->toBeNull();
+    expect($form->getComponentByStatePath('config.password')->getState())->toBe('secret');
 
     $form->getComponentByStatePath('config.host')->state('updated.internal');
     $upstream->update($form->getState());
 
     expect($upstream->fresh()->config['host'])->toBe('updated.internal');
     expect($upstream->fresh()->attributesToArray())->not->toHaveKey('config');
+});
+
+it('keeps the saved password available across Livewire refreshes and encrypts its replacement', function () {
+    $upstream = TestCase::makeUpstream();
+    $page = Livewire::test(\PHPinnacle\Ferry\Tests\Fixtures\UpstreamForm::class, ['record' => $upstream]);
+
+    $page
+        ->assertSet('data.config.password', 'secret')
+        ->call('$refresh')
+        ->assertSet('data.config.password', 'secret')
+        ->set('data.config.password', 'replacement-secret')
+        ->call('save')
+        ->assertHasNoErrors();
+
+    $saved = $upstream->fresh();
+    expect($saved->config['password'])->toBe('replacement-secret');
+    expect($saved->getRawOriginal('config'))->not->toContain('replacement-secret');
+
+    Livewire::test(\PHPinnacle\Ferry\Tests\Fixtures\UpstreamForm::class, ['record' => $saved])
+        ->assertSet('data.config.password', 'replacement-secret');
 });
 
 it('offers configured origins and saves the selected key', function () {
@@ -178,7 +198,7 @@ it('rejects invalid PostgreSQL SSL modes', function (mixed $mode) {
         );
 })->with(['unknown mode' => ['invalid'], 'number' => [42], 'array' => [['require']]]);
 
-it('keeps the saved password when the configuration password is left blank', function () {
+it('clears the saved password when the configuration password is cleared', function () {
     $upstream = TestCase::makeUpstream();
     $schema = ferry_upstream_form($upstream);
     $schema->getComponentByStatePath('config.password')->state('');
@@ -187,10 +207,10 @@ it('keeps the saved password when the configuration password is left blank', fun
     $upstream->update($schema->getState());
 
     expect($upstream->fresh()->config)
-        ->toMatchArray(['host' => 'replica.example', 'password' => 'secret']);
+        ->toMatchArray(['host' => 'replica.example', 'password' => null]);
 });
 
-it('tests only driver fields and preserves a saved password left blank', function (bool $editing) {
+it('tests only driver fields and uses a cleared password when editing', function (bool $editing) {
     $record = $editing ? TestCase::makeUpstream() : null;
     $schema = ferry_upstream_form($record);
     $schema->getComponentByStatePath('name')->state(null);
@@ -207,7 +227,7 @@ it('tests only driver fields and preserves a saved password left blank', functio
         ->with(Mockery::subset([
             'driver' => 'pgsql',
             'host' => 'localhost',
-            'password' => 'secret',
+            'password' => $editing ? null : 'secret',
             'sslmode' => 'verify-full',
         ]))
         ->andReturn(UpstreamTestResult::success('Connected'));
