@@ -162,7 +162,7 @@ it('refreshes connector statuses from the table action and notifies about partia
     RefreshConnectorStatusesAction::table()->call();
 
     expect($source->fresh()->status)->toBe(ConnectorStatus::Paused);
-    expect($sink->fresh()->status)->toBe($fails ? null : ConnectorStatus::Paused);
+    expect($sink->fresh()->status)->toBe($fails ? ConnectorStatus::Unknown : ConnectorStatus::Paused);
     Queue::assertNothingPushed();
     Notification::assertNotified(
         $fails

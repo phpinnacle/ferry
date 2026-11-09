@@ -123,7 +123,13 @@ class ConnectorManager
 
     public function checkStatus(Connector $connector): void
     {
-        $this->check($this->origins->create($connector->origin), $connector);
+        try {
+            $this->check($this->origins->create($connector->origin), $connector);
+        } catch (ConnectorOperationFailed $exception) {
+            $connector->recordStatus(ConnectorStatus::Unknown, $exception->getMessage());
+
+            throw $exception;
+        }
     }
 
     /** @param (Closure(Connector, Throwable): void)|null $onFailure */

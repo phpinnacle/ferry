@@ -247,6 +247,41 @@ it('does not enqueue updates for unchanged config or status checks', function ()
     expect(DB::table('jobs')->count())->toBe(0);
 });
 
+it('records an unknown status when a status request fails and clears the error after recovery', function () {
+    Queue::fake();
+    $connector = TestCase::makeReplica()->connector;
+    $connector->recordStatus(ConnectorStatus::Running);
+    $config = $connector->config;
+    $appliedConfig = $connector->applied_config;
+    $origin = Mockery::mock(FakeOrigin::class)->makePartial();
+    $origin->shouldReceive('status')->once()->ordered()->andThrow(new RuntimeException('Connect unavailable'));
+    $origin
+        ->shouldReceive('status')
+        ->once()
+        ->ordered()
+        ->andReturnUsing(function (Connector $connector) {
+            $connector->error = null;
+
+            return ConnectorStatus::Running;
+        });
+    ferry_use_origin($origin);
+    Queue::fake();
+
+    expect(fn () => app(ConnectorManager::class)->checkStatus($connector))
+        ->toThrow(ConnectorOperationFailed::class, 'Connect unavailable');
+
+    expect($connector->fresh()->status)->toBe(ConnectorStatus::Unknown);
+    expect($connector->fresh()->error)->toBe('Connect unavailable');
+    expect($connector->fresh()->config)->toBe($config);
+    expect($connector->fresh()->applied_config)->toBe($appliedConfig);
+
+    app(ConnectorManager::class)->checkStatus($connector);
+
+    expect($connector->fresh()->status)->toBe(ConnectorStatus::Running);
+    expect($connector->fresh()->error)->toBeNull();
+    Queue::assertNothingPushed();
+});
+
 it('uses current configuration when old jobs are still pending', function () {
     $replica = TestCase::makeReplica();
     $replica->update(['mapping' => [new FieldMapping(source: '_idrref', target: 'latest_id')]]);

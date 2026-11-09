@@ -21,7 +21,7 @@ it('refreshes all saved connectors from Artisan and continues after a status req
     $connectors = Connector::query()->orderBy('id')->get();
     $failed = $connectors[1];
     $failed->recordStatus(ConnectorStatus::Running, 'Previous diagnostic');
-    $checkedAt = $failed->checked_at;
+    $this->travelTo(now()->addMinute()->startOfSecond());
     $checked = [];
     $origin = Mockery::mock(Origin::class)->makePartial();
     $origin
@@ -57,10 +57,10 @@ it('refreshes all saved connectors from Artisan and continues after a status req
 
         if ($connector->is($failed)) {
             expect($connector->status)
-                ->toBe(ConnectorStatus::Running)
+                ->toBe(ConnectorStatus::Unknown)
                 ->and($connector->error)
-                ->toBe('Previous diagnostic')
-                ->and($connector->checked_at->equalTo($checkedAt))
+                ->toBe('Connect unavailable')
+                ->and($connector->checked_at->equalTo(now()))
                 ->toBeTrue();
         } else {
             expect($connector->status)

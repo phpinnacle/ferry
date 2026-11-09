@@ -661,7 +661,7 @@ Both `Upstream` and `Replica` store a nullable `connector_id`. Creation prepares
 
 **Connector config** in the Upstream and Replica edit headers opens the saved desired configuration as formatted JSON with copying support. The modal has a code icon and description, and closes through the header close button without a footer action. It is available once a connector configuration exists and requires the owner's `update` permission. The JSON includes connection credentials. Viewing it does not contact the origin, regenerate settings, save form drafts, or dispatch jobs; pending changes may not yet match `applied_config`.
 
-A source connector failure concerns all replicas of its upstream, while a sink connector failure concerns its replica alone. A connector that reports itself as running while one of its tasks has failed is recorded as failed together with the trace of that task, so a stalled transfer stays visible. Both states are shown as badges in the Filament tables and can be refreshed from there.
+A source connector failure concerns all replicas of its upstream, while a sink connector failure concerns its replica alone. A connector that reports itself as running while one of its tasks has failed is recorded as failed together with the trace of that task, so a stalled transfer stays visible. If a status request fails, Ferry records `Unknown`, the request error and the check timestamp instead of retaining the previous status. A later successful check replaces that unknown state with the reported status and diagnostics. Both states are shown as badges in the Filament tables and can be refreshed from there.
 
 Refresh the statuses of all saved source and sink connectors from Artisan:
 
@@ -669,7 +669,7 @@ Refresh the statuses of all saved source and sink connectors from Artisan:
 php artisan ferry:refresh
 ```
 
-The command checks connectors synchronously without dispatching jobs or changing their configuration. If checking a connector fails, it reports the connector name and error as a warning, skips that connector and continues checking the remaining connectors. The command returns exit code `0` even when individual checks fail or there are no connectors.
+The command checks connectors synchronously without dispatching jobs or changing their configuration. If checking a connector fails, it saves the failure, reports the connector name and error as a warning and continues checking the remaining connectors. The command returns exit code `0` even when individual checks fail or there are no connectors.
 
 `phpinnacle-ferry.scheduler.refresh` automatically schedules `ConnectorManager::refreshStatuses()` every configured number of seconds (default: `1`). Set it to `0` or a negative integer to disable scheduling. The scheduler calls the service method directly, reports individual failures through Laravel's exception handler and continues with the remaining connectors. Artisan and panel actions use the same service method with their own error presentation.
 
