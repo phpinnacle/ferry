@@ -81,6 +81,8 @@ return [
     'filter_include' => 'Оставить только подходящие записи',
     'filter_condition' => 'Предикат JSONPath',
     'filter_condition_help' => 'Используйте @ для этого поля: например, :example. $ тоже ссылается на это поле.',
+    'record_filter_condition' => 'Выражение JSONPath',
+    'record_filter_condition_help' => 'Введите полное выражение JSONPath, начиная с $. Перед распаковкой используйте пути конверта, например $.after.customer[?(@.active == true)]. Доступны только уже захватываемые поля.',
     'filter_missing_or_null_behavior' => 'Если значение отсутствует или равно null',
     'filter_missing_include' => 'Оставить запись',
     'filter_missing_exclude' => 'Исключить запись',

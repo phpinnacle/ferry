@@ -11,7 +11,9 @@ use PHPinnacle\Ferry\Data\UpstreamTestResult;
 use PHPinnacle\Ferry\Enums\SSLMode;
 use PHPinnacle\Ferry\Enums\StructureStatus;
 use PHPinnacle\Ferry\Models\Upstream;
+use PHPinnacle\Ferry\Origins\Kafka\SourceFactory;
 use PHPinnacle\Ferry\Resources\Upstreams\Schemas\UpstreamForm;
+use PHPinnacle\Ferry\Services\RosettaAdapter;
 use PHPinnacle\Ferry\Services\UpstreamFactory;
 use PHPinnacle\Ferry\Tests\Fixtures\SchemaHost;
 use PHPinnacle\Ferry\Tests\TestCase;
@@ -309,6 +311,14 @@ it('persists initial upstream record transforms without sharing state between fo
     $settings = [
         ['type' => 'debezium_timestamps', 'data' => ['created_field' => 'created_at', 'updated_field' => 'updated_at']],
         ['type' => 'unwrap', 'data' => ['delete_mode' => 'tombstone']],
+        [
+            'type' => 'record_filter',
+            'data' => [
+                'condition' => '$.customer[?(@.address.city == "Warsaw")]',
+                'mode' => 'include',
+                'missing_or_null_behavior' => 'exclude',
+            ],
+        ],
     ];
     $form->getComponentByStatePath('transforms')->state($settings);
 
@@ -316,6 +326,20 @@ it('persists initial upstream record transforms without sharing state between fo
 
     expect($upstream->fresh()->toArray()['transforms'])->toBe($settings);
     expect(ferry_upstream_form()->getComponentByStatePath('transforms')->getState())->toBe([]);
+    expect(app(SourceFactory::class)->source(
+        $upstream,
+        app(RosettaAdapter::class)->capture($upstream),
+        config('phpinnacle-ferry.origins.kafka.source'),
+    ))->toMatchArray([
+        'transforms' => 'upstream_0,upstream_1,upstream_2',
+        'transforms.upstream_2.type' => 'io.confluent.connect.transforms.Filter$Value',
+        'transforms.upstream_2.filter.condition' => '$.customer[?(@.address.city == "Warsaw")]',
+        'transforms.upstream_2.filter.type' => 'include',
+        'transforms.upstream_2.missing.or.null.behavior' => 'exclude',
+        'transforms.upstream_2.predicate' => 'tombstone',
+        'transforms.upstream_2.negate' => 'true',
+        'predicates.tombstone.type' => 'org.apache.kafka.connect.transforms.predicates.RecordIsTombstone',
+    ]);
 });
 
 it('adds updates and reorders upstream transforms across Livewire refreshes before saving and reopening', function () {

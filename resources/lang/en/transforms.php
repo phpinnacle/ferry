@@ -81,6 +81,8 @@ return [
     'filter_include' => 'Keep only matching records',
     'filter_condition' => 'JSONPath predicate',
     'filter_condition_help' => 'Use @ for this field, for example :example. $ also refers to this field.',
+    'record_filter_condition' => 'JSONPath expression',
+    'record_filter_condition_help' => 'Enter a complete JSONPath expression starting with $. Before Unwrap, use envelope paths, for example $.after.customer[?(@.active == true)]. Only already captured fields are available.',
     'filter_missing_or_null_behavior' => 'Missing or null behavior',
     'filter_missing_include' => 'Keep the record',
     'filter_missing_exclude' => 'Drop the record',

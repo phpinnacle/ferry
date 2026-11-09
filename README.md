@@ -592,6 +592,10 @@ The form stores `condition`, `mode`, and `missing_or_null_behavior` (`include`, 
 
 The source connector captures fields with a target or transforms; unbound filter fields are excluded from destination writes by the sink whitelist.
 
+`RecordFilter` (`record_filter`) is available in both upstream and replica record transformation editors. It uses the same action and missing/null settings as `Filter`, preserves the record schema and skips tombstones. Enter a complete JSONPath expression, such as `$[?(@.amount >= 100 && @.active == true)]` or `$.after.customer[?(@.address.city == 'Warsaw')]`. Ferry passes it unchanged to Confluent's Filter SMT without adding a predicate wrapper or binding it to a field. Paths refer to the record at that position in the pipeline: before Unwrap they address the Debezium envelope; after Unwrap they address row fields. Missing/null behavior applies to paths outside predicates; references inside `[?()]` follow the predicate semantics described above. Kafka Connect validates JSONPath syntax.
+
+**Implementation limitation:** record filter expressions do not contribute column dependencies to source capture. With Rosetta, filtering on a column does not cause it to be captured; it must already be included through replica mappings or another transform's declared dependencies. This applies to both upstream and replica record filters. Eloquent captures all columns of its selected model tables. Record filters only pass or drop incoming messages: when an existing destination row stops matching, dropping its update does not remove that row.
+
 ### Source settings and transforms
 
 For the Ferry transformation editor, use the standalone `FieldTransforms` field with a source object schema represented by `Schema`:

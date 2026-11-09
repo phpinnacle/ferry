@@ -192,7 +192,7 @@ it('offers every registered record transform as a native tab and persists custom
     $builder = $form->getComponentByStatePath('transforms');
     expect($builder)->toBeInstanceOf(TabbedBuilder::class);
     expect(array_map(fn ($block) => $block->getName(), $builder->getBlockPickerBlocks()))
-        ->toBe(['debezium_timestamps', 'unwrap', 'insert_uuid', 'slug', 'custom_record']);
+        ->toBe(['debezium_timestamps', 'unwrap', 'record_filter', 'insert_uuid', 'slug', 'custom_record']);
     $action = $builder->getAction('add')(['block' => 'custom_record']);
     $action->callBefore();
     $action->call();

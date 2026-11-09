@@ -22,6 +22,7 @@ return [
             \PHPinnacle\Ferry\Transformations\Unwrap::class,
             \PHPinnacle\Ferry\Transformations\Cast::class,
             \PHPinnacle\Ferry\Transformations\Filter::class,
+            \PHPinnacle\Ferry\Transformations\RecordFilter::class,
             \PHPinnacle\Ferry\Transformations\InsertUuid::class,
             \PHPinnacle\Ferry\Transformations\Slug::class,
             \PHPinnacle\Ferry\Transformations\TimestampConverter::class,
