@@ -209,3 +209,35 @@ it('keeps referenced record fields and key dependencies when generating a slug',
     expect($resolver->primaryKeySources(new Replica(['schema' => $schema])))->toBe(['name']);
     expect($resolver->keyPlan($replica, ['slug'])['sources'])->toBe(['name']);
 });
+
+it('preserves fixed value types before projecting them into the sink row', function (
+    bool|int|float $value,
+    string $expected,
+    string $cast,
+) {
+    $schema = Schema::object(['source' => Schema::string()]);
+    $replica = new Replica([
+        'schema' => $schema,
+        'mapping' => [new FieldMapping('source', 'value')],
+    ]);
+
+    $config = app(TransformFactory::class)->pipeline(
+        $replica,
+        new StructureItem(['schema' => $schema]),
+        fixedValues: ['value' => $value],
+    );
+
+    expect($config)->toMatchArray([
+        'transforms' => 'insert_value,insert_value_cast,rename_values',
+        'transforms.insert_value.static.field' => '__ferry_fixed_value',
+        'transforms.insert_value.static.value' => $expected,
+        'transforms.insert_value_cast.type' => 'org.apache.kafka.connect.transforms.Cast$Value',
+        'transforms.insert_value_cast.spec' => '__ferry_fixed_value:' . $cast,
+        'transforms.rename_values.renames' => '__ferry_fixed_value:value',
+    ]);
+})->with([
+    'true' => [true, 'true', 'boolean'],
+    'false' => [false, 'false', 'boolean'],
+    'integer' => [42, '42', 'int64'],
+    'float' => [12.5, '12.5', 'float64'],
+]);

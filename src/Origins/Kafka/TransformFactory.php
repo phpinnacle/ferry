@@ -3,7 +3,6 @@
 namespace PHPinnacle\Ferry\Origins\Kafka;
 
 use Illuminate\Container\Attributes\Singleton;
-use PHPinnacle\Ferry\Data\FieldMapping;
 use PHPinnacle\Ferry\Enums\FieldKind;
 use PHPinnacle\Ferry\Enums\TransformScope;
 use PHPinnacle\Ferry\Enums\TransformTarget;
@@ -45,7 +44,7 @@ class TransformFactory
 
     /**
      * @param array<string, string> $keyMap
-     * @param array<string, string> $fixedValues
+     * @param array<string, mixed> $fixedValues
      * @param array<string, array<string, string>> $transforms
      * @return array<string, string>
      */
@@ -80,7 +79,7 @@ class TransformFactory
 
                 $source = self::temporaryField('__ferry_static_' . $index, $reserved);
                 $columns[$source] = $mapping->target;
-                $pipeline += self::constant('field_' . $index . '_0', $source, $mapping);
+                $pipeline += self::constant('field_' . $index . '_0', $source, $mapping->static);
                 $offset = 1;
             } else {
                 /** @var string $source */
@@ -100,11 +99,7 @@ class TransformFactory
         foreach ($fixedValues as $field => $value) {
             $source = self::temporaryField('__ferry_fixed_' . $field, $reserved);
             $columns[$source] = $field;
-            $pipeline['insert_' . $field] = [
-                'type' => 'org.apache.kafka.connect.transforms.InsertField$Value',
-                'static.field' => $source,
-                'static.value' => $value,
-            ];
+            $pipeline += self::constant('insert_' . $field, $source, $value);
 
             // Destination-owned values take precedence over mapped values.
             foreach ($columns as $column => $target) {
@@ -193,24 +188,27 @@ class TransformFactory
     }
 
     /** @return array<string, array<string, string>> */
-    private static function constant(string $name, string $field, FieldMapping $mapping): array
+    private static function constant(string $name, string $field, mixed $value): array
     {
+        $static = match ($value) {
+            true => 'true',
+            false => 'false',
+            default => $value,
+        };
+        settype($static, 'string');
+
         $transforms = [
             $name => [
                 'type' => 'org.apache.kafka.connect.transforms.InsertField$Value',
                 'static.field' => $field,
-                'static.value' => match ($mapping->static) {
-                    true => 'true',
-                    false => 'false',
-                    default => (string) $mapping->static,
-                },
+                'static.value' => $static,
             ],
         ];
 
         $cast = match (true) {
-            is_bool($mapping->static) => 'boolean',
-            is_int($mapping->static) => 'int64',
-            is_float($mapping->static) => 'float64',
+            is_bool($value) => 'boolean',
+            is_int($value) => 'int64',
+            is_float($value) => 'float64',
             default => null,
         };
 

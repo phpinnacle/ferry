@@ -50,7 +50,7 @@ final readonly class DynamicDestination implements Destination
         );
     }
 
-    /** @return array<string, string> */
+    /** @return array<string, mixed> */
     public function getFixedValues(): array
     {
         return [];

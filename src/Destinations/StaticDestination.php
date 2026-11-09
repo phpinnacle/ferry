@@ -14,7 +14,7 @@ final readonly class StaticDestination implements Destination
      * @param string|Htmlable|Closure(): (string|Htmlable|null)|null $label
      * @param Schema|Closure(): Schema $schema
      * @param non-empty-list<string> $primaryKey
-     * @param array<string, string> $fixedValues
+     * @param array<string, mixed> $fixedValues
      * @param string|array<string>|null $color
      */
     public function __construct(
@@ -66,7 +66,7 @@ final readonly class StaticDestination implements Destination
         return $this->primaryKey;
     }
 
-    /** @return array<string, string> */
+    /** @return array<string, mixed> */
     public function getFixedValues(): array
     {
         return $this->fixedValues;

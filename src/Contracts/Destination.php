@@ -15,6 +15,6 @@ interface Destination extends HasLabel, HasIcon, HasColor
     /** @return non-empty-list<string> */
     public function getPrimaryKey(): array;
 
-    /** @return array<string, string> */
+    /** @return array<string, mixed> */
     public function getFixedValues(): array;
 }

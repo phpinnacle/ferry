@@ -303,7 +303,7 @@ FerryPlugin::make()->destinations(new StaticDestination(
 
 The readonly `key` identifies the destination in the persisted replica. `schema` accepts a `PHPinnacle\Jason\Schema` or a closure returning one, exposed through `getSchema()`. Use a flat object schema with `string`, `integer`, `number`, or `boolean` fields (optionally nullable): `properties` declares columns, `title` supplies labels, and `required` identifies mandatory mappings.
 
-`table`, `connection`, `primaryKey` and `fixedValues` configure the target independently of its schema. A `null` connection uses the Ferry connection. Fixed values are written into every row through `InsertField` transforms; JSON Schema `default` does not insert values.
+`table`, `connection`, `primaryKey` and `fixedValues` configure the target independently of its schema. A `null` connection uses the Ferry connection. Fixed values use an `array<string, mixed>` map and are written into every row through `InsertField` transforms. Boolean, integer and floating-point constants receive a matching `Cast` after insertion; JSON Schema `default` does not insert values.
 
 `Destination` extends Filament’s `HasLabel`, `HasIcon`, and `HasColor` contracts. Static destinations accept optional `icon` and `color` constructor arguments, and `label` may be a closure. Use label and schema closures for translations and catalogs that must reflect the current request. Dynamic destinations use their table name as the label and have no icon or color by default.
 
