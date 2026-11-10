@@ -82,6 +82,36 @@ it('round-trips source and static mappings without synthetic transforms', functi
         ->toEqual($constant);
 });
 
+it('accepts a transformed finite enum for a formatted destination field', function () {
+    $values = ['550e8400-e29b-41d4-a716-446655440000', '550e8400-e29b-41d4-a716-446655440001'];
+    $mapping = new FieldMapping('active', 'id', [
+        'transforms' => [[
+            'type' => 'boolean_to_string',
+            'data' => ['true' => $values[0], 'false' => $values[1]],
+        ]],
+    ]);
+    $source = Schema::object(['active' => Schema::boolean()]);
+    $destination = new StaticDestination(
+        key: 'formatted',
+        label: 'Formatted destination',
+        table: 'formatted',
+        primaryKey: ['id'],
+        schema: Schema::fromArray([
+            'properties' => ['id' => [
+                'type' => 'string',
+                'format' => 'uuid',
+                'enum' => $values,
+                'minLength' => 36,
+                'maxLength' => 36,
+            ]],
+        ]),
+    );
+
+    app(ReplicaSchema::class)->assertValid([$mapping], $destination, [], $source);
+
+    expect(app(ReplicaSchemaResolver::class)->mappingSchema($mapping, $source)->enumValues())->toBe($values);
+});
+
 it('rejects missing required destination fields declared through a root reference', function () {
     $destination = new StaticDestination(
         key: 'referenced',
