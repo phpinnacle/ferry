@@ -52,6 +52,12 @@ class SourceFactory
                 ->connector(TransformTarget::Value, $setting->data);
         }
 
+        if (($capture->converters['value.converter'] ?? null) === 'io.confluent.connect.avro.AvroConverter') {
+            $pipeline['schema_fingerprint'] = [
+                'type' => 'org.phpinnacle.toblerone.SchemaFingerprintTransform',
+            ];
+        }
+
         return [
             'connector.class' => 'io.debezium.connector.postgresql.PostgresConnector',
             'tasks.max' => '1',

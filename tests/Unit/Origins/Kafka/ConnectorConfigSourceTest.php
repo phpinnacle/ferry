@@ -1,7 +1,9 @@
 <?php
 
 use Illuminate\Support\Facades\Queue;
+use PHPinnacle\Ferry\Data\CapturePlan;
 use PHPinnacle\Ferry\Data\FieldMapping;
+use PHPinnacle\Ferry\Data\TransformSetting;
 use PHPinnacle\Ferry\Destinations\StaticDestination;
 use PHPinnacle\Ferry\Enums\DestinationType;
 use PHPinnacle\Ferry\Enums\ReplicaStatus;
@@ -200,6 +202,61 @@ it('registers the configured converter classes even without per-column selection
         ->not
         ->toHaveKey('converters');
 });
+
+it('fingerprints the final Avro value after origin and upstream transforms without topic predicates', function (
+    bool $avro,
+    ?array $columns,
+) {
+    $upstream = TestCase::makeUpstream([
+        'transforms' => [new TransformSetting('unwrap', ['delete_mode' => 'tombstone'])],
+    ]);
+    $capture = new CapturePlan(
+        $upstream->config,
+        ['public.customers'],
+        $columns,
+        converters: [
+            'value.converter' => $avro
+                ? 'io.confluent.connect.avro.AvroConverter'
+                : 'org.apache.kafka.connect.json.JsonConverter',
+        ],
+    );
+    $settings = config('phpinnacle-ferry.origins.kafka.source');
+    $settings['transforms'] = [
+        'headers' => [
+            'type' => 'org.apache.kafka.connect.transforms.DropHeaders',
+            'headers' => 'debug',
+            'predicate' => 'tombstone',
+            'negate' => 'true',
+        ],
+        'route' => [
+            'type' => 'org.apache.kafka.connect.transforms.RegexRouter',
+            'regex' => '(.*)',
+            'replacement' => 'prefix_$1',
+        ],
+    ];
+
+    $config = app(SourceFactory::class)->source($upstream, $capture, $settings);
+
+    expect($config)->toMatchArray([
+        'transforms' => $avro ? 'headers,route,upstream_0,schema_fingerprint' : 'headers,route,upstream_0',
+        'predicates' => 'tombstone',
+        'predicates.tombstone.type' => 'org.apache.kafka.connect.transforms.predicates.RecordIsTombstone',
+        'transforms.upstream_0.type' => 'io.debezium.transforms.ExtractNewRecordState',
+        'transforms.upstream_0.delete.tombstone.handling.mode' => 'tombstone',
+    ]);
+
+    if ($avro) {
+        expect($config)->toMatchArray([
+            'transforms.schema_fingerprint.type' => 'org.phpinnacle.toblerone.SchemaFingerprintTransform',
+        ]);
+    } else {
+        expect($config)->not->toHaveKey('transforms.schema_fingerprint.type');
+    }
+})->with([
+    'selected Avro columns' => [true, ['public.customers.id']],
+    'all Avro columns' => [true, null],
+    'JSON' => [false, ['public.customers.id']],
+]);
 
 it('unions tables and columns across the tracked replicas of one upstream', function () {
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);

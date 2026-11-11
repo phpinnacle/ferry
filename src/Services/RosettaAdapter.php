@@ -166,6 +166,7 @@ class RosettaAdapter implements Adapter
                     'key.converter.schema.registry.url' => $schemaRegistry,
                     'value.converter' => 'io.confluent.connect.avro.AvroConverter',
                     'value.converter.schema.registry.url' => $schemaRegistry,
+                    'value.converter.value.subject.name.strategy' => 'io.confluent.kafka.serializers.subject.TopicRecordNameStrategy',
                 ] : [
                     'key.converter' => 'org.apache.kafka.connect.json.JsonConverter',
                     'key.converter.schemas.enable' => 'true',

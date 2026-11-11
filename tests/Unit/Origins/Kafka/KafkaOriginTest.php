@@ -221,6 +221,13 @@ it('keeps adapter serialization identical on source and sink despite origin over
     $settings = [
         'key.converter' => 'custom.KeyConverter',
         'value.converter' => 'custom.ValueConverter',
+        ...(
+            $registry === null
+                ? []
+                : [
+                    'value.converter.value.subject.name.strategy' => 'io.confluent.kafka.serializers.subject.TopicNameStrategy',
+                ]
+        ),
     ];
     $origins = new OriginFactory(app(), [
         'kafka' => $defaults,
@@ -243,6 +250,7 @@ it('keeps adapter serialization identical on source and sink despite origin over
             'key.converter.schema.registry.url' => 'http://registry.test:8081',
             'value.converter' => 'io.confluent.connect.avro.AvroConverter',
             'value.converter.schema.registry.url' => 'http://registry.test:8081',
+            'value.converter.value.subject.name.strategy' => 'io.confluent.kafka.serializers.subject.TopicRecordNameStrategy',
         ];
 
     foreach (['kafka', 'analytics'] as $name) {
@@ -346,8 +354,12 @@ it('uses each named origin target host only for its sink', function () {
     }
 });
 
-it('unwraps envelopes at the sink and preserves deletes for both destinations', function (bool $static) {
+it('unwraps envelopes at the sink and preserves deletes for both destinations', function (
+    bool $static,
+    ?string $registry,
+) {
     config([
+        'phpinnacle-ferry.schema_registry.base_uri' => $registry,
         'phpinnacle-ferry.origins.kafka.sink.transforms' => [
             'unwrap' => [
                 'type' => 'io.debezium.transforms.ExtractNewRecordState',
@@ -383,7 +395,9 @@ it('unwraps envelopes at the sink and preserves deletes for both destinations', 
     $source = $origin->make($replica->upstream)->config;
     $sink = $origin->make($replica)->config;
 
-    expect($source)->toMatchArray(['transforms' => ''])->not->toHaveKey('transforms.unwrap.type');
+    expect($source)
+        ->toMatchArray(['transforms' => $registry === null ? '' : 'schema_fingerprint'])
+        ->not->toHaveKey('transforms.unwrap.type');
     expect($sink)
         ->toMatchArray([
             'connector.class' => 'io.confluent.connect.jdbc.JdbcSinkConnector',
@@ -401,7 +415,12 @@ it('unwraps envelopes at the sink and preserves deletes for both destinations', 
         ->not->toHaveKeys([
             'transforms.drop_tombstones.type',
         ]);
-})->with(['dynamic' => [false], 'static' => [true]]);
+})->with([
+    'dynamic JSON' => [false, null],
+    'static JSON' => [true, null],
+    'dynamic Avro' => [false, 'http://registry.test:8081'],
+    'static Avro' => [true, 'http://registry.test:8081'],
+]);
 
 it('rejects unsupported source drivers during assembly', function (bool $source) {
     $upstream = TestCase::makeUpstream([], [
