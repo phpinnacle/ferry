@@ -303,6 +303,31 @@ FerryPlugin::make()->destinations(new StaticDestination(
 
 The readonly `key` identifies the destination in the persisted replica. `schema` accepts a `PHPinnacle\Jason\Schema` or a closure returning one, exposed through `getSchema()`. Use a flat object schema with `string`, `integer`, `number`, or `boolean` fields (optionally nullable): `properties` declares columns, `title` supplies labels, and `required` identifies mandatory mappings.
 
+String and integer destination properties can declare `x-lookup` to choose static
+values by record label through Eidos's built-in mapping editor:
+
+```php
+'category_id' => [
+    'type' => ['integer', 'null'],
+    'x-lookup' => [
+        'model' => App\Models\Category::class,
+        'label' => 'name',
+        'search' => ['name', 'code'],
+        'key' => 'id',
+    ],
+],
+```
+
+Only `model` is required: `label` defaults to `name`, `search` to `[label]`,
+and `key` to the model's primary key. The editor saves the selected key and
+preloads up to 20 records, ordered by label and key. It resolves the saved key's
+label when reopened, respecting the model's connection and global
+scopes. Integer and string keys retain their schema types. Clearing a nullable
+lookup omits the static mapping, following the existing empty-value rule.
+Destination primary-key fields still require source connections and never offer
+static editors, including when annotated with `x-lookup`. Saved values remain
+subject to destination schema validation.
+
 `table`, `connection`, `primaryKey` and `fixedValues` configure the target independently of its schema. A `null` connection uses the Ferry connection. Fixed values use an `array<string, mixed>` map and are written into every row through `InsertField` transforms. Boolean, integer and floating-point constants receive a matching `Cast` after insertion; JSON Schema `default` does not insert values.
 
 `Destination` extends Filament’s `HasLabel`, `HasIcon`, and `HasColor` contracts. Static destinations accept optional `icon` and `color` constructor arguments, and `label` may be a closure. Use label and schema closures for translations and catalogs that must reflect the current request. Dynamic destinations use their table name as the label and have no icon or color by default.

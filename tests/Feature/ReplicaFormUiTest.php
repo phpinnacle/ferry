@@ -17,6 +17,7 @@ use PHPinnacle\Ferry\Enums\DestinationType;
 use PHPinnacle\Ferry\Enums\StructureStatus;
 use PHPinnacle\Ferry\Models\Replica;
 use PHPinnacle\Ferry\Models\StructureItem;
+use PHPinnacle\Ferry\Models\Upstream;
 use PHPinnacle\Ferry\Resources\Replicas\Schemas\ReplicaForm;
 use PHPinnacle\Ferry\Services\DestinationFactory;
 use PHPinnacle\Ferry\Services\ReplicaSchemaResolver;
@@ -1471,6 +1472,87 @@ it('omits empty optional forms and validates static values against destination b
             fn (ValidationException $exception) => expect($exception->errors())
                 ->toHaveKey($mapping->getStaticFormSchema('name')->getComponent('value')->getStatePath()),
         );
+});
+
+it('round trips lookup keys in static mappings while omitting cleared choices and prohibiting key constants', function () {
+    $lookup = ['model' => Upstream::class, 'key' => 'code'];
+    app(DestinationFactory::class)->register(new StaticDestination(
+        key: 'lookup',
+        label: 'Lookup',
+        table: 'lookup',
+        primaryKey: ['id'],
+        schema: Schema::fromArray([
+            'type' => 'object',
+            'properties' => [
+                'id' => ['type' => 'string', 'x-lookup' => $lookup],
+                'upstream_code' => ['type' => ['string', 'null'], 'maxLength' => 4, 'x-lookup' => $lookup],
+                'other_code' => ['type' => ['string', 'null'], 'x-lookup' => $lookup],
+            ],
+            'required' => ['id'],
+        ]),
+    ));
+    $upstream = TestCase::makeUpstream(
+        ['name' => 'Lookup upstream', 'code' => '0002'],
+        ['status' => StructureStatus::Ready, 'generation' => 1],
+    );
+    TestCase::makeItem($upstream);
+    $data = [
+        'upstream_id' => $upstream->id,
+        'source' => 'object-0',
+        'type' => DestinationType::Static->value,
+        'destination' => 'lookup',
+        'mapping' => MappingState::mapping(['id' => MappingState::source('_idrref')]),
+    ];
+    $form = TestCase::replicaForm($data);
+    $mapping = $form->getComponentByStatePath('mapping');
+    $picker = $mapping->getStaticFormSchema('upstream_code')->getComponent('value');
+    expect($mapping->getStaticFormSchema('id'))->toBeNull();
+    expect($picker->getSearchResults('Lookup'))->toBe(['0002' => 'Lookup upstream']);
+    $picker->rawState('0002');
+
+    $state = $form->getState();
+
+    expect(collect($state['mapping'])->firstWhere('target', 'upstream_code')['static'])->toBe('0002');
+    expect(collect($state['mapping'])->firstWhere('target', 'other_code'))->toBeNull();
+    $record = $form->getRecord();
+    $record->update($state);
+    $reopened = TestCase::replicaForm([], $record->fresh());
+    $picker = $reopened
+        ->getComponentByStatePath('mapping')
+        ->getStaticFormSchema('upstream_code')
+        ->getComponent('value');
+    expect($picker->getOptionLabel())->toBe('Lookup upstream');
+    $picker->rawState('');
+    expect(collect($reopened->getState()['mapping'])->firstWhere('target', 'upstream_code'))->toBeNull();
+
+    $page = Livewire::test(\PHPinnacle\Ferry\Tests\Fixtures\ReplicaForm::class, [
+        'record' => $record,
+        'state' => [
+            ...$state,
+            'mapping' => [
+                ...$state['mapping'],
+                ['kind' => 'static', 'target' => 'other_code', 'static' => '0002', 'options' => []],
+            ],
+        ],
+    ]);
+    $liveMapping = $page->instance()->form->getComponentByStatePath('mapping');
+    expect($liveMapping->getStaticFormSchema('upstream_code')->getComponent('value')->getOptionLabel())
+        ->toBe('Lookup upstream');
+    $path = $liveMapping->getStaticFormSchema('upstream_code')->getComponent('value')->getStatePath();
+    $page->set($path, null)->call('validateForm')->assertHasNoErrors();
+    $liveMapping = $page->instance()->form->getComponentByStatePath('mapping');
+    expect($liveMapping->getStaticFormSchema('other_code')->getComponent('value')->getOptionLabel())
+        ->toBe('Lookup upstream');
+    expect(collect($page->instance()->form->getState()['mapping'])->firstWhere('target', 'other_code')['static'])
+        ->toBe('0002');
+
+    $upstream->update(['code' => 'too-long']);
+    $picker->rawState('too-long');
+    expect($reopened->getState(...))->toThrow(ValidationException::class);
+    expect(fn () => TestCase::replicaFormState([
+        'mapping' => MappingState::mapping(['id' => MappingState::value('too-long')]),
+    ], $record))
+        ->toThrow(ValidationException::class);
 });
 
 it('maps UUID references into bounded strings while respecting target length and direction', function () {
