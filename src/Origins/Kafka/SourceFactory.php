@@ -77,7 +77,7 @@ class SourceFactory
             'signal.enabled.channels' => 'kafka',
             'signal.kafka.topic' => $signal['topic'],
             'signal.kafka.bootstrap.servers' => $signal['bootstrap_servers'],
-            'signal.kafka.groupId' => $signal['group_id'],
+            'signal.kafka.groupId' => $signal['group_id'] . '-' . $upstream->id,
             ...$scope,
             ...(
                 $capture->converterColumns === null
@@ -85,7 +85,7 @@ class SourceFactory
                     : self::converters($config['converters'], $capture->converterColumns)
             ),
             ...TransformFactory::configuration($pipeline),
-            ...$config['options'],
+            ...array_diff_key($config['options'], ['signal.kafka.groupId' => true, 'signal.consumer.group.id' => true]),
         ];
     }
 

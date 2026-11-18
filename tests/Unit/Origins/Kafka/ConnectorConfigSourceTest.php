@@ -75,13 +75,35 @@ it('builds a debezium postgres connector config scoped to the tracked replicas',
             'signal.enabled.channels' => 'kafka',
             'signal.kafka.topic' => 'ferry-signal',
             'signal.kafka.bootstrap.servers' => 'kafka.test:9092',
-            'signal.kafka.groupId' => 'ferry-signal',
+            'signal.kafka.groupId' => 'ferry-signal-' . $upstream->id,
             'include.unknown.datatypes' => 'true',
             'converters' => 'uuid,integer,mchar',
             'uuid.type' => 'org.phpinnacle.toblerone.UuidConverter',
             'integer.type' => 'org.phpinnacle.toblerone.IntegerConverter',
             'mchar.type' => 'org.phpinnacle.toblerone.MCharConverter',
         ]);
+});
+
+it('generates a distinct and stable Kafka signal group for each upstream', function () {
+    $first = TestCase::makeUpstream();
+    $second = TestCase::makeUpstream(['code' => 'another-upstream']);
+    $capture = new CapturePlan($first->config, ['public.customers']);
+    $settings = config('phpinnacle-ferry.origins.kafka.source');
+    $settings['signal']['group_id'] = 'warehouse-signal';
+    $settings['options'] = [
+        'signal.kafka.groupId' => 'shared-group',
+        'signal.consumer.group.id' => 'shared-group',
+    ];
+    $builder = app(SourceFactory::class);
+
+    $firstConfig = $builder->source($first, $capture, $settings);
+    $secondConfig = $builder->source($second, $capture, $settings);
+    $regeneratedConfig = $builder->source($first->fresh(), $capture, $settings);
+
+    expect($firstConfig['signal.kafka.groupId'])->not->toBe($secondConfig['signal.kafka.groupId']);
+    expect($firstConfig['signal.kafka.groupId'])->toBe('warehouse-signal-' . $first->id);
+    expect($regeneratedConfig['signal.kafka.groupId'])->toBe($firstConfig['signal.kafka.groupId']);
+    expect($firstConfig)->not->toHaveKey('signal.consumer.group.id');
 });
 
 it('groups captured column annotations across replicas without inferring converters from names', function () {

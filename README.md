@@ -849,7 +849,7 @@ Debezium applies this setting only to captured tables matching the expression an
 
 ### Connector options
 
-Each origin declares `source.options` and `sink.options` as arrays of native Kafka Connect property names and string values. These options override generated settings, including source custom converter declarations and column lists, before the adapter's key/value serialization properties are applied. Settings that change topic names, capture scope, keys, or transforms must preserve the contracts used by Ferry's generated pipeline and snapshot handling.
+Each origin declares `source.options` and `sink.options` as arrays of native Kafka Connect property names and string values. These options override generated settings, including source custom converter declarations and column lists, before the adapter's key/value serialization properties are applied. Ferry reserves `signal.kafka.groupId` and `signal.consumer.group.id` for per-upstream signal consumer groups. Settings that change topic names, capture scope, keys, or transforms must preserve the contracts used by Ferry's generated pipeline and snapshot handling.
 
 ### Debezium custom converters
 
@@ -881,7 +881,7 @@ For example, the generated source configuration can contain:
 
 The shipped `kafka` origin reads the `FERRY_KAFKA_*` environment variables, including `FERRY_KAFKA_SIGNAL_GROUP_ID`. `phpinnacle-ferry.kafka.transforms` lists transformation classes that the service provider resolves and registers in `TransformRegistry` for both forms and Kafka connector compilation.
 
-`base_uri` is required before any connector operation, and `headers` accompany every REST request. Configure HTTP timeouts on the application's PSR-18 client. Each origin's `source.signal.topic`, `source.signal.bootstrap_servers`, and `source.signal.group_id` configure Debezium's Kafka signal channel; `flush_timeout` bounds publishing time in milliseconds. Publishing signals requires the `ext-rdkafka` PHP extension.
+`base_uri` is required before any connector operation, and `headers` accompany every REST request. Configure HTTP timeouts on the application's PSR-18 client. Each origin's `source.signal.topic` and `source.signal.bootstrap_servers` configure Debezium's Kafka signal channel. Ferry uses `source.signal.group_id` as a prefix and appends the upstream UUID, for example `ferry-signal-<upstream-id>`. Upstreams can share a signal topic and keep independent consumer offsets, with messages addressed by `topic.prefix`. The `flush_timeout` setting bounds publishing time in milliseconds. Publishing signals requires the `ext-rdkafka` PHP extension.
 
 ## Field mapping
 
