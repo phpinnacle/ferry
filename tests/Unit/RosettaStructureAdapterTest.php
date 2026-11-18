@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Database\Connection;
+use Illuminate\Database\PostgresConnection;
 use Illuminate\Database\SQLiteConnection;
 use PHPinnacle\Ferry\Data\StructurePlan;
 use PHPinnacle\Ferry\Models\Upstream;
@@ -25,29 +26,50 @@ it('binds the structure adapter without opening a source connection', function (
 it('prepares serializable context and reads physical primary keys for roots and children', function (
     string $table,
     array $primaryKey,
+    string $driver,
 ) {
+    $dsn = getenv('FERRY_TEST_PGSQL_DSN');
+
+    if ($driver === 'pgsql' && $dsn === false) {
+        $this->markTestSkipped('Set FERRY_TEST_PGSQL_DSN to test PostgreSQL catalog reads.');
+    }
+
     $upstream = new Upstream(['config' => ['driver' => 'pgsql', 'database' => 'source']]);
-    $pdo = new PDO('sqlite::memory:');
-    $pdo->exec('CREATE TABLE Params (filename TEXT, binarydata BLOB)');
-    $pdo->exec('CREATE TABLE Config (filename TEXT, binarydata BLOB)');
+    $pdo = new PDO($driver === 'pgsql' ? $dsn : 'sqlite::memory:');
+
+    if ($driver === 'pgsql') {
+        $pdo->beginTransaction();
+        $pdo->exec('CREATE SCHEMA ferry_rosetta_test');
+        $pdo->exec('SET LOCAL search_path TO ferry_rosetta_test');
+    }
+
+    $binaryType = $driver === 'pgsql' ? 'BYTEA' : 'BLOB';
+    $pdo->exec("CREATE TABLE Params (filename TEXT, binarydata {$binaryType})");
+    $pdo->exec("CREATE TABLE Config (filename TEXT, binarydata {$binaryType})");
     $pdo->exec($table);
     $pdo->exec(
         'CREATE TABLE _document1_vt2 (_document1_idrref TEXT, _lineno3 INTEGER, PRIMARY KEY (_document1_idrref, _lineno3))',
     );
-    $pdo->prepare('INSERT INTO Params VALUES (?, ?)')->execute([
-        'DBNames',
-        gzdeflate('{0,{3,{object-id,"Document",1},{section-id,"VT",2},{section-id,"LineNo",3}}}'),
-    ]);
-    $insert = $pdo->prepare('INSERT INTO Config VALUES (?, ?)');
-    $insert->execute(['root', gzdeflate('{2,"configuration-id"}')]);
-    $insert->execute(['configuration-id', gzdeflate('{0,0,0,{0,{{c045099e-13b9-4fb6-9d50-fca00202971e,0}}}}')]);
-    $insert->execute([
-        'object-id',
-        gzdeflate(
+
+    foreach ([
+        ['Params', 'DBNames', '{0,{3,{object-id,"Document",1},{section-id,"VT",2},{section-id,"LineNo",3}}}'],
+        ['Config', 'root', '{2,"configuration-id"}'],
+        ['Config', 'configuration-id', '{0,0,0,{0,{{c045099e-13b9-4fb6-9d50-fca00202971e,0}}}}'],
+        [
+            'Config',
+            'object-id',
             '{,{,,,,,,,,,{,{,{,,object-id},Object,{1,en,Object}}}},,{sections,1,{{,{,,,,,{,{,{,,section-id},Lines,{1,en,Lines}}}}},,{properties,0}}},,{properties,0}}',
-        ),
-    ]);
-    $sources = [new SQLiteConnection($pdo), new SQLiteConnection($pdo)];
+        ],
+    ] as [$metadataTable, $filename, $contents]) {
+        $insert = $pdo->prepare("INSERT INTO {$metadataTable} VALUES (?, ?)");
+        $insert->bindValue(1, $filename);
+        $insert->bindValue(2, gzdeflate($contents), PDO::PARAM_LOB);
+        $insert->execute();
+    }
+
+    $connection = $driver === 'pgsql' ? PostgresConnection::class : SQLiteConnection::class;
+    $sources = [new $connection($pdo), new $connection($pdo)];
+    $sources[1]->enableQueryLog();
     $factory = Mockery::mock(UpstreamFactory::class);
     $factory->shouldReceive('make')->with($upstream->config)->andReturn(...$sources);
     $adapter = app()->make(RosettaAdapter::class, ['factory' => $factory]);
@@ -55,6 +77,11 @@ it('prepares serializable context and reads physical primary keys for roots and 
     $plan = $adapter->prepare($upstream);
     $objects = $adapter->read($upstream, $plan, 0, 1);
 
+    if ($driver === 'pgsql') {
+        $pdo->rollBack();
+    }
+
+    expect($sources[1]->getQueryLog())->toHaveCount($driver === 'pgsql' ? 1 : 2);
     expect($sources[0]->getRawPdo())->toBeNull();
     expect($sources[1]->getRawPdo())->toBeNull();
     expect($plan)
@@ -103,7 +130,7 @@ it('prepares serializable context and reads physical primary keys for roots and 
         ['_version', '_idrref'],
     ],
     'unique index without a primary key' => ['CREATE TABLE _document1 (_idrref TEXT UNIQUE, _version INTEGER)', []],
-]);
+])->with(['sqlite', 'pgsql']);
 
 it('disconnects and propagates a failed source read', function (string $operation) {
     $source = Mockery::mock(Connection::class);

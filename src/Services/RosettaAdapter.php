@@ -8,6 +8,9 @@ use Filament\Notifications\Notification;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Support\Enums\Alignment;
+use Illuminate\Database\Connection;
+use Illuminate\Database\PostgresConnection;
+use Illuminate\Database\SqlServerConnection;
 use PHPinnacle\Ferry\Contracts\Adapter;
 use PHPinnacle\Ferry\Data\CapturePlan;
 use PHPinnacle\Ferry\Data\StructurePlan;
@@ -210,15 +213,19 @@ class RosettaAdapter implements Adapter
             );
 
             $items = array_map(new StructureConverter()->item(...), $objects);
-            $schema = $source->getSchemaBuilder();
+            $tables = [];
 
             foreach ($items as $item) {
                 foreach ([$item, ...$item->children] as $object) {
-                    $primaryKey = array_find(
-                        $schema->getIndexes($object->name),
-                        fn (array $index) => $index['primary'],
-                    );
-                    $object->primary_key = $primaryKey['columns'] ?? [];
+                    $tables[] = $object->name;
+                }
+            }
+
+            $primaryKeys = $this->primaryKeys($source, $tables);
+
+            foreach ($items as $item) {
+                foreach ([$item, ...$item->children] as $object) {
+                    $object->primary_key = $primaryKeys[$object->name] ?? [];
                     $object->schema = Schema::fromArray([
                         ...$object->schema->keywords(),
                         'required' => array_values(array_unique([
@@ -234,5 +241,67 @@ class RosettaAdapter implements Adapter
         } finally {
             $source->disconnect();
         }
+    }
+
+    /**
+     * @param list<string> $tables
+     * @return array<string, list<string>>
+     */
+    private function primaryKeys(Connection $source, array $tables): array
+    {
+        $query = match (true) {
+            $source instanceof PostgresConnection => <<<'SQL'
+                SELECT t.relname AS table_name, a.attname AS column_name
+                FROM pg_index i
+                JOIN pg_class t ON t.oid = i.indrelid
+                JOIN pg_namespace n ON n.oid = t.relnamespace
+                JOIN LATERAL unnest(i.indkey) WITH ORDINALITY AS k(attnum, position) ON true
+                JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = k.attnum
+                WHERE i.indisprimary AND n.nspname = current_schema()
+                AND t.relname IN (%s)
+                ORDER BY t.relname, k.position
+                SQL,
+            $source instanceof SqlServerConnection => <<<'SQL'
+                SELECT t.name AS table_name, c.name AS column_name
+                FROM sys.indexes i
+                JOIN sys.tables t ON t.object_id = i.object_id
+                JOIN sys.schemas s ON s.schema_id = t.schema_id
+                JOIN sys.index_columns k ON k.object_id = i.object_id AND k.index_id = i.index_id
+                JOIN sys.columns c ON c.object_id = k.object_id AND c.column_id = k.column_id
+                WHERE i.is_primary_key = 1 AND s.name = schema_name()
+                AND t.name IN (%s)
+                ORDER BY t.name, k.key_ordinal
+                SQL,
+            default => null,
+        };
+        $keys = [];
+
+        if ($query === null) {
+            foreach ($tables as $table) {
+                $primaryKey = array_find(
+                    $source->getSchemaBuilder()->getIndexes($table),
+                    fn (array $index) => $index['primary'],
+                );
+                $keys[strtolower($table)] = $primaryKey['columns'] ?? [];
+            }
+
+            return $keys;
+        }
+
+        foreach (array_chunk($tables, 500) as $batch) {
+            $bindings = array_map(fn (string $table) => $source->getTablePrefix() . $table, $batch);
+            /** @var list<object{table_name: string, column_name: string}> $columns */
+            $columns = $source->selectFromWriteConnection(
+                sprintf($query, implode(', ', array_fill(0, count($batch), '?'))),
+                $bindings,
+            );
+
+            foreach ($columns as $column) {
+                $table = substr($column->table_name, strlen($source->getTablePrefix()));
+                $keys[strtolower($table)][] = $column->column_name;
+            }
+        }
+
+        return $keys;
     }
 }
