@@ -153,6 +153,8 @@ return [
             '_number' => 'Number',
             '_posted' => 'Posted',
             '_period' => 'Period',
+            '_recordertref' => 'Recorder · Reference type',
+            '_recorderrref' => 'Recorder · Reference',
             '_lineno' => 'Line number',
             '_active' => 'Active',
             '_recordkind' => 'Record kind',

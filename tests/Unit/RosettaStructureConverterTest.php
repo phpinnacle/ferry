@@ -86,6 +86,8 @@ it('lists mappable fields with translated system titles and property titles', fu
         'system' => [
             '_idrref' => new ScalarField(FieldType::Id),
             '_description' => $string,
+            '_recordertref' => new ScalarField(FieldType::Binary),
+            '_recorderrref' => new ScalarField(FieldType::Binary),
             '_keyfield' => new ScalarField(FieldType::Binary),
             '_document12_idrref' => new ReferenceField('document-12'),
         ],
@@ -109,6 +111,8 @@ it('lists mappable fields with translated system titles and property titles', fu
         ->toBe([
             '_idrref' => __('phpinnacle-ferry::resources.replica.system_fields._idrref'),
             '_description' => __('phpinnacle-ferry::resources.replica.system_fields._description'),
+            '_recordertref' => __('phpinnacle-ferry::resources.replica.system_fields._recordertref'),
+            '_recorderrref' => __('phpinnacle-ferry::resources.replica.system_fields._recorderrref'),
             '_keyfield' => '_keyfield',
             '_document12_idrref' => '_document12_idrref',
             '_fld1' => 'Title 1',
