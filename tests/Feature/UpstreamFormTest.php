@@ -4,6 +4,8 @@ use Filament\Actions\Action;
 use Filament\Actions\Testing\TestAction;
 use Filament\Notifications\Notification;
 use Filament\Schemas\Schema;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
@@ -97,6 +99,122 @@ it('keeps the saved password available across Livewire refreshes and encrypts it
 
     Livewire::test(\PHPinnacle\Ferry\Tests\Fixtures\UpstreamForm::class, ['record' => $saved])
         ->assertSet('data.config.password', 'replacement-secret');
+});
+
+it('refreshes monitoring inside the edit form and saves edits without monitoring state', function () {
+    $this->travelTo(now()->setTimestamp(1_800_000_000));
+    config([
+        'phpinnacle-ferry.origins.kafka.prometheus' => [
+            'base_uri' => 'http://prometheus.test',
+            'headers' => [],
+            'labels' => ['job' => 'connect'],
+            'stale_after' => 90,
+        ],
+    ]);
+    Http::preventStrayRequests();
+
+    ferry_upstream_form()->getFlatComponents();
+    Http::assertNothingSent();
+
+    $upstream = TestCase::makeUpstream();
+    TestCase::makeConnector($upstream, [
+        'name' => 'monitored-source',
+        'applied_config' => ['topic.prefix' => 'applied.server'],
+    ]);
+    $rate = '123';
+    $includeQueueRemaining = true;
+    Http::fake(['prometheus.test/api/v1/query' => function (Request $request) use (&$rate, &$includeQueueRemaining) {
+        $timestamps = str_contains($request['query'], 'timestamp(');
+        $series = [
+            ['metric' => ['ferry_metric' => 'up'], 'value' => '1'],
+            [
+                'metric' => [
+                    'ferry_metric' => 'debezium_postgres_connector_metrics_connected',
+                    'context' => 'streaming',
+                ],
+                'value' => '1',
+            ],
+            [
+                'metric' => [
+                    'ferry_metric' => 'debezium_postgres_connector_metrics_snapshotrunning',
+                    'context' => 'snapshot',
+                ],
+                'value' => '0',
+            ],
+            [
+                'metric' => [
+                    'ferry_metric' => 'debezium_postgres_connector_metrics_totalnumberofeventsseen',
+                    'context' => 'streaming',
+                ],
+                'value' => '0',
+            ],
+            [
+                'metric' => [
+                    'ferry_metric' => 'debezium_postgres_connector_metrics_queuetotalcapacity',
+                    'context' => 'streaming',
+                ],
+                'value' => '1000',
+            ],
+            [
+                'metric' => ['ferry_metric' => 'kafka_connect_source_task_metrics_source_record_poll_rate'],
+                'value' => $rate,
+            ],
+        ];
+
+        if ($includeQueueRemaining) {
+            $series[] = [
+                'metric' => [
+                    'ferry_metric' => 'debezium_postgres_connector_metrics_queueremainingcapacity',
+                    'context' => 'streaming',
+                ],
+                'value' => '750',
+            ];
+        }
+
+        return Http::response([
+            'status' => 'success',
+            'data' => [
+                'resultType' => 'vector',
+                'result' => array_map(
+                    fn (array $sample) => [
+                        'metric' => $sample['metric'],
+                        'value' => [
+                            now()->timestamp,
+                            $timestamps ? (string) (now()->timestamp - 20) : $sample['value'],
+                        ],
+                    ],
+                    $series,
+                ),
+            ],
+        ]);
+    }]);
+
+    $page = Livewire::test(\PHPinnacle\Ferry\Tests\Fixtures\UpstreamForm::class, ['record' => $upstream])
+        ->assertSee('Worker scrape available')
+        ->assertSee('2027-01-15T07:59:40+00:00')
+        ->assertSee('Yes')
+        ->assertSee('No')
+        ->assertSee('—')
+        ->assertSee('0.00')
+        ->assertSee('250.00 / 1 000.00')
+        ->assertSee('123.00 /s')
+        ->assertSeeHtml('wire:poll.30s="$refresh"');
+    Http::assertSentCount(2);
+
+    $page->set('data.name', 'Unsaved upstream');
+    $rate = '456';
+    $includeQueueRemaining = false;
+    $page
+        ->call('$refresh')
+        ->assertSee('456.00 /s')
+        ->assertDontSee('123.00 /s')
+        ->assertDontSee('250.00 / 1 000.00')
+        ->assertSet('data.name', 'Unsaved upstream');
+    $state = $page->instance()->form->getState();
+    $page->call('save')->assertHasNoErrors();
+
+    expect(array_filter(array_keys($state), fn (string $key) => str_starts_with($key, 'monitoring_')))->toBe([]);
+    expect($upstream->fresh()->name)->toBe('Unsaved upstream');
 });
 
 it('offers configured origins and saves the selected key', function () {

@@ -55,6 +55,12 @@ return [
             'base_uri' => env('FERRY_KAFKA_CONNECT_URL'),
             'target_host' => null,
             'headers' => [],
+            'prometheus' => [
+                'base_uri' => env('FERRY_PROMETHEUS_URL'),
+                'headers' => [],
+                'labels' => [], // Exact-match labels identifying this origin's Connect scrape targets.
+                'stale_after' => 90, // Seconds; allow for the scrape interval and scheduling jitter.
+            ],
             'source' => [
                 'options' => [],
                 'transforms' => [],

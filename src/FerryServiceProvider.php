@@ -82,6 +82,13 @@ class FerryServiceProvider extends PackageServiceProvider
 
             return new OriginFactory($this->app, $config);
         });
+
+        $this->app->bind(Services\PrometheusClient::class, function () {
+            /** @var array<string, array{prometheus?: array{base_uri: ?string, labels: array<string, string>, headers: array<string, string>, stale_after: int}, ...}> $origins */
+            $origins = Config::array('phpinnacle-ferry.origins');
+
+            return new Services\PrometheusClient($origins, Config::integer('phpinnacle-ferry.timeout'));
+        });
     }
 
     public function configurePackage(Package $package): void

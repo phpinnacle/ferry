@@ -27,6 +27,7 @@ use PHPinnacle\Ferry\Forms\FieldTransforms;
 use PHPinnacle\Ferry\Forms\RecordTransforms;
 use PHPinnacle\Ferry\Models\Replica;
 use PHPinnacle\Ferry\Models\Upstream;
+use PHPinnacle\Ferry\Resources\Schemas\MonitoringSection;
 use PHPinnacle\Ferry\Rules\ReplicaSchema;
 use PHPinnacle\Ferry\Services\DestinationFactory;
 use PHPinnacle\Ferry\Services\ReplicaSchemaResolver;
@@ -60,6 +61,7 @@ class ReplicaForm
                         $record->connector?->status === ConnectorStatus::Failed && filled($record->connector->error),
                     )
                     ->extraAttributes(['role' => 'alert']),
+                MonitoringSection::sink(),
                 Section::make(__('phpinnacle-ferry::resources.replica.sections.general'))
                     ->columns(3)
                     ->schema([

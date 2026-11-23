@@ -833,6 +833,39 @@ Field mappings and their transforms run in the sink. Every JDBC sink uses `delet
 
 The sink's final value projection excludes effective replica key fields; JDBC writes destination primary keys from the record key alone. A key-only replica produces an empty value object for inserts and updates and preserves null tombstones for deletes. After a UUID key is generated, physical source key fields remain in the value only when mapped to ordinary destination columns. Source capture and shared Kafka topics retain physical key fields in row values for other replicas and earlier transformations.
 
+### Prometheus monitoring
+
+The upstream and replica edit forms include a read-only **Monitoring** section that refreshes approximately every 30 seconds while the page is visible and shows collection status as a colored badge with an icon. Prometheus monitoring is optional and configured per named origin in `config/phpinnacle-ferry.php`:
+
+```php
+'origins' => [
+    'kafka' => [
+        // Existing Kafka origin settings...
+        'prometheus' => [
+            'base_uri' => env('FERRY_PROMETHEUS_URL'),
+            'headers' => [], // String HTTP headers, e.g. Authorization.
+            'labels' => [
+                'namespace' => 'kafka',
+                'job' => 'kafka-connect',
+            ],
+            'stale_after' => 90,
+        ],
+    ],
+],
+```
+
+The shipped `kafka` origin reads `base_uri` from `FERRY_PROMETHEUS_URL`, defaults `headers` and `labels` to `[]`, and sets `stale_after` to `90` seconds. All `headers` and `labels` values must be strings; `labels` uses exact equality matching without PromQL fragments or regular expressions. Configure each origin's URL and labels to select one scrape series per worker and task for that origin alone, even when origins share connector or Debezium server names. An empty `labels` map matches every target and is suitable only for a dedicated Prometheus instance. Origin labels must exist on `up`, Connect, and Debezium series; omit `connector`, `task`, `server`, and `context` because Ferry applies connector/server identities and contexts itself and aggregates tasks.
+
+Without a saved connector or a non-empty `base_uri`, Ferry sends no monitoring requests and connector operations continue normally. Queries run server-side through Laravel's HTTP client using `phpinnacle-ferry.timeout` for connection and response timeouts. Each refresh sends two `POST api/v1/query` instant queries at the same evaluation timestamp: metric values and `timestamp(...)` applied directly to raw selectors so scrape time is preserved. Metrics are not persisted, and no scheduler, queue worker, or frontend build is required.
+
+Connect metrics match the saved `Connector.name`; Debezium metrics match `topic.prefix` from the source connector's **applied** configuration and read streaming and snapshot metrics from their respective `context` labels (`streaming` and `snapshot`). Without an applied `topic.prefix`, Debezium values are absent. The oldest returned sample timestamp is displayed in UTC (ISO 8601); query evaluation time is never treated as sample freshness. Set `stale_after` above your scrape interval plus scheduling jitter (the default 90 seconds fits a 30-second scrape interval).
+
+`up` reports whether Prometheus scraped the Connect workers, not connector or task health; Kafka Connect REST statuses and error messages remain authoritative. Unconfigured Prometheus, missing connectors, Prometheus errors or invalid responses, missing `up` data, failed worker scrapes, and stale samples each have distinct statuses. Any failed worker scrape or stale sample conservatively withholds all connector metrics in the section (one failed worker hides metrics for healthy workers of that origin); the worker scrape indicator remains available on a failed scrape. Missing or nonfinite values display **—**, while zero displays as zero. A healthy worker scrape does not guarantee that every metric is exported.
+
+Source lag is Debezium's streaming processing lag in milliseconds, **not end-to-end delivery latency to the replica database**; negative values remain negative (for example, with clock skew). Time since the last event is informational because an idle source is not necessarily unhealthy. Event counts accumulate since connector startup and reset on restart. Queue occupancy is total capacity minus remaining capacity, shown alongside capacity when both are present. Snapshot flags reflect the exported `snapshot` context, do not track incremental **Reread data** operations, and remain **—** when absent.
+
+Replica rates and active counts report records read from Kafka, passed to the sink, and awaiting completion. Task rates, counts, and error/retry counters are summed across tasks, while maxima use `max`. Batch average is the **unweighted mean of task averages**, not a weighted connector-wide batch average. Errors, failures, skips, and retries are separate cumulative counters that reset on task restart. Duplicate series from multiple scrape targets are not deduplicated. History, graphs, Kafka consumer-offset lag, and destination delivery latency are not included.
+
 ### Replica identity
 
 The source must provide old values for every selected physical key column on deletes and key changes. For keys outside the physical PRIMARY KEY, configure PostgreSQL `REPLICA IDENTITY FULL`, as required by [Debezium's custom message-key contract](https://debezium.io/documentation/reference/stable/connectors/postgresql.html#postgresql-property-message-key-columns). Eloquent event consumers also require complete old row images. Ferry does not configure replica identity by default; users must set it on the source tables or explicitly configure Debezium as shown below. With the required old values available, Debezium emits deletion/tombstone events for the old key and a create event for the new key; the sink transforms both keys independently of the value. The intended replica setup is one replica per source table. Multiple replicas are not prohibited, but Ferry does not merge their selected keys or resolve key conflicts.
