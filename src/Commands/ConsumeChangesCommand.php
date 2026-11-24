@@ -147,7 +147,7 @@ class ConsumeChangesCommand extends Command
                 }
 
                 if ($message->err !== RD_KAFKA_RESP_ERR_NO_ERROR) {
-                    throw new RuntimeException($message->errstr());
+                    throw new RuntimeException(sprintf('Kafka error %d: %s', $message->err, $message->errstr()));
                 }
 
                 if ($message->payload !== null) {
