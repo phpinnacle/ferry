@@ -81,7 +81,7 @@ class ReplicaForm
                             ->validatedWhenNotDehydrated(false),
                         Select::make('source')
                             ->label(__('phpinnacle-ferry::resources.replica.fields.source'))
-                            ->options([$record->source => $record->sourceObject()->displayTitle()])
+                            ->options([$record->source => $record->sourceObject()->sourceTitle()])
                             ->native(false)
                             ->disabled()
                             ->validatedWhenNotDehydrated(false),
@@ -147,8 +147,8 @@ class ReplicaForm
                         fn (string $value, Get $get) => Upstream::query()
                             ->find($get->string('upstream_id', isNullable: true))
                             ?->structure
-                            ->publishedItem($value)
-                            ?->displayTitle(),
+                            ->publishedSource($value)
+                            ?->sourceTitle(),
                     )
                     ->placeholder(__('phpinnacle-ferry::resources.replica.values.no_objects'))
                     ->default(fn (Select $component) => array_key_first($component->getOptions()))

@@ -106,6 +106,41 @@ it('finds source objects only in the upstream published root metadata', function
         ->toBeNull();
 });
 
+it('offers published sections as independent sources while keeping the catalog rooted', function () {
+    $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
+    $root = TestCase::makeItem($upstream, ['title' => 'Orders']);
+    $section = TestCase::makeItem($upstream, [
+        'external_id' => 'lines',
+        'parent_id' => $root->id,
+        'kind' => 'section',
+        'title' => 'Lines',
+        'name' => '_document1_vt2x1',
+        'primary_key' => [],
+    ]);
+
+    TestCase::makeItem($upstream, [
+        'external_id' => 'lines',
+        'parent_id' => $root->id,
+        'kind' => 'section',
+        'revision' => 2,
+        'title' => 'Draft lines',
+    ]);
+    $other = TestCase::makeUpstream(['code' => 'other'], ['generation' => 1]);
+    $otherRoot = TestCase::makeItem($other, ['title' => 'Invoices']);
+    TestCase::makeItem($other, [
+        'external_id' => 'lines',
+        'parent_id' => $otherRoot->id,
+        'kind' => 'section',
+        'title' => 'Lines',
+    ]);
+
+    expect($upstream->structure->sourceOptions('Lines'))->toBe(['lines' => 'Orders · Lines']);
+    expect($upstream->structure->publishedItems()->pluck('external_id')->all())->toBe(['object-0']);
+    $replica = TestCase::makeReplica(['upstream_id' => $upstream->id, 'source' => 'lines', 'mapping' => []]);
+    expect($replica->sourceObject()->is($section))->toBeTrue();
+    expect($replica->schema->toArray())->toBe($section->schema->toArray());
+});
+
 it('owns the persisted schema and destination table throughout its lifecycle', function () {
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
     $object = TestCase::makeItem($upstream, [

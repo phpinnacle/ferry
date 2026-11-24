@@ -51,6 +51,11 @@ class ReplicaForm extends Component implements HasActions, HasSchemas
         $this->form->getState();
     }
 
+    public function create(): void
+    {
+        $this->record = Replica::create($this->form->getState());
+    }
+
     public function save(): void
     {
         $this->record?->update($this->form->getState());

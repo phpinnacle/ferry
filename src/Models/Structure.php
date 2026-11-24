@@ -154,24 +154,45 @@ class Structure extends Model
         return $this->publishedItems()->where('external_id', $source)->first();
     }
 
+    /** @return Builder<StructureItem> */
+    public function publishedSources(): Builder
+    {
+        return $this
+            ->items()
+            ->getQuery()
+            ->where('revision', $this->generation)
+            ->where(fn (Builder $query) => $query->whereNull('parent_id')->orWhere('kind', 'section'))
+            ->orderBy('position');
+    }
+
+    public function publishedSource(string $source): ?StructureItem
+    {
+        return $this->publishedSources()->where('external_id', $source)->first();
+    }
+
     /** @return array<string, string> */
     public function sourceOptions(string $search = ''): array
     {
         return $this
-            ->publishedItems()
-            ->select(['external_id', 'title', 'label', 'name'])
+            ->publishedSources()
+            ->select(['external_id', 'parent_id', 'title', 'label', 'name'])
+            ->with('parent:id,title,label,name')
             ->where(function (Builder $query) use ($search) {
                 $query
                     ->whereLike('title', '%' . $search . '%')
                     ->orWhereLike('label', '%' . $search . '%')
-                    ->orWhereLike('name', '%' . $search . '%');
+                    ->orWhereLike('name', '%' . $search . '%')
+                    ->orWhereHas('parent', fn (Builder $parent) => $parent
+                        ->whereLike('title', '%' . $search . '%')
+                        ->orWhereLike('label', '%' . $search . '%')
+                        ->orWhereLike('name', '%' . $search . '%'));
             })
             ->reorder('priority')
             ->orderByRaw("lower(coalesce(nullif(title, ''), nullif(label, ''), name))")
             ->orderBy('external_id')
             ->limit(20)
             ->get()
-            ->mapWithKeys(fn (StructureItem $item) => [$item->external_id => $item->displayTitle()])
+            ->mapWithKeys(fn (StructureItem $item) => [$item->external_id => $item->sourceTitle()])
             ->all();
     }
 

@@ -105,6 +105,13 @@ class StructureItem extends Model
         };
     }
 
+    public function sourceTitle(): string
+    {
+        return $this->parent === null
+            ? $this->displayTitle()
+            : $this->parent->displayTitle() . ' · ' . $this->displayTitle();
+    }
+
     public function field(string $source): ?Schema
     {
         $field = $this->properties()[$source] ?? null;

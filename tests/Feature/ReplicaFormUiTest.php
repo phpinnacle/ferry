@@ -1745,3 +1745,96 @@ it('refreshes sink monitoring inside the edit form and saves edits without monit
     expect(array_filter(array_keys($state), fn (string $key) => str_starts_with($key, 'monitoring_')))->toBe([]);
     expect($replica->fresh()->name)->toBe('Unsaved replica');
 });
+
+it('selects independent sections with owner labels across Livewire updates and copies their input schema', function () {
+    $upstream = TestCase::makeUpstream();
+    $upstream->structure->importItems([
+        StructureItems::documentWithSection(),
+        StructureItems::documentWithSection('other-document', '_document4', 'Invoices', 'other-lines'),
+    ], 0);
+    $upstream->structure->publish();
+    $section = $upstream->structure->publishedSource('section-id');
+
+    for ($index = 0; $index < 21; $index++) {
+        TestCase::makeItem($upstream, ['external_id' => 'catalog-' . $index, 'title' => 'Catalog ' . $index]);
+    }
+
+    $other = TestCase::makeUpstream(['code' => 'other'], ['status' => StructureStatus::Ready, 'generation' => 1]);
+    TestCase::makeItem($other, ['external_id' => 'other-source']);
+
+    $page = Livewire::test(\PHPinnacle\Ferry\Tests\Fixtures\ReplicaForm::class, [
+        'creating' => true,
+        'state' => [
+            'name' => 'Lines',
+            'code' => 'lines',
+            'upstream_id' => $upstream->id,
+            'source' => 'document-id',
+            '_destination' => 'dynamic',
+        ],
+    ]);
+    $source = $page->instance()->form->getComponent('source');
+    expect($source->getOptions())->toHaveCount(20)->not->toHaveKey('section-id');
+    expect($source->getSearchResults('Lines'))->toBe([
+        'other-lines' => 'Invoices · Lines',
+        'section-id' => 'Orders · Lines',
+    ]);
+    expect($source->getSearchResults('Invoices'))->toBe([
+        'other-document' => 'Invoices',
+        'other-lines' => 'Invoices · Lines',
+    ]);
+    $page->set('data.source', 'section-id')->call('validateForm')->assertHasNoErrors();
+    expect($page->instance()->form->getComponent('source')->getOptionLabel())->toBe('Orders · Lines');
+    $page->set('data.upstream_id', $other->id)->assertSet('data.source', 'other-source');
+    $page->set('data.upstream_id', $upstream->id)->set('data.source', 'other-lines');
+    $page
+        ->call('validateForm')
+        ->assertHasNoErrors()
+        ->set('data.source', 'section-id')
+        ->call('create')
+        ->assertHasNoErrors();
+
+    $replica = Replica::query()->sole();
+    expect($replica->source)->toBe('section-id');
+    expect($replica->mapping)->toBe([]);
+    expect($replica->schema->toArray())->toBe($section->schema->toArray());
+    $edit = TestCase::replicaForm([], $replica);
+    expect($edit->getComponent('source')->getOptionLabel())->toBe('Orders · Lines');
+    expect(array_column($edit->getComponentByStatePath('mapping')->getSources(), 'id'))
+        ->toBe(['_document1_idrref', '_keyfield', '_lineno3', '_fld5rref']);
+});
+
+it('rejects forged source selections outside the published replica sources without saving', function (string $source) {
+    $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
+    $root = TestCase::makeItem($upstream);
+    TestCase::makeItem($upstream, ['external_id' => 'unsupported-child', 'parent_id' => $root->id]);
+    TestCase::makeItem($upstream, [
+        'external_id' => 'draft',
+        'kind' => 'section',
+        'parent_id' => $root->id,
+        'revision' => 2,
+    ]);
+    TestCase::makeItem($upstream, [
+        'external_id' => 'old',
+        'kind' => 'section',
+        'parent_id' => $root->id,
+        'revision' => 0,
+    ]);
+    $other = TestCase::makeUpstream(['code' => 'other']);
+    TestCase::makeItem($other, ['external_id' => 'foreign']);
+
+    Livewire::test(\PHPinnacle\Ferry\Tests\Fixtures\ReplicaForm::class, [
+        'creating' => true,
+        'state' => [
+            'name' => 'Forged',
+            'code' => 'forged',
+            'upstream_id' => $upstream->id,
+            'source' => 'object-0',
+            '_destination' => 'dynamic',
+        ],
+    ])
+        ->set('data.source', $source)
+        ->call('create')
+        ->assertHasErrors(['data.source']);
+
+    expect(Replica::query()->count())->toBe(0);
+})->with(['unsupported-child', 'draft', 'old', 'foreign', 'missing']);

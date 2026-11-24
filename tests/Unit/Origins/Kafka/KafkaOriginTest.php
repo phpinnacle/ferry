@@ -755,3 +755,158 @@ it('rejects a manual replica snapshot before its table is captured', function ()
     expect(fn () => $origin->snapshot($replica))->toThrow(\Illuminate\Validation\ValidationException::class);
     expect($signals->published)->toBe([]);
 });
+
+it('captures and snapshots only the selected section while preserving existing root replicas across publication', function () {
+    $upstream = TestCase::makeUpstream();
+    $sectionId = '00000000-0000-4000-8000-000000000002';
+    $document = \PHPinnacle\Ferry\Tests\Fixtures\StructureItems::documentWithSection(sectionId: $sectionId);
+    $sibling = $document->children[0]
+        ->replicate()
+        ->fill([
+            'external_id' => 'sibling-id',
+            'name' => '_document1_vt6x1',
+            'title' => 'Other lines',
+        ]);
+    $document->children->push($sibling);
+    $upstream->structure->importItems([$document], 0);
+    $upstream->structure->publish();
+    $root = TestCase::makeItem($upstream, ['reference_id' => null]);
+    $signals = new RecordingSignalProducer;
+    $http = new RecordingConnectClient(
+        connector_response(),
+        connector_response(),
+        connector_response(),
+        new Response(202),
+        status_response(),
+        connector_response(),
+        new Response(202),
+        status_response(),
+        new Response(202),
+        status_response(),
+    );
+    $origin = ferry_kafka_origin($http, $signals);
+    $origins = Mockery::mock(OriginFactory::class);
+    $origins->shouldReceive('for')->andReturn($origin);
+    $origins->shouldReceive('create')->andReturn($origin);
+    app()->instance(OriginFactory::class, $origins);
+    $existing = TestCase::makeReplica(['upstream_id' => $upstream->id, 'code' => 'existing']);
+    $upstream->refresh();
+    $rootSource = $origin->make($upstream)->config;
+    $rootSink = $origin->make($existing)->config;
+    $rootState = $existing->fresh()->toArray();
+    $section = $upstream->structure->publishedSource($sectionId);
+    expect($section->parent->external_id)->toBe('document-id');
+    expect($section->primary_key)->toBe([]);
+    expect($section->field('_document1_idrref')->toArray())->toMatchArray(['type' => 'string', 'format' => 'uuid']);
+    expect($section->field('_fld5rref')->toArray())->toMatchArray(['type' => 'string', 'format' => 'uuid']);
+    expect(array_keys($section->schema->properties()))->toBe([
+        '_document1_idrref',
+        '_keyfield',
+        '_lineno3',
+        '_fld5rref',
+    ]);
+
+    $replica = TestCase::makeReplica([
+        'upstream_id' => $upstream->id,
+        'code' => 'lines',
+        'source' => $sectionId,
+        'mapping' => [],
+    ]);
+    $snapshot = $replica->schema->toArray();
+    $state = TestCase::replicaFormState([
+        'transforms' => [[
+            'type' => 'insert_uuid',
+            'data' => [
+                'fields' => ["$['_document1_idrref']", "$['_lineno3']"],
+                'output' => 'id',
+            ],
+        ]],
+        'mapping' => [
+            ['kind' => 'source', 'source' => 'id', 'target' => 'id', 'options' => []],
+            ['kind' => 'source', 'source' => '_document1_idrref', 'target' => 'owner_id', 'options' => []],
+            ['kind' => 'source', 'source' => '_lineno3', 'target' => 'line_no', 'options' => []],
+            ['kind' => 'source', 'source' => '_fld5rref', 'target' => 'reference_id', 'options' => []],
+            ['kind' => 'source', 'source' => '_keyfield', 'target' => 'keyfield', 'options' => []],
+        ],
+    ], $replica);
+    $replica->update($state);
+    $source = $origin->make($upstream);
+    $sink = $origin->make($replica)->config;
+    expect($source->config)->toMatchArray([
+        'table.include.list' => 'public._reference0,public._document1_vt2x1',
+        'message.key.columns' => 'public._reference0:_idrref;public._document1_vt2x1:_document1_idrref,_lineno3',
+        'uuid.columns' => 'public._document1_vt2x1._document1_idrref,public._document1_vt2x1._fld5rref',
+        'integer.columns' => 'public._document1_vt2x1._keyfield',
+    ]);
+    expect(explode(',', $source->config['column.include.list']))->toEqualCanonicalizing([
+        'public._reference0._idrref',
+        'public._document1_vt2x1._document1_idrref',
+        'public._document1_vt2x1._lineno3',
+        'public._document1_vt2x1._fld5rref',
+        'public._document1_vt2x1._keyfield',
+    ]);
+    expect($sink)->toMatchArray([
+        'topics' => 'ferry.test-upstream.public._document1_vt2x1',
+        'pk.fields' => 'id',
+        'transforms.replica_0.type' => 'org.phpinnacle.toblerone.InsertUuid$Value',
+        'transforms.replica_0.fields' => '_document1_idrref,_lineno3',
+        'transforms.replica_0_key.type' => 'org.phpinnacle.toblerone.InsertUuid$Key',
+        'transforms.replica_0_key.fields' => '_document1_idrref,_lineno3',
+        'transforms.rename_keys.include' => 'id',
+    ]);
+    expect($origin->make($existing)->config)->toBe($rootSink);
+    expect($existing->fresh()->toArray())->toBe($rootState);
+    expect(array_diff_assoc($rootSource, $source->config))->toHaveKeys([
+        'table.include.list',
+        'column.include.list',
+        'message.key.columns',
+    ]);
+    expect(array_diff_key(
+        array_diff_assoc($source->config, $rootSource),
+        array_flip([
+            'table.include.list',
+            'column.include.list',
+            'message.key.columns',
+            'uuid.columns',
+            'integer.columns',
+        ]),
+    ))->toBe([]);
+
+    $source->applied_config = $rootSource;
+    $origin->update($source);
+    expect(json_decode($signals->published[0]['payload'], true))->toBe([
+        'type' => 'execute-snapshot',
+        'data' => ['data-collections' => ['public._document1_vt2x1'], 'type' => 'INCREMENTAL'],
+    ]);
+    $source->applied_config = $source->config;
+    $upstream->setRelation('connector', $source);
+    $replica->setRelation('upstream', $upstream);
+    $origin->snapshot($replica);
+    expect($signals->published[1])->toBe($signals->published[0]);
+    expect($http->routes())->toBe([['PUT', '/connectors/ferry-source-test-upstream/config']]);
+
+    $upstream->structure->restart();
+    $upstream->structure->importItems([
+        $root->setRelation('children', new \Illuminate\Database\Eloquent\Collection),
+        $document,
+    ], 0);
+    $upstream->structure->publish();
+    $upstream->refresh();
+    app(\PHPinnacle\Ferry\Services\ConnectorManager::class)->refresh($upstream);
+    $replica->refresh();
+    expect($replica->source)->toBe($sectionId);
+    expect($replica->sourceObject()->name)->toBe('_document1_vt2x1');
+    expect($replica->sourceObject()->parent->external_id)->toBe('document-id');
+    expect($replica->schema->toArray())->toBe($snapshot);
+    expect($upstream->connector->config)->toBe($source->config);
+    expect($origin->make($replica)->config)->toBe($sink);
+    expect($existing->fresh()->toArray())->toBe($rootState);
+
+    $manager = app(\PHPinnacle\Ferry\Services\ConnectorManager::class);
+    $manager->synchronize($upstream->id);
+    expect($replica->fresh()->status)->toBe(ReplicaStatus::Active);
+    expect($replica->fresh()->connector->applied_config)->toBe($sink);
+    expect($upstream->fresh()->connector->applied_config)->toBe($source->config);
+    expect($existing->fresh()->connector->applied_config)->toBe($rootSink);
+    expect($http->routes())->toHaveCount(10);
+});

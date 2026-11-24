@@ -212,7 +212,7 @@ class KafkaOrigin implements Origin
 
     private function sourceObject(Replica $replica): StructureItem
     {
-        $object = $replica->upstream->structure->publishedItem($replica->source);
+        $object = $replica->upstream->structure->publishedSource($replica->source);
 
         if ($object === null) {
             throw new LogicException(__('phpinnacle-ferry::resources.replica.errors.source_object_missing', [

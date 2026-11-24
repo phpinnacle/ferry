@@ -100,7 +100,7 @@ class RosettaAdapter implements Adapter
 
         $objects = $upstream
             ->structure
-            ->publishedItems()
+            ->publishedSources()
             ->whereIn('external_id', $replicas->pluck('source')->all())
             ->get()
             ->keyBy('external_id');

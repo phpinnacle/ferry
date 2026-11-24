@@ -66,8 +66,10 @@ it('prepares serializable context and reads physical primary keys for roots and 
     }
 
     $pdo->exec(str_replace('_document1 ', '_document1' . $suffix . ' ', $table));
+    $sectionPrimaryKey = $primaryKey === [] ? [] : ['_document1_idrref', '_lineno3'];
+    $sectionConstraint = $sectionPrimaryKey === [] ? 'UNIQUE' : 'PRIMARY KEY';
     $pdo->exec(
-        "CREATE TABLE _document1_vt2{$suffix} (_document1_idrref TEXT, _lineno3 INTEGER, PRIMARY KEY (_document1_idrref, _lineno3))",
+        "CREATE TABLE _document1_vt2{$suffix} (_document1_idrref TEXT, _lineno3 INTEGER, {$sectionConstraint} (_document1_idrref, _lineno3))",
     );
     $pdo->exec("INSERT INTO _document1{$suffix} VALUES ('record-id', 1)");
     $pdo->exec("INSERT INTO _document1_vt2{$suffix} VALUES ('record-id', 1)");
@@ -149,11 +151,11 @@ it('prepares serializable context and reads physical primary keys for roots and 
         ->and($objects[0]->children[0]->exists)
         ->toBeFalse()
         ->and($objects[0]->children[0]->primary_key)
-        ->toBe(['_document1_idrref', '_lineno3'])
+        ->toBe($sectionPrimaryKey)
         ->and($objects[0]->children[0]->schema->annotation('x-ferry-primary'))
-        ->toBe(['_document1_idrref', '_lineno3'])
+        ->toBe($sectionPrimaryKey)
         ->and($objects[0]->children[0]->schema->required())
-        ->toBe(['_document1_idrref', '_lineno3'])
+        ->toBe($sectionPrimaryKey)
         ->and($objects[0]->children[0]->field('_document1_idrref')->annotation('x-ferry-converter'))
         ->toBe('uuid')
         ->and($objects[0]->children[0]->field('_keyfield')->annotation('x-ferry-converter'))

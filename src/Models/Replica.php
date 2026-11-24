@@ -143,7 +143,7 @@ class Replica extends Model
 
     public function sourceObject(): StructureItem
     {
-        return $this->upstream->structure->publishedItems()->where('external_id', $this->source)->firstOrFail();
+        return $this->upstream->structure->publishedSources()->where('external_id', $this->source)->firstOrFail();
     }
 
     /**
