@@ -246,6 +246,47 @@ it('sums task rates and counts but averages batch means and takes the maximum ba
     Http::assertSentCount(2);
 });
 
+it('labels each metric before union and matches its original timestamp when labels coincide', function () {
+    $labels = ['namespace' => 'primary', 'job' => 'connect', 'connector' => 'shared-connector', 'task' => '0'];
+    $series = [
+        ['name' => 'up', 'value' => '1'],
+        [
+            'name' => 'kafka_connect_sink_task_metrics_sink_record_read_rate',
+            'value' => '10',
+            'at' => 1_799_999_970,
+            'labels' => $labels,
+        ],
+        [
+            'name' => 'kafka_connect_sink_task_metrics_sink_record_send_rate',
+            'value' => '8',
+            'at' => 1_799_999_960,
+            'labels' => $labels,
+        ],
+    ];
+    Http::fake(['prometheus.test/api/v1/query' => function (Request $request) use ($series) {
+        $timestamps = str_contains($request['query'], 'timestamp(');
+
+        foreach (explode(' or ', $request['query']) as $operand) {
+            expect($operand)
+                ->toStartWith($timestamps ? 'label_replace(timestamp({' : 'label_replace({')
+                ->toContain('"ferry_metric"');
+        }
+
+        expect($request['time'])->toBe(1_800_000_000);
+
+        return Http::response(monitoring_response($timestamps ? array_reverse($series) : $series, $timestamps));
+    }]);
+
+    $snapshot = app(PrometheusClient::class)->sink(monitored_connector());
+
+    expect($snapshot->status)->toBe(MonitoringStatus::Ready);
+    expect($snapshot->value(SinkMetric::ReadRate))->toBe(10.0);
+    expect($snapshot->value(SinkMetric::SendRate))->toBe(8.0);
+    expect($snapshot->samples[1]->sampledAt)->toBe(1_799_999_970.0);
+    expect($snapshot->samples[2]->sampledAt)->toBe(1_799_999_960.0);
+    Http::assertSentCount(2);
+});
+
 it('distinguishes zeros from missing and nonfinite values', function () {
     fake_monitoring([
         ['name' => MonitoringSnapshot::WORKER_METRIC, 'value' => '1'],

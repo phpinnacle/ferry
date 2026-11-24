@@ -101,6 +101,21 @@ it('keeps the saved password available across Livewire refreshes and encrypts it
         ->assertSet('data.config.password', 'replacement-secret');
 });
 
+it('hides monitoring without a Prometheus URL across Livewire refreshes', function (?string $baseUri) {
+    config(['phpinnacle-ferry.origins.kafka.prometheus.base_uri' => $baseUri]);
+    Http::preventStrayRequests();
+    $upstream = TestCase::makeUpstream();
+    TestCase::makeConnector($upstream, ['name' => 'unmonitored-source']);
+
+    Livewire::test(\PHPinnacle\Ferry\Tests\Fixtures\UpstreamForm::class, ['record' => $upstream])
+        ->assertDontSee(__('phpinnacle-ferry::monitoring.title'))
+        ->assertDontSeeHtml('wire:poll.30s')
+        ->call('$refresh')
+        ->assertDontSee(__('phpinnacle-ferry::monitoring.title'));
+
+    Http::assertNothingSent();
+})->with([null, '']);
+
 it('refreshes monitoring inside the edit form and saves edits without monitoring state', function () {
     $this->travelTo(now()->setTimestamp(1_800_000_000));
     config([

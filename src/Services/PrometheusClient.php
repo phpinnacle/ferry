@@ -27,6 +27,14 @@ class PrometheusClient
         private readonly int $timeout,
     ) {}
 
+    /** @return (OriginPrometheusConfig&array{base_uri: string})|null */
+    public function configuration(string $origin): ?array
+    {
+        $config = $this->origins[$origin]['prometheus'] ?? null;
+
+        return $config === null || $config['base_uri'] === null || $config['base_uri'] === '' ? null : $config;
+    }
+
     public function source(?Connector $connector): MonitoringSnapshot
     {
         return $this->read($connector, function (Connector $connector, array $labels) {
@@ -68,9 +76,9 @@ class PrometheusClient
             return new MonitoringSnapshot(MonitoringStatus::NoConnector);
         }
 
-        $config = $this->origins[$connector->origin]['prometheus'] ?? null;
+        $config = $this->configuration($connector->origin);
 
-        if ($config === null || $config['base_uri'] === null || $config['base_uri'] === '') {
+        if ($config === null) {
             return new MonitoringSnapshot(MonitoringStatus::Disabled);
         }
 
@@ -78,7 +86,14 @@ class PrometheusClient
             $this->selectors([MonitoringSnapshot::WORKER_METRIC], $config['labels'])
             + $connectorSelectors($connector, $config['labels']);
 
-        $query = 'label_replace((' . implode(' or ', $selectors) . '), "ferry_metric", "$1", "__name__", "(.+)")';
+        // Label each metric before union so series with otherwise identical labels remain distinct.
+        $query = implode(' or ', array_map(
+            fn (string $name, string $selector) => (
+                'label_replace(' . $selector . ', "ferry_metric", ' . $this->quote($name) . ', "", "")'
+            ),
+            array_keys($selectors),
+            array_values($selectors),
+        ));
         // timestamp() must receive raw selectors to retain scrape time rather than expression evaluation time.
         $timestampQuery = implode(' or ', array_map(
             fn (string $name, string $selector) => (

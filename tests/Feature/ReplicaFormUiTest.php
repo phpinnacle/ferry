@@ -1660,6 +1660,21 @@ it('copies the selected source schema at creation and uses the saved snapshot on
     }
 });
 
+it('hides sink monitoring without a Prometheus URL across Livewire refreshes', function (?string $baseUri) {
+    config(['phpinnacle-ferry.origins.kafka.prometheus.base_uri' => $baseUri]);
+    Http::preventStrayRequests();
+    $replica = TestCase::makeReplica();
+    TestCase::makeConnector($replica, ['name' => 'unmonitored-sink']);
+
+    Livewire::test(\PHPinnacle\Ferry\Tests\Fixtures\ReplicaForm::class, ['record' => $replica, 'state' => []])
+        ->assertDontSee(__('phpinnacle-ferry::monitoring.title'))
+        ->assertDontSeeHtml('wire:poll.30s')
+        ->call('$refresh')
+        ->assertDontSee(__('phpinnacle-ferry::monitoring.title'));
+
+    Http::assertNothingSent();
+})->with([null, '']);
+
 it('refreshes sink monitoring inside the edit form and saves edits without monitoring state', function () {
     $this->travelTo(now()->setTimestamp(1_800_000_000));
     config([

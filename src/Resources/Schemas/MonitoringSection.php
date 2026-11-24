@@ -30,7 +30,13 @@ class MonitoringSection
                     ...self::sourceEntries($snapshot),
                 ];
             },
-        );
+        )
+            ->hidden(
+                fn (PrometheusClient $client, ?Upstream $record) => (
+                    $record === null
+                    || $client->configuration($record->origin) === null
+                ),
+            );
     }
 
     public static function sink(): Section
@@ -47,7 +53,13 @@ class MonitoringSection
                     ...self::sinkEntries($snapshot),
                 ];
             },
-        );
+        )
+            ->hidden(
+                fn (PrometheusClient $client, ?Replica $record) => (
+                    $record === null
+                    || $client->configuration($record->upstream->origin) === null
+                ),
+            );
     }
 
     private static function section(string $description, Closure $schema): Section

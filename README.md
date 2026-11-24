@@ -835,7 +835,7 @@ The sink's final value projection excludes effective replica key fields; JDBC wr
 
 ### Prometheus monitoring
 
-The upstream and replica edit forms include a read-only **Monitoring** section that refreshes approximately every 30 seconds while the page is visible and shows collection status as a colored badge with an icon. Prometheus monitoring is optional and configured per named origin in `config/phpinnacle-ferry.php`:
+The upstream and replica edit forms include a read-only **Monitoring** section only when their origin has a non-empty Prometheus `base_uri`. The section refreshes approximately every 30 seconds while the page is visible and shows collection status as a colored badge with an icon. Prometheus monitoring is optional and configured per named origin in `config/phpinnacle-ferry.php`:
 
 ```php
 'origins' => [
@@ -856,7 +856,7 @@ The upstream and replica edit forms include a read-only **Monitoring** section t
 
 The shipped `kafka` origin reads `base_uri` from `FERRY_PROMETHEUS_URL`, defaults `headers` and `labels` to `[]`, and sets `stale_after` to `90` seconds. All `headers` and `labels` values must be strings; `labels` uses exact equality matching without PromQL fragments or regular expressions. Configure each origin's URL and labels to select one scrape series per worker and task for that origin alone, even when origins share connector or Debezium server names. An empty `labels` map matches every target and is suitable only for a dedicated Prometheus instance. Origin labels must exist on `up`, Connect, and Debezium series; omit `connector`, `task`, `server`, and `context` because Ferry applies connector/server identities and contexts itself and aggregates tasks.
 
-Without a saved connector or a non-empty `base_uri`, Ferry sends no monitoring requests and connector operations continue normally. Queries run server-side through Laravel's HTTP client using `phpinnacle-ferry.timeout` for connection and response timeouts. Each refresh sends two `POST api/v1/query` instant queries at the same evaluation timestamp: metric values and `timestamp(...)` applied directly to raw selectors so scrape time is preserved. Metrics are not persisted, and no scheduler, queue worker, or frontend build is required.
+Without a saved connector or a non-empty `base_uri`, Ferry sends no monitoring requests and connector operations continue normally. Queries run server-side through Laravel's HTTP client using `phpinnacle-ferry.timeout` for connection and response timeouts. Each refresh sends two `POST api/v1/query` instant queries at the same evaluation timestamp: metric values and `timestamp(...)` applied directly to raw selectors so scrape time is preserved. Both queries add `ferry_metric` to each selector's result before combining results with `or`, preserving distinct metrics with otherwise identical labels and matching values to their original timestamps. Metrics are not persisted, and no scheduler, queue worker, or frontend build is required.
 
 Connect metrics match the saved `Connector.name`; Debezium metrics match `topic.prefix` from the source connector's **applied** configuration and read streaming and snapshot metrics from their respective `context` labels (`streaming` and `snapshot`). Without an applied `topic.prefix`, Debezium values are absent. The oldest returned sample timestamp is displayed in UTC (ISO 8601); query evaluation time is never treated as sample freshness. Set `stale_after` above your scrape interval plus scheduling jitter (the default 90 seconds fits a 30-second scrape interval).
 
