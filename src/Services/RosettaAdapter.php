@@ -22,6 +22,7 @@ use PHPinnacle\Jason\Schema;
 use PHPinnacle\Rosetta\Connections\PdoConnection;
 use PHPinnacle\Rosetta\MetadataLoader;
 use PHPinnacle\Rosetta\StorageMap;
+use PHPinnacle\Rosetta\TableMap;
 use PHPinnacle\Rosetta\TypeMap;
 
 class RosettaAdapter implements Adapter
@@ -190,6 +191,7 @@ class RosettaAdapter implements Adapter
             return new StructurePlan($this->loader->count($storageMap), [
                 'storage_map' => $storageMap->toArray(),
                 'type_map' => $this->loader->typeMap($connection)->toArray(),
+                'table_map' => $this->loader->tableMap($connection)->toArray(),
             ]);
         } finally {
             $source->disconnect();
@@ -199,7 +201,7 @@ class RosettaAdapter implements Adapter
     /** @return list<StructureItem> */
     public function read(Upstream $upstream, StructurePlan $plan, int $offset, int $limit): array
     {
-        /** @var array{storage_map: array<string, array<string, int>>, type_map: array<string, list<array<mixed>>>} $context */
+        /** @var array{storage_map: array<string, array<string, int>>, type_map: array<string, list<array<mixed>>>, table_map: array<string, string>} $context */
         $context = $plan->context;
         $source = $this->factory->make($upstream->config);
 
@@ -210,6 +212,7 @@ class RosettaAdapter implements Adapter
                 TypeMap::fromArray($context['type_map']),
                 $offset,
                 $limit,
+                TableMap::fromArray($context['table_map']),
             );
 
             $items = array_map(new StructureConverter()->item(...), $objects);

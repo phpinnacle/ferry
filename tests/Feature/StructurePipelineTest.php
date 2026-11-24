@@ -345,7 +345,11 @@ it('refuses to restore a superseded draft read through the Rosetta adapter', fun
     $factory = Mockery::mock(UpstreamFactory::class);
     $factory->shouldReceive('make')->andReturnUsing(fn () => new SQLiteConnection($pdo));
     $adapter = app()->make(RosettaAdapter::class, ['factory' => $factory]);
-    $plan = new StructurePlan(1, ['storage_map' => ['stale-object' => ['Reference' => 1]], 'type_map' => []]);
+    $plan = new StructurePlan(1, [
+        'storage_map' => ['stale-object' => ['Reference' => 1]],
+        'type_map' => [],
+        'table_map' => [],
+    ]);
 
     $staleUpstream->structure->importItems($adapter->read($staleUpstream, $plan, 0, 1), 0);
     $first = $upstream->structure->items()->sole();

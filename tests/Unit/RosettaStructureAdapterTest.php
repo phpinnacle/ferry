@@ -5,6 +5,7 @@ use Illuminate\Database\PostgresConnection;
 use Illuminate\Database\SQLiteConnection;
 use PHPinnacle\Ferry\Data\StructurePlan;
 use PHPinnacle\Ferry\Models\Upstream;
+use PHPinnacle\Ferry\Origins\Kafka\SourceFactory;
 use PHPinnacle\Ferry\Services\RosettaAdapter;
 use PHPinnacle\Ferry\Services\StructureAdapterRegistry;
 use PHPinnacle\Ferry\Services\UpstreamFactory;
@@ -27,6 +28,7 @@ it('prepares serializable context and reads physical primary keys for roots and 
     string $table,
     array $primaryKey,
     string $driver,
+    int $slot,
 ) {
     $dsn = getenv('FERRY_TEST_PGSQL_DSN');
 
@@ -34,7 +36,7 @@ it('prepares serializable context and reads physical primary keys for roots and 
         $this->markTestSkipped('Set FERRY_TEST_PGSQL_DSN to test PostgreSQL catalog reads.');
     }
 
-    $upstream = new Upstream(['config' => ['driver' => 'pgsql', 'database' => 'source']]);
+    $upstream = new Upstream(['code' => 'source', 'config' => ['driver' => 'pgsql', 'database' => 'source']]);
     $pdo = new PDO($driver === 'pgsql' ? $dsn : 'sqlite::memory:');
 
     if ($driver === 'pgsql') {
@@ -44,12 +46,31 @@ it('prepares serializable context and reads physical primary keys for roots and 
     }
 
     $binaryType = $driver === 'pgsql' ? 'BYTEA' : 'BLOB';
+    $suffix = $slot === 0 ? '' : 'x' . $slot;
     $pdo->exec("CREATE TABLE Params (filename TEXT, binarydata {$binaryType})");
     $pdo->exec("CREATE TABLE Config (filename TEXT, binarydata {$binaryType})");
-    $pdo->exec($table);
-    $pdo->exec(
-        'CREATE TABLE _document1_vt2 (_document1_idrref TEXT, _lineno3 INTEGER, PRIMARY KEY (_document1_idrref, _lineno3))',
+    $pdo->exec("CREATE TABLE SchemaStorage (SchemaID INTEGER, Status INTEGER, CurrentSchema {$binaryType})");
+    $schema = $pdo->prepare('INSERT INTO SchemaStorage VALUES (?, 100, ?)');
+    $schema->bindValue(1, $slot);
+    $schema->bindValue(
+        2,
+        "\xEF\xBB\xBF"
+        . '{0,{1,{"Document1","N",1,"",{0},{1,{"VT2","I",0,"Document1",{0},{0},{0},1,"S",{0},{0},"",0,0}},{0},1,"R",{0},{0},"",0,0}}}',
+        PDO::PARAM_LOB,
     );
+    $schema->execute();
+
+    if ($slot !== 0) {
+        $pdo->exec('CREATE TABLE _document1 (_idrref TEXT, _version INTEGER)');
+        $pdo->exec('CREATE TABLE _document1_vt2 (_document1_idrref TEXT, _lineno3 INTEGER)');
+    }
+
+    $pdo->exec(str_replace('_document1 ', '_document1' . $suffix . ' ', $table));
+    $pdo->exec(
+        "CREATE TABLE _document1_vt2{$suffix} (_document1_idrref TEXT, _lineno3 INTEGER, PRIMARY KEY (_document1_idrref, _lineno3))",
+    );
+    $pdo->exec("INSERT INTO _document1{$suffix} VALUES ('record-id', 1)");
+    $pdo->exec("INSERT INTO _document1_vt2{$suffix} VALUES ('record-id', 1)");
 
     foreach ([
         ['Params', 'DBNames', '{0,{3,{object-id,"Document",1},{section-id,"VT",2},{section-id,"LineNo",3}}}'],
@@ -76,6 +97,7 @@ it('prepares serializable context and reads physical primary keys for roots and 
 
     $plan = $adapter->prepare($upstream);
     $objects = $adapter->read($upstream, $plan, 0, 1);
+    $owner = $pdo->query('SELECT _document1_idrref FROM ' . $objects[0]->children[0]->name)->fetchColumn();
 
     if ($driver === 'pgsql') {
         $pdo->rollBack();
@@ -84,10 +106,23 @@ it('prepares serializable context and reads physical primary keys for roots and 
     expect($sources[1]->getQueryLog())->toHaveCount($driver === 'pgsql' ? 1 : 2);
     expect($sources[0]->getRawPdo())->toBeNull();
     expect($sources[1]->getRawPdo())->toBeNull();
+    expect($objects[0]->name)->toBe('_document1' . $suffix);
+    expect($objects[0]->children[0]->name)->toBe('_document1_vt2' . $suffix);
+    expect($owner)->toBe('record-id');
+    $builder = app(SourceFactory::class);
+    expect($builder->topic($upstream, $objects[0]))->toBe('ferry.source.public._document1' . $suffix);
+    expect($builder->table($upstream, $objects[0]->children[0]))->toBe('public._document1_vt2' . $suffix);
+    expect($builder->topic($upstream, $objects[0]->children[0]))->toBe('ferry.source.public._document1_vt2' . $suffix);
     expect($plan)
         ->toEqual(new StructurePlan(1, [
             'storage_map' => ['object-id' => ['Document' => 1], 'section-id' => ['VT' => 2, 'LineNo' => 3]],
             'type_map' => [],
+            'table_map' => $slot === 0
+                ? []
+                : [
+                    '_document1' => '_document1' . $suffix,
+                    '_document1_vt2' => '_document1_vt2' . $suffix,
+                ],
         ]))
         ->and($objects)
         ->toHaveCount(1)
@@ -130,7 +165,7 @@ it('prepares serializable context and reads physical primary keys for roots and 
         ['_version', '_idrref'],
     ],
     'unique index without a primary key' => ['CREATE TABLE _document1 (_idrref TEXT UNIQUE, _version INTEGER)', []],
-])->with(['sqlite', 'pgsql']);
+])->with(['sqlite', 'pgsql'])->with(['main storage' => [0], 'extension storage' => [1], 'another storage slot' => [3]]);
 
 it('disconnects and propagates a failed source read', function (string $operation) {
     $source = Mockery::mock(Connection::class);

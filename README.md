@@ -180,6 +180,8 @@ Every upstream owns one `Models\Structure`, available through `$upstream->struct
 
 The preparation action in both the table and edit form requires the upstream's `update` policy permission (`update_upstream`). Rosetta reads the source in bounded chunks and writes objects into a draft revision. The published snapshot is replaced only once the whole draft is complete, so a failed refresh never damages the previous one. A source without supported objects is a valid empty snapshot.
 
+Rosetta resolves physical table names through 1C `SchemaStorage`, including extension storage such as `_document123x1` and `_document123_vt456x1`. Preparation saves this table map for all chunks. Published names drive primary-key lookup, capture selectors, converter column qualification, and Kafka topics. Canonical column names, metadata identities, and section ownership stay unchanged; for example, the section still uses `_document123_idrref`. Ordinary tables keep their non-suffixed names. The source account needs read access to `SchemaStorage`; unfinished extension restructuring fails preparation instead of publishing base-table names.
+
 ```php
 use PHPinnacle\Ferry\Models\Upstream;
 

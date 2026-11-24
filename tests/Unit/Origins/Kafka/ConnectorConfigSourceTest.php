@@ -23,9 +23,11 @@ beforeEach(function () {
     Queue::fake();
 });
 
-it('builds a debezium postgres connector config scoped to the tracked replicas', function () {
+it('builds a debezium postgres connector config scoped to the tracked replicas', function (string $table) {
     $upstream = TestCase::makeUpstream([], ['status' => StructureStatus::Ready, 'generation' => 1]);
     $object = TestCase::makeItem($upstream, [
+        'name' => $table,
+        'fields' => ['_idrref' => Schema::fromArray(['type' => 'string', 'x-ferry-converter' => 'uuid'])],
         'sources' => ['_fld1' => ['type' => 'string', 'maxLength' => 100, 'title' => 'Title']],
     ]);
 
@@ -59,13 +61,15 @@ it('builds a debezium postgres connector config scoped to the tracked replicas',
         ->and($config['binary.handling.mode'])
         ->toBe('hex')
         ->and($config['table.include.list'])
-        ->toBe('public._reference0')
+        ->toBe('public.' . $table)
         ->and(explode(',', $config['column.include.list']))
-        ->toContain('public._reference0._idrref', 'public._reference0._fld1')
+        ->toContain('public.' . $table . '._idrref', 'public.' . $table . '._fld1')
         ->and($config['message.key.columns'])
-        ->toBe('public._reference0:_idrref')
+        ->toBe('public.' . $table . ':_idrref')
+        ->and($config['uuid.columns'])
+        ->toBe('public.' . $table . '._idrref')
         ->and($builder->topic($upstream, $object))
-        ->toBe('ferry.test-upstream.public._reference0')
+        ->toBe('ferry.test-upstream.public.' . $table)
         ->and($config)
         ->toMatchArray([
             'slot.name' => 'ferry_slot_test_upstream',
@@ -82,7 +86,7 @@ it('builds a debezium postgres connector config scoped to the tracked replicas',
             'integer.type' => 'org.phpinnacle.toblerone.IntegerConverter',
             'mchar.type' => 'org.phpinnacle.toblerone.MCharConverter',
         ]);
-});
+})->with(['ordinary table' => ['_reference0'], 'extension table' => ['_document1x1']]);
 
 it('generates a distinct and stable Kafka signal group for each upstream', function () {
     $first = TestCase::makeUpstream();
