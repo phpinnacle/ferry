@@ -20,18 +20,6 @@ enum SourceMetric
     private const string DEBEZIUM = 'debezium_postgres_connector_metrics_';
     private const string CONNECT = 'kafka_connect_source_task_metrics_';
 
-    /** @return list<string> */
-    public static function connectNames(): array
-    {
-        return self::names(debezium: false);
-    }
-
-    /** @return list<string> */
-    public static function debeziumNames(): array
-    {
-        return self::names(debezium: true);
-    }
-
     public function prometheusName(): string
     {
         return match ($this) {
@@ -76,19 +64,5 @@ enum SourceMetric
             self::SourceLag, self::LastEvent, self::SnapshotRunning, self::SnapshotAborted => max($values),
             default => array_sum($values),
         };
-    }
-
-    /** @return list<string> */
-    private static function names(bool $debezium): array
-    {
-        $names = [];
-
-        foreach (self::cases() as $metric) {
-            if (($metric->context() !== null) === $debezium) {
-                $names[] = $metric->prometheusName();
-            }
-        }
-
-        return array_values(array_unique($names));
     }
 }

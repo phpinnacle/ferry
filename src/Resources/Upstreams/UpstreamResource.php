@@ -6,7 +6,10 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Tables\Table;
 use PHPinnacle\Ferry\Models\Upstream;
+use PHPinnacle\Ferry\Widgets\Monitoring;
+use PHPinnacle\Ferry\Widgets\MonitoringChart;
 
+/** @extends Resource<Upstream> */
 class UpstreamResource extends Resource
 {
     protected static ?string $model = Upstream::class;
@@ -52,5 +55,10 @@ class UpstreamResource extends Resource
     public static function table(Table $table): Table
     {
         return Tables\UpstreamTable::configure($table);
+    }
+
+    public static function getWidgets(): array
+    {
+        return [Monitoring::class, MonitoringChart::class];
     }
 }

@@ -17,12 +17,6 @@ enum SinkMetric
     private const string CONNECT = 'kafka_connect_sink_task_metrics_';
     private const string ERRORS = 'kafka_connect_task_error_metrics_';
 
-    /** @return list<string> */
-    public static function connectNames(): array
-    {
-        return array_map(fn (self $metric) => $metric->prometheusName(), self::cases());
-    }
-
     public function prometheusName(): string
     {
         return match ($this) {
@@ -36,6 +30,11 @@ enum SinkMetric
             self::Skipped => self::ERRORS . 'total_records_skipped',
             self::Retries => self::ERRORS . 'total_retries',
         };
+    }
+
+    public function context(): null
+    {
+        return null;
     }
 
     /** @param non-empty-list<float> $values */

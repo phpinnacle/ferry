@@ -9,6 +9,8 @@ use PHPinnacle\Ferry\Models\Upstream;
 use PHPinnacle\Ferry\Resources\Actions\RequestSnapshotAction;
 use PHPinnacle\Ferry\Resources\Actions\ViewConnectorConfigAction;
 use PHPinnacle\Ferry\Resources\Upstreams\UpstreamResource;
+use PHPinnacle\Ferry\Services\PrometheusClient;
+use PHPinnacle\Ferry\Widgets\Monitoring;
 
 /**
  * @property Upstream $record
@@ -30,5 +32,10 @@ class EditUpstream extends EditRecord
             DeleteAction::make()
                 ->label(__('phpinnacle-ferry::resources.upstream.actions.delete')),
         ];
+    }
+
+    protected function getHeaderWidgets(): array
+    {
+        return app(PrometheusClient::class)->isEnabled($this->record->origin) ? [Monitoring::class] : [];
     }
 }

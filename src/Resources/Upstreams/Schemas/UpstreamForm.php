@@ -15,7 +15,6 @@ use PHPinnacle\Common\Forms\ActiveSelect;
 use PHPinnacle\Ferry\Enums\ConnectorStatus;
 use PHPinnacle\Ferry\Forms\RecordTransforms;
 use PHPinnacle\Ferry\Models\Upstream;
-use PHPinnacle\Ferry\Resources\Schemas\MonitoringSection;
 use PHPinnacle\Ferry\Resources\Upstreams\Actions\PrepareStructureAction;
 use PHPinnacle\Ferry\Services\OriginFactory;
 use PHPinnacle\Ferry\Services\StructureAdapterRegistry;
@@ -52,7 +51,6 @@ class UpstreamForm
                         ),
                     )
                     ->extraAttributes(['role' => 'alert']),
-                MonitoringSection::source(),
                 Section::make(__('phpinnacle-ferry::resources.upstream.sections.general'))
                     ->columns(6)
                     ->schema([

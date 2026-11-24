@@ -12,6 +12,8 @@ use PHPinnacle\Ferry\Resources\Actions\ViewConnectorConfigAction;
 use PHPinnacle\Ferry\Resources\Replicas\Actions\PauseReplicaAction;
 use PHPinnacle\Ferry\Resources\Replicas\Actions\StartReplicaAction;
 use PHPinnacle\Ferry\Resources\Replicas\ReplicaResource;
+use PHPinnacle\Ferry\Services\PrometheusClient;
+use PHPinnacle\Ferry\Widgets\Monitoring;
 
 /**
  * @property Replica $record
@@ -23,6 +25,11 @@ class EditReplica extends EditRecord
     public function getTitle(): string|Htmlable
     {
         return __('phpinnacle-ferry::resources.replica.pages.edit');
+    }
+
+    protected function getHeaderWidgets(): array
+    {
+        return app(PrometheusClient::class)->isEnabled($this->record->upstream->origin) ? [Monitoring::class] : [];
     }
 
     protected function getHeaderActions(): array

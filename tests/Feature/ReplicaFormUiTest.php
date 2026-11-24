@@ -3,10 +3,8 @@
 use Filament\Actions\Testing\TestAction;
 use Filament\Forms\Components\Select;
 use Filament\Schemas\Schema as FilamentSchema;
-use Illuminate\Http\Client\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Event;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
@@ -1658,92 +1656,6 @@ it('copies the selected source schema at creation and uses the saved snapshot on
             ->and($sources['_idrref']['label'])
             ->toBe(__('phpinnacle-ferry::resources.replica.system_fields._idrref'));
     }
-});
-
-it('hides sink monitoring without a Prometheus URL across Livewire refreshes', function (?string $baseUri) {
-    config(['phpinnacle-ferry.origins.kafka.prometheus.base_uri' => $baseUri]);
-    Http::preventStrayRequests();
-    $replica = TestCase::makeReplica();
-    TestCase::makeConnector($replica, ['name' => 'unmonitored-sink']);
-
-    Livewire::test(\PHPinnacle\Ferry\Tests\Fixtures\ReplicaForm::class, ['record' => $replica, 'state' => []])
-        ->assertDontSee(__('phpinnacle-ferry::monitoring.title'))
-        ->assertDontSeeHtml('wire:poll.30s')
-        ->call('$refresh')
-        ->assertDontSee(__('phpinnacle-ferry::monitoring.title'));
-
-    Http::assertNothingSent();
-})->with([null, '']);
-
-it('refreshes sink monitoring inside the edit form and saves edits without monitoring state', function () {
-    $this->travelTo(now()->setTimestamp(1_800_000_000));
-    config([
-        'phpinnacle-ferry.origins.kafka.prometheus' => [
-            'base_uri' => 'http://prometheus.test',
-            'headers' => [],
-            'labels' => ['job' => 'connect'],
-            'stale_after' => 90,
-        ],
-    ]);
-    $replica = TestCase::makeReplica();
-    TestCase::makeConnector($replica, ['name' => 'monitored-sink']);
-    $rate = '123';
-    Http::preventStrayRequests();
-    Http::fake(['prometheus.test/api/v1/query' => function (Request $request) use (&$rate) {
-        $timestamps = str_contains($request['query'], 'timestamp(');
-        $series = [
-            ['metric' => ['ferry_metric' => 'up'], 'value' => '1'],
-            ['metric' => ['ferry_metric' => 'kafka_connect_sink_task_metrics_sink_record_read_rate'], 'value' => $rate],
-            [
-                'metric' => ['ferry_metric' => 'kafka_connect_sink_task_metrics_put_batch_avg_time_ms'],
-                'value' => '12.5',
-            ],
-            ['metric' => ['ferry_metric' => 'kafka_connect_task_error_metrics_total_record_errors'], 'value' => '0'],
-        ];
-
-        return Http::response([
-            'status' => 'success',
-            'data' => [
-                'resultType' => 'vector',
-                'result' => array_map(
-                    fn (array $sample) => [
-                        'metric' => $sample['metric'],
-                        'value' => [
-                            now()->timestamp,
-                            $timestamps ? (string) (now()->timestamp - 20) : $sample['value'],
-                        ],
-                    ],
-                    $series,
-                ),
-            ],
-        ]);
-    }]);
-
-    $page = Livewire::test(\PHPinnacle\Ferry\Tests\Fixtures\ReplicaForm::class, [
-        'record' => $replica,
-        'state' => [],
-    ])
-        ->assertSee('Worker scrape available')
-        ->assertSee('2027-01-15T07:59:40+00:00')
-        ->assertSee('123.00 /s')
-        ->assertSee('12.50 ms')
-        ->assertSee('0.00')
-        ->assertSee('—')
-        ->assertSeeHtml('wire:poll.30s="$refresh"');
-    Http::assertSentCount(2);
-
-    $page->set('data.name', 'Unsaved replica');
-    $rate = '456';
-    $page
-        ->call('$refresh')
-        ->assertSee('456.00 /s')
-        ->assertDontSee('123.00 /s')
-        ->assertSet('data.name', 'Unsaved replica');
-    $state = $page->instance()->form->getState();
-    $page->call('save')->assertHasNoErrors();
-
-    expect(array_filter(array_keys($state), fn (string $key) => str_starts_with($key, 'monitoring_')))->toBe([]);
-    expect($replica->fresh()->name)->toBe('Unsaved replica');
 });
 
 it('selects independent sections with owner labels across Livewire updates and copies their input schema', function () {

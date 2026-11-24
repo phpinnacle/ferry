@@ -2,6 +2,8 @@
 
 namespace PHPinnacle\Ferry;
 
+use Filament\Support\Assets\Css;
+use Filament\Support\Facades\FilamentAsset;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Container\Container;
 use Illuminate\Support\Facades\Config;
@@ -24,6 +26,10 @@ class FerryServiceProvider extends PackageServiceProvider
 
     public function packageBooted(): void
     {
+        FilamentAsset::register([
+            Css::make('monitoring', __DIR__ . '/../resources/css/monitoring.css'),
+        ], self::PACKAGE);
+
         $this->app->afterResolving(Schedule::class, function (Schedule $schedule) {
             $refresh = Config::integer('phpinnacle-ferry.scheduler.refresh');
 
@@ -98,6 +104,7 @@ class FerryServiceProvider extends PackageServiceProvider
             ->discoversMigrations()
             ->hasConfigFile()
             ->hasTranslations()
+            ->hasViews()
             ->hasCommand(Commands\RefreshConnectorStatuses::class)
             ->hasCommand(Commands\ConsumeChangesCommand::class)
             ->hasInstallCommand(function (InstallCommand $command) {

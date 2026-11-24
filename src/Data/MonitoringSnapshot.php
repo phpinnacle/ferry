@@ -61,10 +61,7 @@ final readonly class MonitoringSnapshot
             return null;
         }
 
-        $values = $this->sampleValues(
-            $metric->prometheusName(),
-            $metric instanceof SourceMetric ? $metric->context() : null,
-        );
+        $values = $this->sampleValues($metric->prometheusName(), $metric->context());
 
         return $values === null ? null : $metric->aggregate($values);
     }
@@ -74,6 +71,22 @@ final readonly class MonitoringSnapshot
         return $this->samples === []
             ? null
             : min(array_map(fn (MonitoringSample $sample) => $sample->sampledAt, $this->samples));
+    }
+
+    public function queueUsed(): ?float
+    {
+        $total = $this->value(SourceMetric::QueueTotalCapacity);
+        $remaining = $this->value(SourceMetric::QueueRemainingCapacity);
+
+        return $total === null || $remaining === null ? null : $total - $remaining;
+    }
+
+    public function queuePercent(): ?float
+    {
+        $total = $this->value(SourceMetric::QueueTotalCapacity);
+        $used = $this->queueUsed();
+
+        return $total === null || $total <= 0 || $used === null ? null : ($used / $total) * 100;
     }
 
     /** @return non-empty-list<float>|null */

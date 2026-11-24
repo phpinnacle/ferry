@@ -6,7 +6,10 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Tables\Table;
 use PHPinnacle\Ferry\Models\Replica;
+use PHPinnacle\Ferry\Widgets\Monitoring;
+use PHPinnacle\Ferry\Widgets\MonitoringChart;
 
+/** @extends Resource<Replica> */
 class ReplicaResource extends Resource
 {
     protected static ?string $model = Replica::class;
@@ -51,5 +54,10 @@ class ReplicaResource extends Resource
     public static function table(Table $table): Table
     {
         return Tables\ReplicaTable::configure($table);
+    }
+
+    public static function getWidgets(): array
+    {
+        return [Monitoring::class, MonitoringChart::class];
     }
 }

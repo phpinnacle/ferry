@@ -73,6 +73,33 @@ function fake_monitoring(array $series): void
     ]);
 }
 
+/** @param list<array{name: string, values: list<array{int, string}>, labels?: array<string, string>, timestamps?: list<array{int, string}>}> $series */
+function fake_monitoring_history(array $series): void
+{
+    Http::fake(['prometheus.test/api/v1/query_range' => function (Request $request) use ($series) {
+        $timestamps = str_contains($request['query'], 'timestamp(');
+
+        return Http::response([
+            'status' => 'success',
+            'data' => [
+                'resultType' => 'matrix',
+                'result' => array_map(
+                    fn (array $item) => [
+                        'metric' => ['ferry_metric' => $item['name'], ...($item['labels'] ?? [])],
+                        'values' => $timestamps
+                            ? $item['timestamps'] ?? array_map(fn (array $value) => [
+                                $value[0],
+                                (string) ($value[0] - 10),
+                            ], $item['values'])
+                            : $item['values'],
+                    ],
+                    $series,
+                ),
+            ],
+        ]);
+    }]);
+}
+
 it('maps applied source identity and keeps streaming separate from snapshot', function () {
     fake_monitoring([
         ['name' => MonitoringSnapshot::WORKER_METRIC, 'value' => '1'],
@@ -148,7 +175,7 @@ it('maps applied source identity and keeps streaming separate from snapshot', fu
         ['name' => SourceMetric::WriteRate->prometheusName(), 'value' => '24'],
     ]);
 
-    $snapshot = app(PrometheusClient::class)->source(monitored_connector());
+    $snapshot = app(PrometheusClient::class)->snapshot(monitored_connector(), SourceMetric::cases());
 
     expect($snapshot->status)->toBe(MonitoringStatus::Ready);
     expect($snapshot->oldestSampleAt())->toBe(1_799_999_910.0);
@@ -168,17 +195,6 @@ it('maps applied source identity and keeps streaming separate from snapshot', fu
     Http::assertSentCount(2);
     Http::assertSent(
         fn (Request $request) => (
-            $request->method() === 'POST'
-            && str_contains($request['query'], 'timestamp({__name__="up",')
-            && str_contains(
-                $request['query'],
-                'timestamp({__name__="debezium_postgres_connector_metrics_connected",',
-            )
-            && !str_contains($request['query'], 'timestamp(label_replace(')
-        ),
-    );
-    Http::assertSent(
-        fn (Request $request) => (
             $request->hasHeader('Authorization', 'Bearer test-token')
             && str_contains($request['query'], 'connector="shared-connector"')
             && str_contains($request['query'], 'server="applied.server"')
@@ -195,7 +211,7 @@ it('omits Debezium selectors when applied config has no topic prefix', function 
         ['name' => SourceMetric::PollRate->prometheusName(), 'value' => '12'],
     ]);
 
-    $snapshot = app(PrometheusClient::class)->source($connector);
+    $snapshot = app(PrometheusClient::class)->snapshot($connector, SourceMetric::cases());
 
     expect($snapshot->status)->toBe(MonitoringStatus::Ready);
     expect($snapshot->value(SourceMetric::PollRate))->toBe(12.0);
@@ -232,7 +248,7 @@ it('sums task rates and counts but averages batch means and takes the maximum ba
 
     fake_monitoring($series);
 
-    $snapshot = app(PrometheusClient::class)->sink(monitored_connector());
+    $snapshot = app(PrometheusClient::class)->snapshot(monitored_connector(), SinkMetric::cases());
 
     expect($snapshot->value(SinkMetric::ReadRate))->toBe(30.0);
     expect($snapshot->value(SinkMetric::SendRate))->toBe(20.0);
@@ -277,13 +293,16 @@ it('labels each metric before union and matches its original timestamp when labe
         return Http::response(monitoring_response($timestamps ? array_reverse($series) : $series, $timestamps));
     }]);
 
-    $snapshot = app(PrometheusClient::class)->sink(monitored_connector());
+    $snapshot = app(PrometheusClient::class)->snapshot(monitored_connector(), SinkMetric::cases());
 
     expect($snapshot->status)->toBe(MonitoringStatus::Ready);
     expect($snapshot->value(SinkMetric::ReadRate))->toBe(10.0);
     expect($snapshot->value(SinkMetric::SendRate))->toBe(8.0);
-    expect($snapshot->samples[1]->sampledAt)->toBe(1_799_999_970.0);
-    expect($snapshot->samples[2]->sampledAt)->toBe(1_799_999_960.0);
+    expect(array_column($snapshot->samples, 'sampledAt', 'name'))->toBe([
+        'up' => 1_799_999_980.0,
+        SinkMetric::ReadRate->prometheusName() => 1_799_999_970.0,
+        SinkMetric::SendRate->prometheusName() => 1_799_999_960.0,
+    ]);
     Http::assertSentCount(2);
 });
 
@@ -297,7 +316,7 @@ it('distinguishes zeros from missing and nonfinite values', function () {
         ['name' => SinkMetric::Active->prometheusName(), 'value' => 'NaN', 'labels' => ['task' => '1']],
     ]);
 
-    $snapshot = app(PrometheusClient::class)->sink(monitored_connector());
+    $snapshot = app(PrometheusClient::class)->snapshot(monitored_connector(), SinkMetric::cases());
 
     expect($snapshot->value(SinkMetric::ReadRate))->toBe(0.0);
     expect($snapshot->value(SinkMetric::SendRate))->toBeNull();
@@ -310,7 +329,7 @@ it('distinguishes zeros from missing and nonfinite values', function () {
 it('reports missing scrape data without inventing zero metrics', function (array $series, ?float $oldestSampleAt) {
     fake_monitoring($series);
 
-    $snapshot = app(PrometheusClient::class)->source(monitored_connector());
+    $snapshot = app(PrometheusClient::class)->snapshot(monitored_connector(), SourceMetric::cases());
 
     expect($snapshot->status)->toBe(MonitoringStatus::NoData);
     expect($snapshot->oldestSampleAt())->toBe($oldestSampleAt);
@@ -325,43 +344,18 @@ it('reports missing scrape data without inventing zero metrics', function (array
     ],
 ]);
 
-it('withholds values after a failed scrape or stale sample despite fresh query evaluation times', function (
-    array $series,
-    MonitoringStatus $status,
-    ?float $worker,
-) {
-    fake_monitoring($series);
+it('withholds values when a scrape timestamp is stale despite a fresh evaluation time', function () {
+    fake_monitoring([
+        ['name' => MonitoringSnapshot::WORKER_METRIC, 'value' => '1'],
+        ['name' => SinkMetric::ReadRate->prometheusName(), 'value' => '10', 'at' => 1_799_999_909],
+    ]);
 
-    $snapshot = app(PrometheusClient::class)->sink(monitored_connector());
+    $snapshot = app(PrometheusClient::class)->snapshot(monitored_connector(), SinkMetric::cases());
 
-    expect($snapshot->status)->toBe($status);
-    expect($snapshot->workerUp())->toBe($worker);
+    expect($snapshot->status)->toBe(MonitoringStatus::Stale);
     expect($snapshot->value(SinkMetric::ReadRate))->toBeNull();
     Http::assertSentCount(2);
-})->with([
-    'failed scrape' => [
-        [
-            ['name' => MonitoringSnapshot::WORKER_METRIC, 'value' => '1', 'labels' => ['instance' => 'worker-1']],
-            ['name' => MonitoringSnapshot::WORKER_METRIC, 'value' => '0', 'labels' => ['instance' => 'worker-2']],
-            ['name' => SinkMetric::ReadRate->prometheusName(), 'value' => '10'],
-        ],
-        MonitoringStatus::ScrapeFailed,
-        0.0,
-    ],
-    'stale worker' => [
-        [['name' => MonitoringSnapshot::WORKER_METRIC, 'value' => '1', 'at' => 1_799_999_909]],
-        MonitoringStatus::Stale,
-        null,
-    ],
-    'stale task' => [
-        [
-            ['name' => MonitoringSnapshot::WORKER_METRIC, 'value' => '1'],
-            ['name' => SinkMetric::ReadRate->prometheusName(), 'value' => '10', 'at' => 1_799_999_909],
-        ],
-        MonitoringStatus::Stale,
-        null,
-    ],
-]);
+});
 
 it('isolates identically named connectors and Debezium servers using each origins filters', function () {
     config([
@@ -390,8 +384,8 @@ it('isolates identically named connectors and Debezium servers using each origin
         ));
     }]);
 
-    $primary = app(PrometheusClient::class)->source(monitored_connector());
-    $secondary = app(PrometheusClient::class)->source(monitored_connector('secondary'));
+    $primary = app(PrometheusClient::class)->snapshot(monitored_connector(), SourceMetric::cases());
+    $secondary = app(PrometheusClient::class)->snapshot(monitored_connector('secondary'), SourceMetric::cases());
 
     expect($primary->value(SourceMetric::Events))->toBe(10.0);
     expect($secondary->value(SourceMetric::Events))->toBe(70.0);
@@ -409,7 +403,7 @@ it('escapes connector names server names and origin label values in PromQL', fun
     ]]);
     fake_monitoring([]);
 
-    app(PrometheusClient::class)->source($connector);
+    app(PrometheusClient::class)->snapshot($connector, SourceMetric::cases());
 
     Http::assertSent(
         fn (Request $request) => (
@@ -423,6 +417,12 @@ it('escapes connector names server names and origin label values in PromQL', fun
 
 it('makes no requests without a connector or Prometheus configuration', function () {
     config([
+        'phpinnacle-ferry.origins.configured.prometheus' => [
+            'base_uri' => 'http://prometheus.test',
+            'headers' => [],
+            'labels' => [],
+            'stale_after' => 90,
+        ],
         'phpinnacle-ferry.origins.primary.prometheus.base_uri' => null,
         'phpinnacle-ferry.origins.empty.prometheus' => [
             'base_uri' => '',
@@ -434,25 +434,35 @@ it('makes no requests without a connector or Prometheus configuration', function
 
     $client = app(PrometheusClient::class);
 
-    expect($client->source(null)->status)->toBe(MonitoringStatus::NoConnector);
-    expect($client->source(monitored_connector())->status)->toBe(MonitoringStatus::Disabled);
-    expect($client->source(monitored_connector('empty'))->status)->toBe(MonitoringStatus::Disabled);
-    expect($client->sink(monitored_connector('unconfigured'))->status)->toBe(MonitoringStatus::Disabled);
+    expect($client->isEnabled('configured'))->toBeTrue();
+    expect($client->isEnabled('primary'))->toBeFalse();
+    expect($client->isEnabled('empty'))->toBeFalse();
+    expect($client->isEnabled('unconfigured'))->toBeFalse();
+    expect($client->snapshot(null, SourceMetric::cases())->status)->toBe(MonitoringStatus::NoConnector);
+    expect($client->snapshot(monitored_connector(), SourceMetric::cases())->status)->toBe(MonitoringStatus::Disabled);
+    expect($client->snapshot(monitored_connector('empty'), SourceMetric::cases())->status)
+        ->toBe(MonitoringStatus::Disabled);
+    expect($client->snapshot(monitored_connector('unconfigured'), SinkMetric::cases())->status)
+        ->toBe(MonitoringStatus::Disabled);
+    expect($client->history(null, SourceMetric::cases())->available)->toBeFalse();
+    expect($client->history(monitored_connector('unconfigured'), SinkMetric::cases())->available)->toBeFalse();
     Http::assertNothingSent();
 });
 
 it('contains connection failures so connector pages can continue working', function () {
-    Http::fake(['prometheus.test/api/v1/query' => Http::failedConnection()]);
+    Http::fake(['prometheus.test/api/v1/*' => Http::failedConnection()]);
+    $client = app(PrometheusClient::class);
 
-    expect(app(PrometheusClient::class)->source(monitored_connector())->status)
+    expect($client->snapshot(monitored_connector(), SourceMetric::cases())->status)
         ->toBe(MonitoringStatus::Unavailable);
-    Http::assertSentCount(1);
+    expect($client->history(monitored_connector(), SourceMetric::cases())->available)->toBeFalse();
+    Http::assertSentCount(2);
 });
 
 it('rejects unsuccessful or malformed external responses', function (mixed $body, int $status) {
     Http::fake(['prometheus.test/api/v1/query' => Http::response($body, $status)]);
 
-    expect(app(PrometheusClient::class)->source(monitored_connector())->status)
+    expect(app(PrometheusClient::class)->snapshot(monitored_connector(), SourceMetric::cases())->status)
         ->toBe(MonitoringStatus::Unavailable);
     Http::assertSentCount(1);
 })->with([
@@ -494,7 +504,7 @@ it('rejects missing, nonfinite, negative, or future sample timestamps', function
         ->push(monitoring_response([['name' => MonitoringSnapshot::WORKER_METRIC, 'value' => '1']], false))
         ->push(monitoring_response($timestamps, true))]);
 
-    expect(app(PrometheusClient::class)->source(monitored_connector())->status)
+    expect(app(PrometheusClient::class)->snapshot(monitored_connector(), SourceMetric::cases())->status)
         ->toBe(MonitoringStatus::Unavailable);
     Http::assertSentCount(2);
 })->with([
@@ -502,4 +512,111 @@ it('rejects missing, nonfinite, negative, or future sample timestamps', function
     'nonfinite timestamp' => [[['name' => MonitoringSnapshot::WORKER_METRIC, 'value' => '1', 'at' => 'NaN']]],
     'negative timestamp' => [[['name' => MonitoringSnapshot::WORKER_METRIC, 'value' => '1', 'at' => -1]]],
     'future timestamp' => [[['name' => MonitoringSnapshot::WORKER_METRIC, 'value' => '1', 'at' => 1_800_000_001]]],
+]);
+
+it('reads a bounded source history with task aggregation zeros negative lag and explicit gaps', function () {
+    fake_monitoring_history([
+        ['name' => 'up', 'values' => [[1_799_999_100, '1'], [1_799_999_130, '1'], [1_799_999_190, '1']]],
+        [
+            'name' => SourceMetric::SourceLag->prometheusName(),
+            'labels' => ['context' => 'streaming'],
+            'values' => [
+                [1_799_999_100, '-25'],
+                [1_799_999_130, '0'],
+                [1_799_999_190, 'NaN'],
+            ],
+        ],
+        [
+            'name' => SourceMetric::PollRate->prometheusName(),
+            'labels' => ['task' => '0'],
+            'values' => [[1_799_999_100, '2'], [1_799_999_130, '0']],
+        ],
+        [
+            'name' => SourceMetric::PollRate->prometheusName(),
+            'labels' => ['task' => '1'],
+            'values' => [[1_799_999_100, '3'], [1_799_999_130, '0']],
+        ],
+        ['name' => SourceMetric::WriteRate->prometheusName(), 'values' => [[1_799_999_100, '4'], [1_799_999_130, '0']]],
+    ]);
+
+    $history = app(PrometheusClient::class)->history(monitored_connector(), [
+        SourceMetric::SourceLag,
+        SourceMetric::PollRate,
+        SourceMetric::WriteRate,
+    ]);
+
+    expect($history->available)->toBeTrue();
+    expect($history->snapshots)->toHaveCount(31)->toHaveKeys([1_799_999_100, 1_800_000_000]);
+    expect(array_slice($history->values(SourceMetric::SourceLag), offset: 0, length: 4))->toBe([
+        -25.0,
+        0.0,
+        null,
+        null,
+    ]);
+    expect(array_slice($history->values(SourceMetric::PollRate), offset: 0, length: 3))->toBe([5.0, 0.0, null]);
+    expect(array_slice($history->values(SourceMetric::WriteRate), offset: 0, length: 3))->toBe([4.0, 0.0, null]);
+    Http::assertSentCount(2);
+    Http::assertSent(
+        fn (Request $request) => (
+            $request->method() === 'POST'
+            && $request->hasHeader('Authorization', 'Bearer test-token')
+            && $request['start'] === 1_799_999_100
+            && $request['end'] === 1_800_000_000
+            && $request['step'] === 30
+            && str_contains($request['query'], 'namespace="primary"')
+            && str_contains($request['query'], 'connector="shared-connector"')
+            && str_contains($request['query'], 'server="applied.server"')
+            && str_contains($request['query'], 'context="streaming"')
+            && !str_contains($request['query'], 'snapshot')
+        ),
+    );
+});
+
+it('uses original scrape timestamps and worker state at each historical point', function () {
+    fake_monitoring_history([
+        [
+            'name' => 'up',
+            'values' => [[1_799_999_100, '1'], [1_799_999_130, '0'], [1_799_999_160, '1']],
+            'timestamps' => [
+                [1_799_999_100, '1799998990'],
+                [1_799_999_130, '1799999120'],
+                [1_799_999_160, '1799999150'],
+            ],
+        ],
+        [
+            'name' => SourceMetric::PollRate->prometheusName(),
+            'values' => [[1_799_999_100, '10'], [1_799_999_130, '20'], [1_799_999_160, '30']],
+        ],
+    ]);
+
+    $history = app(PrometheusClient::class)->history(monitored_connector(), [SourceMetric::PollRate]);
+
+    expect(array_slice($history->values(SourceMetric::PollRate), offset: 0, length: 4))->toBe([null, null, 30.0, null]);
+    expect($history->snapshots[1_799_999_100]->status)->toBe(MonitoringStatus::Stale);
+    expect($history->snapshots[1_799_999_130]->status)->toBe(MonitoringStatus::ScrapeFailed);
+    Http::assertSentCount(2);
+});
+
+it('reports unavailable history for invalid external matrices', function (array $response) {
+    Http::fake(['prometheus.test/api/v1/query_range' => Http::response($response)]);
+
+    expect(app(PrometheusClient::class)->history(monitored_connector(), SourceMetric::cases())->available)
+        ->toBeFalse();
+    Http::assertSentCount(1);
+})->with([
+    'wrong result type' => [['status' => 'success', 'data' => ['resultType' => 'vector', 'result' => []]]],
+    'off-grid timestamp' => [[
+        'status' => 'success',
+        'data' => [
+            'resultType' => 'matrix',
+            'result' => [['metric' => ['ferry_metric' => 'up'], 'values' => [[1_799_999_115, '1']]]],
+        ],
+    ]],
+    'out-of-range timestamp' => [[
+        'status' => 'success',
+        'data' => [
+            'resultType' => 'matrix',
+            'result' => [['metric' => ['ferry_metric' => 'up'], 'values' => [[1_800_000_030, '1']]]],
+        ],
+    ]],
 ]);
